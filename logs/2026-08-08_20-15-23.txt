@@ -1,0 +1,300 @@
+Defaulting to user installation because normal site-packages is not writeable
+Requirement already satisfied: discord.py==2.7.1 in ./.local/lib/python3.13/site-packages (2.7.1)
+Requirement already satisfied: aiohttp<4,>=3.7.4 in ./.local/lib/python3.13/site-packages (from discord.py==2.7.1) (3.14.3)
+Requirement already satisfied: audioop-lts in ./.local/lib/python3.13/site-packages (from discord.py==2.7.1) (0.2.2)
+Requirement already satisfied: aiohappyeyeballs>=2.5.0 in ./.local/lib/python3.13/site-packages (from aiohttp<4,>=3.7.4->discord.py==2.7.1) (2.7.1)
+Requirement already satisfied: aiosignal>=1.4.0 in ./.local/lib/python3.13/site-packages (from aiohttp<4,>=3.7.4->discord.py==2.7.1) (1.4.0)
+Requirement already satisfied: attrs>=17.3.0 in ./.local/lib/python3.13/site-packages (from aiohttp<4,>=3.7.4->discord.py==2.7.1) (26.1.0)
+Requirement already satisfied: frozenlist>=1.1.1 in ./.local/lib/python3.13/site-packages (from aiohttp<4,>=3.7.4->discord.py==2.7.1) (1.8.0)
+Requirement already satisfied: multidict<7.0,>=4.5 in ./.local/lib/python3.13/site-packages (from aiohttp<4,>=3.7.4->discord.py==2.7.1) (6.7.1)
+Requirement already satisfied: propcache>=0.2.0 in ./.local/lib/python3.13/site-packages (from aiohttp<4,>=3.7.4->discord.py==2.7.1) (0.5.2)
+Requirement already satisfied: yarl<2.0,>=1.17.0 in ./.local/lib/python3.13/site-packages (from aiohttp<4,>=3.7.4->discord.py==2.7.1) (1.24.5)
+Requirement already satisfied: idna>=2.0 in ./.local/lib/python3.13/site-packages (from yarl<2.0,>=1.17.0->aiohttp<4,>=3.7.4->discord.py==2.7.1) (3.18)
+
+[notice] A new release of pip is available: 25.0.1 -> 26.2.1
+[notice] To update, run: python3.13 -m pip install --upgrade pip
+Defaulting to user installation because normal site-packages is not writeable
+Requirement already satisfied: python-dotenv==1.1.1 in ./.local/lib/python3.13/site-packages (1.1.1)
+
+[notice] A new release of pip is available: 25.0.1 -> 26.2.1
+[notice] To update, run: python3.13 -m pip install --upgrade pip
+Defaulting to user installation because normal site-packages is not writeable
+Requirement already satisfied: aiosqlite==0.21.0 in ./.local/lib/python3.13/site-packages (0.21.0)
+Requirement already satisfied: typing_extensions>=4.0 in ./.local/lib/python3.13/site-packages (from aiosqlite==0.21.0) (4.16.0)
+
+[notice] A new release of pip is available: 25.0.1 -> 26.2.1
+[notice] To update, run: python3.13 -m pip install --upgrade pip
+2026-08-08 20:15:26,026 | WARNING | discord.client | PyNaCl is not installed, voice will NOT be supported
+2026-08-08 20:15:26,027 | WARNING | discord.client | davey is not installed, voice will NOT be supported
+2026-08-08 20:15:26,027 | INFO | discord.client | logging in using static token
+2026-08-08 20:15:27,107 | INFO | vaultbot | 93 tesztparancs szinkronizálva. A régi globális másolatok törölve.
+2026-08-08 20:15:27,496 | INFO | discord.gateway | Shard ID None has connected to Gateway (Session ID: 7d7c8789cc09e00ae078114d2429ad88).
+2026-08-08 20:15:29,503 | INFO | vaultbot.events | Következő automatikus event 48.5 perc múlva.
+2026-08-08 20:27:18,319 | ERROR | discord.client | Ignoring exception in on_command_error
+Traceback (most recent call last):
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 266, in wrapped
+    ret = await coro(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/app/cogs/moderation.py", line 466, in adminpay_prefix
+    wallet = await self._adminpay(ctx.guild.id, member.id, amount, ctx.author.id)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/app/cogs/moderation.py", line 446, in _adminpay
+    return await self.db.add_wallet(guild_id, target_id, amount, f"adminpay:{admin_id}")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/app/database.py", line 481, in add_wallet
+    await db.execute("UPDATE users SET wallet = ?, money_earned = money_earned + ?, money_lost = money_lost + ?, xp_points = xp_points + ? WHERE guild_id = ? AND user_id = ?", (new_wallet, max(amount, 0), max(-amount, 0), xp_gain, guild_id, user_id))
+  File "/home/container/.local/lib/python3.13/site-packages/aiosqlite/core.py", line 183, in execute
+    cursor = await self._execute(self._conn.execute, sql, parameters)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/.local/lib/python3.13/site-packages/aiosqlite/core.py", line 122, in _execute
+    return await future
+           ^^^^^^^^^^^^
+  File "/home/container/.local/lib/python3.13/site-packages/aiosqlite/core.py", line 105, in run
+    result = function()
+OverflowError: Python int too large to convert to SQLite INTEGER
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/container/.local/lib/python3.13/site-packages/discord/client.py", line 508, in _run_event
+    await coro(*args, **kwargs)
+  File "/home/container/app/cogs/prefix.py", line 585, in on_command_error
+    raise error
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/bot.py", line 1376, in invoke
+    await ctx.command.invoke(ctx)
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 1064, in invoke
+    await injected(*ctx.args, **ctx.kwargs)  # type: ignore
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 275, in wrapped
+    raise CommandInvokeError(exc) from exc
+discord.ext.commands.errors.CommandInvokeError: Command raised an exception: OverflowError: Python int too large to convert to SQLite INTEGER
+2026-08-08 20:27:49,949 | ERROR | discord.client | Ignoring exception in on_command_error
+Traceback (most recent call last):
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 266, in wrapped
+    ret = await coro(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/app/cogs/moderation.py", line 466, in adminpay_prefix
+    wallet = await self._adminpay(ctx.guild.id, member.id, amount, ctx.author.id)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/app/cogs/moderation.py", line 446, in _adminpay
+    return await self.db.add_wallet(guild_id, target_id, amount, f"adminpay:{admin_id}")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/app/database.py", line 481, in add_wallet
+    await db.execute("UPDATE users SET wallet = ?, money_earned = money_earned + ?, money_lost = money_lost + ?, xp_points = xp_points + ? WHERE guild_id = ? AND user_id = ?", (new_wallet, max(amount, 0), max(-amount, 0), xp_gain, guild_id, user_id))
+  File "/home/container/.local/lib/python3.13/site-packages/aiosqlite/core.py", line 183, in execute
+    cursor = await self._execute(self._conn.execute, sql, parameters)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/.local/lib/python3.13/site-packages/aiosqlite/core.py", line 122, in _execute
+    return await future
+           ^^^^^^^^^^^^
+  File "/home/container/.local/lib/python3.13/site-packages/aiosqlite/core.py", line 105, in run
+    result = function()
+OverflowError: Python int too large to convert to SQLite INTEGER
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/container/.local/lib/python3.13/site-packages/discord/client.py", line 508, in _run_event
+    await coro(*args, **kwargs)
+  File "/home/container/app/cogs/prefix.py", line 585, in on_command_error
+    raise error
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/bot.py", line 1376, in invoke
+    await ctx.command.invoke(ctx)
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 1064, in invoke
+    await injected(*ctx.args, **ctx.kwargs)  # type: ignore
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 275, in wrapped
+    raise CommandInvokeError(exc) from exc
+discord.ext.commands.errors.CommandInvokeError: Command raised an exception: OverflowError: Python int too large to convert to SQLite INTEGER
+2026-08-08 21:04:00,165 | INFO | vaultbot.events | Következő automatikus event 67.5 perc múlva.
+2026-08-08 21:41:14,238 | INFO | discord.gateway | Shard ID None has successfully RESUMED session 7d7c8789cc09e00ae078114d2429ad88.
+2026-08-08 22:11:33,183 | INFO | vaultbot.events | Következő automatikus event 41.9 perc múlva.
+2026-08-08 22:53:27,351 | INFO | vaultbot.events | Következő automatikus event 74.7 perc múlva.
+2026-08-09 00:08:09,455 | INFO | vaultbot.events | Következő automatikus event 65.2 perc múlva.
+2026-08-09 01:13:22,583 | INFO | vaultbot.events | Következő automatikus event 69.2 perc múlva.
+2026-08-09 01:32:46,454 | INFO | discord.gateway | Shard ID None has successfully RESUMED session 7d7c8789cc09e00ae078114d2429ad88.
+2026-08-09 02:22:33,774 | INFO | vaultbot.events | Következő automatikus event 71.1 perc múlva.
+2026-08-09 03:33:42,172 | INFO | vaultbot.events | Következő automatikus event 30.8 perc múlva.
+2026-08-09 04:04:31,777 | INFO | vaultbot.events | Következő automatikus event 40.7 perc múlva.
+2026-08-09 04:15:27,878 | INFO | discord.gateway | Shard ID None has successfully RESUMED session 7d7c8789cc09e00ae078114d2429ad88.
+2026-08-09 04:45:13,364 | INFO | vaultbot.events | Következő automatikus event 73.1 perc múlva.
+2026-08-09 05:58:17,766 | INFO | vaultbot.events | Következő automatikus event 37.3 perc múlva.
+2026-08-09 06:35:37,827 | INFO | vaultbot.events | Következő automatikus event 21.4 perc múlva.
+2026-08-09 06:57:01,009 | INFO | vaultbot.events | Következő automatikus event 19.0 perc múlva.
+2026-08-09 07:16:01,017 | INFO | vaultbot.events | Következő automatikus event 9.7 perc múlva.
+2026-08-09 07:25:43,732 | INFO | vaultbot.events | Következő automatikus event 60.1 perc múlva.
+2026-08-09 08:03:27,951 | INFO | discord.gateway | Shard ID None has successfully RESUMED session 7d7c8789cc09e00ae078114d2429ad88.
+2026-08-09 08:25:50,746 | INFO | vaultbot.events | Következő automatikus event 68.9 perc múlva.
+2026-08-09 09:33:37,646 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.77 seconds.
+2026-08-09 09:33:45,891 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.75 seconds.
+2026-08-09 09:33:45,903 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.74 seconds.
+2026-08-09 09:33:45,907 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.74 seconds.
+2026-08-09 09:33:46,779 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.86 seconds.
+2026-08-09 09:33:46,821 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.82 seconds.
+2026-08-09 09:33:47,963 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.68 seconds.
+2026-08-09 09:33:49,873 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.77 seconds.
+2026-08-09 09:34:47,285 | INFO | vaultbot.events | Következő automatikus event 36.1 perc múlva.
+2026-08-09 09:39:51,467 | ERROR | discord.client | Ignoring exception in on_command_error
+Traceback (most recent call last):
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 266, in wrapped
+    ret = await coro(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/app/cogs/community.py", line 527, in open_blackmarket_admin
+    await ctx.message.add_reaction("✅")
+  File "/home/container/.local/lib/python3.13/site-packages/discord/message.py", line 1543, in add_reaction
+    await self._state.http.add_reaction(self.channel.id, self.id, emoji)
+  File "/home/container/.local/lib/python3.13/site-packages/discord/http.py", line 774, in request
+    raise NotFound(response, data)
+discord.errors.NotFound: 404 Not Found (error code: 10008): Unknown Message
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/container/.local/lib/python3.13/site-packages/discord/client.py", line 508, in _run_event
+    await coro(*args, **kwargs)
+  File "/home/container/app/cogs/prefix.py", line 585, in on_command_error
+    raise error
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/bot.py", line 1376, in invoke
+    await ctx.command.invoke(ctx)
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 1064, in invoke
+    await injected(*ctx.args, **ctx.kwargs)  # type: ignore
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 275, in wrapped
+    raise CommandInvokeError(exc) from exc
+discord.ext.commands.errors.CommandInvokeError: Command raised an exception: NotFound: 404 Not Found (error code: 10008): Unknown Message
+2026-08-09 10:06:26,189 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.62 seconds.
+2026-08-09 10:06:30,066 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.76 seconds.
+2026-08-09 10:06:30,086 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.73 seconds.
+2026-08-09 10:06:30,966 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.84 seconds.
+2026-08-09 10:06:33,018 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.79 seconds.
+2026-08-09 10:06:33,019 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.79 seconds.
+2026-08-09 10:06:33,055 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.76 seconds.
+2026-08-09 10:06:33,377 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.43 seconds.
+2026-08-09 10:06:33,949 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.86 seconds.
+2026-08-09 10:06:33,957 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.85 seconds.
+2026-08-09 10:06:33,964 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.84 seconds.
+2026-08-09 10:06:34,942 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.87 seconds.
+2026-08-09 10:06:34,990 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.83 seconds.
+2026-08-09 10:06:35,950 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.86 seconds.
+2026-08-09 10:06:38,070 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.74 seconds.
+2026-08-09 10:06:38,073 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.74 seconds.
+2026-08-09 10:06:38,078 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.73 seconds.
+2026-08-09 10:06:38,083 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.73 seconds.
+2026-08-09 10:06:38,950 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.86 seconds.
+2026-08-09 10:06:38,983 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.83 seconds.
+2026-08-09 10:06:38,987 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.84 seconds.
+2026-08-09 10:06:39,944 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.86 seconds.
+2026-08-09 10:06:39,980 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.83 seconds.
+2026-08-09 10:06:40,945 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.86 seconds.
+2026-08-09 10:06:43,057 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.75 seconds.
+2026-08-09 10:06:43,058 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.76 seconds.
+2026-08-09 10:06:43,058 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.75 seconds.
+2026-08-09 10:06:43,086 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.73 seconds.
+2026-08-09 10:06:43,951 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.86 seconds.
+2026-08-09 10:06:43,951 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.86 seconds.
+2026-08-09 10:06:43,959 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.86 seconds.
+2026-08-09 10:06:44,967 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.84 seconds.
+2026-08-09 10:06:44,991 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.82 seconds.
+2026-08-09 10:06:45,959 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.86 seconds.
+2026-08-09 10:06:48,021 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.79 seconds.
+2026-08-09 10:06:48,023 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.79 seconds.
+2026-08-09 10:06:48,091 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.73 seconds.
+2026-08-09 10:06:48,114 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.72 seconds.
+2026-08-09 10:06:48,951 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.86 seconds.
+2026-08-09 10:06:48,979 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.83 seconds.
+2026-08-09 10:06:49,001 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.81 seconds.
+2026-08-09 10:06:49,947 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.86 seconds.
+2026-08-09 10:06:49,974 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.85 seconds.
+2026-08-09 10:06:50,967 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.84 seconds.
+2026-08-09 10:06:53,008 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.80 seconds.
+2026-08-09 10:06:53,010 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.80 seconds.
+2026-08-09 10:06:53,011 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.80 seconds.
+2026-08-09 10:06:53,032 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.78 seconds.
+2026-08-09 10:06:53,945 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.87 seconds.
+2026-08-09 10:06:53,948 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.86 seconds.
+2026-08-09 10:06:53,971 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.84 seconds.
+2026-08-09 10:06:54,943 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.87 seconds.
+2026-08-09 10:06:54,968 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.84 seconds.
+2026-08-09 10:06:55,950 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.86 seconds.
+2026-08-09 10:06:58,098 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.71 seconds.
+2026-08-09 10:06:58,099 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.71 seconds.
+2026-08-09 10:06:58,111 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.70 seconds.
+2026-08-09 10:06:58,488 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.32 seconds.
+2026-08-09 10:06:58,956 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.86 seconds.
+2026-08-09 10:06:58,959 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.85 seconds.
+2026-08-09 10:06:58,959 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.85 seconds.
+2026-08-09 10:06:59,950 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.86 seconds.
+2026-08-09 10:06:59,958 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.85 seconds.
+2026-08-09 10:07:00,971 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.84 seconds.
+2026-08-09 10:07:03,037 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.77 seconds.
+2026-08-09 10:07:03,041 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.77 seconds.
+2026-08-09 10:07:03,068 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.75 seconds.
+2026-08-09 10:07:03,246 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.56 seconds.
+2026-08-09 10:07:03,955 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.86 seconds.
+2026-08-09 10:07:03,969 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.85 seconds.
+2026-08-09 10:07:03,995 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.82 seconds.
+2026-08-09 10:07:04,975 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.84 seconds.
+2026-08-09 10:07:04,981 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.83 seconds.
+2026-08-09 10:07:05,947 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.86 seconds.
+2026-08-09 10:07:08,045 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.77 seconds.
+2026-08-09 10:07:08,060 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.75 seconds.
+2026-08-09 10:07:08,067 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.75 seconds.
+2026-08-09 10:07:08,071 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.74 seconds.
+2026-08-09 10:07:08,948 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.86 seconds.
+2026-08-09 10:07:08,953 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.86 seconds.
+2026-08-09 10:07:08,954 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.86 seconds.
+2026-08-09 10:07:09,945 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.87 seconds.
+2026-08-09 10:07:09,950 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.86 seconds.
+2026-08-09 10:07:10,957 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.85 seconds.
+2026-08-09 10:07:13,057 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.75 seconds.
+2026-08-09 10:07:13,058 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.75 seconds.
+2026-08-09 10:07:13,085 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.73 seconds.
+2026-08-09 10:07:13,947 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.86 seconds.
+2026-08-09 10:07:13,947 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.86 seconds.
+2026-08-09 10:07:14,963 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.85 seconds.
+2026-08-09 10:10:53,109 | INFO | vaultbot.events | Következő automatikus event 48.3 perc múlva.
+2026-08-09 10:34:37,753 | INFO | discord.gateway | Shard ID None has successfully RESUMED session 7d7c8789cc09e00ae078114d2429ad88.
+2026-08-09 10:59:14,409 | INFO | vaultbot.events | Következő automatikus event 51.7 perc múlva.
+2026-08-09 11:50:54,523 | INFO | vaultbot.events | Következő automatikus event 24.5 perc múlva.
+2026-08-09 11:51:09,037 | INFO | discord.gateway | Shard ID None has successfully RESUMED session 7d7c8789cc09e00ae078114d2429ad88.
+2026-08-09 12:09:31,386 | INFO | discord.gateway | Shard ID None has successfully RESUMED session 7d7c8789cc09e00ae078114d2429ad88.
+2026-08-09 12:15:23,887 | INFO | vaultbot.events | Következő automatikus event 42.2 perc múlva.
+2026-08-09 12:23:01,477 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.46 seconds.
+2026-08-09 12:23:05,193 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.75 seconds.
+2026-08-09 12:23:05,214 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.73 seconds.
+2026-08-09 12:23:06,088 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.85 seconds.
+2026-08-09 12:24:36,081 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.77 seconds.
+2026-08-09 12:24:43,080 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.77 seconds.
+2026-08-09 12:43:23,046 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.70 seconds.
+2026-08-09 12:57:35,302 | INFO | vaultbot.events | Következő automatikus event 53.8 perc múlva.
+2026-08-09 12:58:17,214 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.77 seconds.
+2026-08-09 12:58:52,433 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.57 seconds.
+2026-08-09 12:58:52,442 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.56 seconds.
+2026-08-09 12:58:53,143 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.86 seconds.
+2026-08-09 12:58:53,157 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.85 seconds.
+2026-08-09 12:58:54,203 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.81 seconds.
+2026-08-09 12:58:57,266 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.73 seconds.
+2026-08-09 12:58:57,275 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.73 seconds.
+2026-08-09 12:58:57,289 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.71 seconds.
+2026-08-09 12:58:58,134 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.86 seconds.
+2026-08-09 12:58:58,168 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.83 seconds.
+2026-08-09 12:58:59,141 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.86 seconds.
+2026-08-09 12:59:02,274 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.72 seconds.
+2026-08-09 12:59:02,292 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.71 seconds.
+2026-08-09 12:59:02,323 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.69 seconds.
+2026-08-09 12:59:03,151 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.85 seconds.
+2026-08-09 12:59:03,209 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.80 seconds.
+2026-08-09 12:59:04,158 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.84 seconds.
+2026-08-09 12:59:07,279 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.72 seconds.
+2026-08-09 12:59:07,283 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.71 seconds.
+2026-08-09 12:59:07,299 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.71 seconds.
+2026-08-09 12:59:07,563 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.44 seconds.
+2026-08-09 12:59:08,137 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.86 seconds.
+2026-08-09 12:59:08,146 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.85 seconds.
+2026-08-09 12:59:08,168 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.84 seconds.
+2026-08-09 12:59:09,156 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.84 seconds.
+2026-08-09 12:59:09,243 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.75 seconds.
+2026-08-09 12:59:10,158 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.84 seconds.
+2026-08-09 12:59:11,287 | WARNING | discord.http | We are being rate limited. POST https://discord.com/api/v10/channels/1533775192768249951/messages responded with 429. Retrying in 0.72 seconds.
+2026-08-09 13:36:33,593 | INFO | discord.gateway | Shard ID None has successfully RESUMED session 7d7c8789cc09e00ae078114d2429ad88.
+2026-08-09 13:51:22,980 | INFO | vaultbot.events | Következő automatikus event 60.1 perc múlva.

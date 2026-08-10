@@ -1,0 +1,616 @@
+Defaulting to user installation because normal site-packages is not writeable
+Requirement already satisfied: discord.py==2.7.1 in ./.local/lib/python3.13/site-packages (2.7.1)
+Requirement already satisfied: aiohttp<4,>=3.7.4 in ./.local/lib/python3.13/site-packages (from discord.py==2.7.1) (3.14.3)
+Requirement already satisfied: audioop-lts in ./.local/lib/python3.13/site-packages (from discord.py==2.7.1) (0.2.2)
+Requirement already satisfied: aiohappyeyeballs>=2.5.0 in ./.local/lib/python3.13/site-packages (from aiohttp<4,>=3.7.4->discord.py==2.7.1) (2.7.1)
+Requirement already satisfied: aiosignal>=1.4.0 in ./.local/lib/python3.13/site-packages (from aiohttp<4,>=3.7.4->discord.py==2.7.1) (1.4.0)
+Requirement already satisfied: attrs>=17.3.0 in ./.local/lib/python3.13/site-packages (from aiohttp<4,>=3.7.4->discord.py==2.7.1) (26.1.0)
+Requirement already satisfied: frozenlist>=1.1.1 in ./.local/lib/python3.13/site-packages (from aiohttp<4,>=3.7.4->discord.py==2.7.1) (1.8.0)
+Requirement already satisfied: multidict<7.0,>=4.5 in ./.local/lib/python3.13/site-packages (from aiohttp<4,>=3.7.4->discord.py==2.7.1) (6.7.1)
+Requirement already satisfied: propcache>=0.2.0 in ./.local/lib/python3.13/site-packages (from aiohttp<4,>=3.7.4->discord.py==2.7.1) (0.5.2)
+Requirement already satisfied: yarl<2.0,>=1.17.0 in ./.local/lib/python3.13/site-packages (from aiohttp<4,>=3.7.4->discord.py==2.7.1) (1.24.5)
+Requirement already satisfied: idna>=2.0 in ./.local/lib/python3.13/site-packages (from yarl<2.0,>=1.17.0->aiohttp<4,>=3.7.4->discord.py==2.7.1) (3.18)
+
+[notice] A new release of pip is available: 25.0.1 -> 26.2.1
+[notice] To update, run: python3.13 -m pip install --upgrade pip
+Defaulting to user installation because normal site-packages is not writeable
+Requirement already satisfied: python-dotenv==1.1.1 in ./.local/lib/python3.13/site-packages (1.1.1)
+
+[notice] A new release of pip is available: 25.0.1 -> 26.2.1
+[notice] To update, run: python3.13 -m pip install --upgrade pip
+Defaulting to user installation because normal site-packages is not writeable
+Requirement already satisfied: aiosqlite==0.21.0 in ./.local/lib/python3.13/site-packages (0.21.0)
+Requirement already satisfied: typing_extensions>=4.0 in ./.local/lib/python3.13/site-packages (from aiosqlite==0.21.0) (4.16.0)
+
+[notice] A new release of pip is available: 25.0.1 -> 26.2.1
+[notice] To update, run: python3.13 -m pip install --upgrade pip
+2026-08-09 14:17:10,235 | WARNING | discord.client | PyNaCl is not installed, voice will NOT be supported
+2026-08-09 14:17:10,235 | WARNING | discord.client | davey is not installed, voice will NOT be supported
+2026-08-09 14:17:10,235 | INFO | discord.client | logging in using static token
+2026-08-09 14:17:11,685 | INFO | vaultbot | 94 tesztparancs szinkronizálva. A régi globális másolatok törölve.
+2026-08-09 14:17:12,030 | INFO | discord.gateway | Shard ID None has connected to Gateway (Session ID: 07c3f2cf4dacca68f878da39406dc3a5).
+2026-08-09 14:17:14,036 | INFO | vaultbot.events | Következő automatikus event 32.7 perc múlva.
+2026-08-09 14:17:14,036 | INFO | vaultbot | Bejelentkezve: Yoru#3983 (1535022334048604264)
+2026-08-09 14:26:51,963 | ERROR | discord.client | Ignoring exception in on_command_error
+Traceback (most recent call last):
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 266, in wrapped
+    ret = await coro(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/app/cogs/prefix.py", line 204, in crime
+    success, amount, scenario, ready_at, jail_until = await self.economy.crime(ctx.guild.id, ctx.author.id)
+                                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/app/services/economy.py", line 224, in crime
+    await self.db.add_wallet(guild_id, user_id, amount, f"crime:{scenario}")
+  File "/home/container/app/database.py", line 479, in add_wallet
+    raise ValueError("Nincs elég pénz a tárcában.")
+ValueError: Nincs elég pénz a tárcában.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/container/.local/lib/python3.13/site-packages/discord/client.py", line 508, in _run_event
+    await coro(*args, **kwargs)
+  File "/home/container/app/cogs/prefix.py", line 576, in on_command_error
+    raise error
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/bot.py", line 1376, in invoke
+    await ctx.command.invoke(ctx)
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 1064, in invoke
+    await injected(*ctx.args, **ctx.kwargs)  # type: ignore
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 275, in wrapped
+    raise CommandInvokeError(exc) from exc
+discord.ext.commands.errors.CommandInvokeError: Command raised an exception: ValueError: Nincs elég pénz a tárcában.
+2026-08-09 14:27:00,003 | ERROR | discord.client | Ignoring exception in on_command_error
+Traceback (most recent call last):
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 266, in wrapped
+    ret = await coro(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/app/cogs/prefix.py", line 131, in beg
+    reward, outcome, ready_at = await self.economy.beg(ctx.guild.id, ctx.author.id)
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/app/services/economy.py", line 119, in beg
+    await self.db.add_wallet(guild_id, user_id, reward, f"beg:{text}")
+  File "/home/container/app/database.py", line 479, in add_wallet
+    raise ValueError("Nincs elég pénz a tárcában.")
+ValueError: Nincs elég pénz a tárcában.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/container/.local/lib/python3.13/site-packages/discord/client.py", line 508, in _run_event
+    await coro(*args, **kwargs)
+  File "/home/container/app/cogs/prefix.py", line 576, in on_command_error
+    raise error
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/bot.py", line 1376, in invoke
+    await ctx.command.invoke(ctx)
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 1064, in invoke
+    await injected(*ctx.args, **ctx.kwargs)  # type: ignore
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 275, in wrapped
+    raise CommandInvokeError(exc) from exc
+discord.ext.commands.errors.CommandInvokeError: Command raised an exception: ValueError: Nincs elég pénz a tárcában.
+2026-08-09 14:28:52,253 | ERROR | discord.client | Ignoring exception in on_command_error
+Traceback (most recent call last):
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 266, in wrapped
+    ret = await coro(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/app/cogs/prefix.py", line 131, in beg
+    reward, outcome, ready_at = await self.economy.beg(ctx.guild.id, ctx.author.id)
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/app/services/economy.py", line 119, in beg
+    await self.db.add_wallet(guild_id, user_id, reward, f"beg:{text}")
+  File "/home/container/app/database.py", line 479, in add_wallet
+    raise ValueError("Nincs elég pénz a tárcában.")
+ValueError: Nincs elég pénz a tárcában.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/container/.local/lib/python3.13/site-packages/discord/client.py", line 508, in _run_event
+    await coro(*args, **kwargs)
+  File "/home/container/app/cogs/prefix.py", line 576, in on_command_error
+    raise error
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/bot.py", line 1376, in invoke
+    await ctx.command.invoke(ctx)
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 1064, in invoke
+    await injected(*ctx.args, **ctx.kwargs)  # type: ignore
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 275, in wrapped
+    raise CommandInvokeError(exc) from exc
+discord.ext.commands.errors.CommandInvokeError: Command raised an exception: ValueError: Nincs elég pénz a tárcában.
+2026-08-09 14:28:57,482 | ERROR | discord.client | Ignoring exception in on_command_error
+Traceback (most recent call last):
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 266, in wrapped
+    ret = await coro(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/app/cogs/prefix.py", line 131, in beg
+    reward, outcome, ready_at = await self.economy.beg(ctx.guild.id, ctx.author.id)
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/app/services/economy.py", line 119, in beg
+    await self.db.add_wallet(guild_id, user_id, reward, f"beg:{text}")
+  File "/home/container/app/database.py", line 479, in add_wallet
+    raise ValueError("Nincs elég pénz a tárcában.")
+ValueError: Nincs elég pénz a tárcában.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/container/.local/lib/python3.13/site-packages/discord/client.py", line 508, in _run_event
+    await coro(*args, **kwargs)
+  File "/home/container/app/cogs/prefix.py", line 576, in on_command_error
+    raise error
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/bot.py", line 1376, in invoke
+    await ctx.command.invoke(ctx)
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 1064, in invoke
+    await injected(*ctx.args, **ctx.kwargs)  # type: ignore
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 275, in wrapped
+    raise CommandInvokeError(exc) from exc
+discord.ext.commands.errors.CommandInvokeError: Command raised an exception: ValueError: Nincs elég pénz a tárcában.
+2026-08-09 14:29:05,706 | ERROR | discord.client | Ignoring exception in on_command_error
+Traceback (most recent call last):
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 266, in wrapped
+    ret = await coro(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/app/cogs/prefix.py", line 143, in search
+    reward, place, ready_at, dropped = await self.economy.search(ctx.guild.id, ctx.author.id)
+                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/app/services/economy.py", line 137, in search
+    await self.db.add_wallet(guild_id, user_id, reward, f"search:{place}")
+  File "/home/container/app/database.py", line 479, in add_wallet
+    raise ValueError("Nincs elég pénz a tárcában.")
+ValueError: Nincs elég pénz a tárcában.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/container/.local/lib/python3.13/site-packages/discord/client.py", line 508, in _run_event
+    await coro(*args, **kwargs)
+  File "/home/container/app/cogs/prefix.py", line 576, in on_command_error
+    raise error
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/bot.py", line 1376, in invoke
+    await ctx.command.invoke(ctx)
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 1064, in invoke
+    await injected(*ctx.args, **ctx.kwargs)  # type: ignore
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 275, in wrapped
+    raise CommandInvokeError(exc) from exc
+discord.ext.commands.errors.CommandInvokeError: Command raised an exception: ValueError: Nincs elég pénz a tárcában.
+2026-08-09 14:33:45,745 | ERROR | discord.client | Ignoring exception in on_command_error
+Traceback (most recent call last):
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 266, in wrapped
+    ret = await coro(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/app/cogs/prefix.py", line 190, in work
+    reward, job, ready_at = await self.economy.work(ctx.guild.id, ctx.author.id)
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/app/services/economy.py", line 201, in work
+    await self.db.add_wallet(guild_id, user_id, reward, f"work:{job}")
+  File "/home/container/app/database.py", line 479, in add_wallet
+    raise ValueError("Nincs elég pénz a tárcában.")
+ValueError: Nincs elég pénz a tárcában.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/container/.local/lib/python3.13/site-packages/discord/client.py", line 508, in _run_event
+    await coro(*args, **kwargs)
+  File "/home/container/app/cogs/prefix.py", line 576, in on_command_error
+    raise error
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/bot.py", line 1376, in invoke
+    await ctx.command.invoke(ctx)
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 1064, in invoke
+    await injected(*ctx.args, **ctx.kwargs)  # type: ignore
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 275, in wrapped
+    raise CommandInvokeError(exc) from exc
+discord.ext.commands.errors.CommandInvokeError: Command raised an exception: ValueError: Nincs elég pénz a tárcában.
+2026-08-09 14:34:01,775 | ERROR | discord.client | Ignoring exception in on_command_error
+Traceback (most recent call last):
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 266, in wrapped
+    ret = await coro(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/app/cogs/prefix.py", line 131, in beg
+    reward, outcome, ready_at = await self.economy.beg(ctx.guild.id, ctx.author.id)
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/app/services/economy.py", line 119, in beg
+    await self.db.add_wallet(guild_id, user_id, reward, f"beg:{text}")
+  File "/home/container/app/database.py", line 479, in add_wallet
+    raise ValueError("Nincs elég pénz a tárcában.")
+ValueError: Nincs elég pénz a tárcában.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/container/.local/lib/python3.13/site-packages/discord/client.py", line 508, in _run_event
+    await coro(*args, **kwargs)
+  File "/home/container/app/cogs/prefix.py", line 576, in on_command_error
+    raise error
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/bot.py", line 1376, in invoke
+    await ctx.command.invoke(ctx)
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 1064, in invoke
+    await injected(*ctx.args, **ctx.kwargs)  # type: ignore
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 275, in wrapped
+    raise CommandInvokeError(exc) from exc
+discord.ext.commands.errors.CommandInvokeError: Command raised an exception: ValueError: Nincs elég pénz a tárcában.
+2026-08-09 14:34:04,282 | ERROR | discord.client | Ignoring exception in on_command_error
+Traceback (most recent call last):
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 266, in wrapped
+    ret = await coro(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/app/cogs/prefix.py", line 143, in search
+    reward, place, ready_at, dropped = await self.economy.search(ctx.guild.id, ctx.author.id)
+                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/app/services/economy.py", line 137, in search
+    await self.db.add_wallet(guild_id, user_id, reward, f"search:{place}")
+  File "/home/container/app/database.py", line 479, in add_wallet
+    raise ValueError("Nincs elég pénz a tárcában.")
+ValueError: Nincs elég pénz a tárcában.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/container/.local/lib/python3.13/site-packages/discord/client.py", line 508, in _run_event
+    await coro(*args, **kwargs)
+  File "/home/container/app/cogs/prefix.py", line 576, in on_command_error
+    raise error
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/bot.py", line 1376, in invoke
+    await ctx.command.invoke(ctx)
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 1064, in invoke
+    await injected(*ctx.args, **ctx.kwargs)  # type: ignore
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 275, in wrapped
+    raise CommandInvokeError(exc) from exc
+discord.ext.commands.errors.CommandInvokeError: Command raised an exception: ValueError: Nincs elég pénz a tárcában.
+2026-08-09 14:38:22,474 | ERROR | discord.client | Ignoring exception in on_command_error
+Traceback (most recent call last):
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 266, in wrapped
+    ret = await coro(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/app/cogs/prefix.py", line 190, in work
+    reward, job, ready_at = await self.economy.work(ctx.guild.id, ctx.author.id)
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/app/services/economy.py", line 201, in work
+    await self.db.add_wallet(guild_id, user_id, reward, f"work:{job}")
+  File "/home/container/app/database.py", line 479, in add_wallet
+    raise ValueError("Nincs elég pénz a tárcában.")
+ValueError: Nincs elég pénz a tárcában.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/container/.local/lib/python3.13/site-packages/discord/client.py", line 508, in _run_event
+    await coro(*args, **kwargs)
+  File "/home/container/app/cogs/prefix.py", line 576, in on_command_error
+    raise error
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/bot.py", line 1376, in invoke
+    await ctx.command.invoke(ctx)
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 1064, in invoke
+    await injected(*ctx.args, **ctx.kwargs)  # type: ignore
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 275, in wrapped
+    raise CommandInvokeError(exc) from exc
+discord.ext.commands.errors.CommandInvokeError: Command raised an exception: ValueError: Nincs elég pénz a tárcában.
+2026-08-09 14:38:29,034 | ERROR | discord.client | Ignoring exception in on_command_error
+Traceback (most recent call last):
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 266, in wrapped
+    ret = await coro(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/app/cogs/prefix.py", line 190, in work
+    reward, job, ready_at = await self.economy.work(ctx.guild.id, ctx.author.id)
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/app/services/economy.py", line 201, in work
+    await self.db.add_wallet(guild_id, user_id, reward, f"work:{job}")
+  File "/home/container/app/database.py", line 479, in add_wallet
+    raise ValueError("Nincs elég pénz a tárcában.")
+ValueError: Nincs elég pénz a tárcában.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/container/.local/lib/python3.13/site-packages/discord/client.py", line 508, in _run_event
+    await coro(*args, **kwargs)
+  File "/home/container/app/cogs/prefix.py", line 576, in on_command_error
+    raise error
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/bot.py", line 1376, in invoke
+    await ctx.command.invoke(ctx)
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 1064, in invoke
+    await injected(*ctx.args, **ctx.kwargs)  # type: ignore
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 275, in wrapped
+    raise CommandInvokeError(exc) from exc
+discord.ext.commands.errors.CommandInvokeError: Command raised an exception: ValueError: Nincs elég pénz a tárcában.
+2026-08-09 14:48:46,740 | ERROR | discord.client | Ignoring exception in on_command_error
+Traceback (most recent call last):
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 266, in wrapped
+    ret = await coro(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/app/cogs/prefix.py", line 190, in work
+    reward, job, ready_at = await self.economy.work(ctx.guild.id, ctx.author.id)
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/app/services/economy.py", line 201, in work
+    await self.db.add_wallet(guild_id, user_id, reward, f"work:{job}")
+  File "/home/container/app/database.py", line 479, in add_wallet
+    raise ValueError("Nincs elég pénz a tárcában.")
+ValueError: Nincs elég pénz a tárcában.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/container/.local/lib/python3.13/site-packages/discord/client.py", line 508, in _run_event
+    await coro(*args, **kwargs)
+  File "/home/container/app/cogs/prefix.py", line 576, in on_command_error
+    raise error
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/bot.py", line 1376, in invoke
+    await ctx.command.invoke(ctx)
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 1064, in invoke
+    await injected(*ctx.args, **ctx.kwargs)  # type: ignore
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 275, in wrapped
+    raise CommandInvokeError(exc) from exc
+discord.ext.commands.errors.CommandInvokeError: Command raised an exception: ValueError: Nincs elég pénz a tárcában.
+2026-08-09 14:48:50,085 | ERROR | discord.client | Ignoring exception in on_command_error
+Traceback (most recent call last):
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 266, in wrapped
+    ret = await coro(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/app/cogs/prefix.py", line 190, in work
+    reward, job, ready_at = await self.economy.work(ctx.guild.id, ctx.author.id)
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/app/services/economy.py", line 201, in work
+    await self.db.add_wallet(guild_id, user_id, reward, f"work:{job}")
+  File "/home/container/app/database.py", line 479, in add_wallet
+    raise ValueError("Nincs elég pénz a tárcában.")
+ValueError: Nincs elég pénz a tárcában.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/container/.local/lib/python3.13/site-packages/discord/client.py", line 508, in _run_event
+    await coro(*args, **kwargs)
+  File "/home/container/app/cogs/prefix.py", line 576, in on_command_error
+    raise error
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/bot.py", line 1376, in invoke
+    await ctx.command.invoke(ctx)
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 1064, in invoke
+    await injected(*ctx.args, **ctx.kwargs)  # type: ignore
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 275, in wrapped
+    raise CommandInvokeError(exc) from exc
+discord.ext.commands.errors.CommandInvokeError: Command raised an exception: ValueError: Nincs elég pénz a tárcában.
+2026-08-09 14:48:53,106 | ERROR | discord.client | Ignoring exception in on_command_error
+Traceback (most recent call last):
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 266, in wrapped
+    ret = await coro(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/app/cogs/prefix.py", line 190, in work
+    reward, job, ready_at = await self.economy.work(ctx.guild.id, ctx.author.id)
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/app/services/economy.py", line 201, in work
+    await self.db.add_wallet(guild_id, user_id, reward, f"work:{job}")
+  File "/home/container/app/database.py", line 479, in add_wallet
+    raise ValueError("Nincs elég pénz a tárcában.")
+ValueError: Nincs elég pénz a tárcában.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/container/.local/lib/python3.13/site-packages/discord/client.py", line 508, in _run_event
+    await coro(*args, **kwargs)
+  File "/home/container/app/cogs/prefix.py", line 576, in on_command_error
+    raise error
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/bot.py", line 1376, in invoke
+    await ctx.command.invoke(ctx)
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 1064, in invoke
+    await injected(*ctx.args, **ctx.kwargs)  # type: ignore
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 275, in wrapped
+    raise CommandInvokeError(exc) from exc
+discord.ext.commands.errors.CommandInvokeError: Command raised an exception: ValueError: Nincs elég pénz a tárcában.
+2026-08-09 14:49:29,171 | ERROR | discord.client | Ignoring exception in on_command_error
+Traceback (most recent call last):
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 266, in wrapped
+    ret = await coro(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/app/cogs/prefix.py", line 190, in work
+    reward, job, ready_at = await self.economy.work(ctx.guild.id, ctx.author.id)
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/app/services/economy.py", line 201, in work
+    await self.db.add_wallet(guild_id, user_id, reward, f"work:{job}")
+  File "/home/container/app/database.py", line 479, in add_wallet
+    raise ValueError("Nincs elég pénz a tárcában.")
+ValueError: Nincs elég pénz a tárcában.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/container/.local/lib/python3.13/site-packages/discord/client.py", line 508, in _run_event
+    await coro(*args, **kwargs)
+  File "/home/container/app/cogs/prefix.py", line 576, in on_command_error
+    raise error
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/bot.py", line 1376, in invoke
+    await ctx.command.invoke(ctx)
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 1064, in invoke
+    await injected(*ctx.args, **ctx.kwargs)  # type: ignore
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 275, in wrapped
+    raise CommandInvokeError(exc) from exc
+discord.ext.commands.errors.CommandInvokeError: Command raised an exception: ValueError: Nincs elég pénz a tárcában.
+2026-08-09 14:49:55,397 | INFO | vaultbot.events | Következő automatikus event 18.6 perc múlva.
+2026-08-09 14:50:42,068 | ERROR | discord.client | Ignoring exception in on_command_error
+Traceback (most recent call last):
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 266, in wrapped
+    ret = await coro(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/app/cogs/prefix.py", line 190, in work
+    reward, job, ready_at = await self.economy.work(ctx.guild.id, ctx.author.id)
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/app/services/economy.py", line 201, in work
+    await self.db.add_wallet(guild_id, user_id, reward, f"work:{job}")
+  File "/home/container/app/database.py", line 479, in add_wallet
+    raise ValueError("Nincs elég pénz a tárcában.")
+ValueError: Nincs elég pénz a tárcában.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/container/.local/lib/python3.13/site-packages/discord/client.py", line 508, in _run_event
+    await coro(*args, **kwargs)
+  File "/home/container/app/cogs/prefix.py", line 576, in on_command_error
+    raise error
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/bot.py", line 1376, in invoke
+    await ctx.command.invoke(ctx)
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 1064, in invoke
+    await injected(*ctx.args, **ctx.kwargs)  # type: ignore
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 275, in wrapped
+    raise CommandInvokeError(exc) from exc
+discord.ext.commands.errors.CommandInvokeError: Command raised an exception: ValueError: Nincs elég pénz a tárcában.
+2026-08-09 14:51:26,335 | ERROR | discord.client | Ignoring exception in on_command_error
+Traceback (most recent call last):
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 266, in wrapped
+    ret = await coro(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/app/cogs/prefix.py", line 204, in crime
+    success, amount, scenario, ready_at, jail_until = await self.economy.crime(ctx.guild.id, ctx.author.id)
+                                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/app/services/economy.py", line 224, in crime
+    await self.db.add_wallet(guild_id, user_id, amount, f"crime:{scenario}")
+  File "/home/container/app/database.py", line 479, in add_wallet
+    raise ValueError("Nincs elég pénz a tárcában.")
+ValueError: Nincs elég pénz a tárcában.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/container/.local/lib/python3.13/site-packages/discord/client.py", line 508, in _run_event
+    await coro(*args, **kwargs)
+  File "/home/container/app/cogs/prefix.py", line 576, in on_command_error
+    raise error
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/bot.py", line 1376, in invoke
+    await ctx.command.invoke(ctx)
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 1064, in invoke
+    await injected(*ctx.args, **ctx.kwargs)  # type: ignore
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 275, in wrapped
+    raise CommandInvokeError(exc) from exc
+discord.ext.commands.errors.CommandInvokeError: Command raised an exception: ValueError: Nincs elég pénz a tárcában.
+2026-08-09 14:51:55,253 | ERROR | discord.client | Ignoring exception in on_command_error
+Traceback (most recent call last):
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 266, in wrapped
+    ret = await coro(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/app/cogs/prefix.py", line 204, in crime
+    success, amount, scenario, ready_at, jail_until = await self.economy.crime(ctx.guild.id, ctx.author.id)
+                                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/app/services/economy.py", line 224, in crime
+    await self.db.add_wallet(guild_id, user_id, amount, f"crime:{scenario}")
+  File "/home/container/app/database.py", line 479, in add_wallet
+    raise ValueError("Nincs elég pénz a tárcában.")
+ValueError: Nincs elég pénz a tárcában.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/container/.local/lib/python3.13/site-packages/discord/client.py", line 508, in _run_event
+    await coro(*args, **kwargs)
+  File "/home/container/app/cogs/prefix.py", line 576, in on_command_error
+    raise error
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/bot.py", line 1376, in invoke
+    await ctx.command.invoke(ctx)
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 1064, in invoke
+    await injected(*ctx.args, **ctx.kwargs)  # type: ignore
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 275, in wrapped
+    raise CommandInvokeError(exc) from exc
+discord.ext.commands.errors.CommandInvokeError: Command raised an exception: ValueError: Nincs elég pénz a tárcában.
+2026-08-09 14:52:01,921 | ERROR | discord.client | Ignoring exception in on_command_error
+Traceback (most recent call last):
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 266, in wrapped
+    ret = await coro(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/app/cogs/prefix.py", line 204, in crime
+    success, amount, scenario, ready_at, jail_until = await self.economy.crime(ctx.guild.id, ctx.author.id)
+                                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/app/services/economy.py", line 224, in crime
+    await self.db.add_wallet(guild_id, user_id, amount, f"crime:{scenario}")
+  File "/home/container/app/database.py", line 479, in add_wallet
+    raise ValueError("Nincs elég pénz a tárcában.")
+ValueError: Nincs elég pénz a tárcában.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/container/.local/lib/python3.13/site-packages/discord/client.py", line 508, in _run_event
+    await coro(*args, **kwargs)
+  File "/home/container/app/cogs/prefix.py", line 576, in on_command_error
+    raise error
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/bot.py", line 1376, in invoke
+    await ctx.command.invoke(ctx)
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 1064, in invoke
+    await injected(*ctx.args, **ctx.kwargs)  # type: ignore
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 275, in wrapped
+    raise CommandInvokeError(exc) from exc
+discord.ext.commands.errors.CommandInvokeError: Command raised an exception: ValueError: Nincs elég pénz a tárcában.
+2026-08-09 14:54:39,454 | ERROR | discord.client | Ignoring exception in on_command_error
+Traceback (most recent call last):
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 266, in wrapped
+    ret = await coro(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/app/cogs/prefix.py", line 143, in search
+    reward, place, ready_at, dropped = await self.economy.search(ctx.guild.id, ctx.author.id)
+                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/app/services/economy.py", line 137, in search
+    await self.db.add_wallet(guild_id, user_id, reward, f"search:{place}")
+  File "/home/container/app/database.py", line 479, in add_wallet
+    raise ValueError("Nincs elég pénz a tárcában.")
+ValueError: Nincs elég pénz a tárcában.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/container/.local/lib/python3.13/site-packages/discord/client.py", line 508, in _run_event
+    await coro(*args, **kwargs)
+  File "/home/container/app/cogs/prefix.py", line 576, in on_command_error
+    raise error
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/bot.py", line 1376, in invoke
+    await ctx.command.invoke(ctx)
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 1064, in invoke
+    await injected(*ctx.args, **ctx.kwargs)  # type: ignore
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 275, in wrapped
+    raise CommandInvokeError(exc) from exc
+discord.ext.commands.errors.CommandInvokeError: Command raised an exception: ValueError: Nincs elég pénz a tárcában.
+2026-08-09 15:01:51,704 | ERROR | discord.client | Ignoring exception in on_command_error
+Traceback (most recent call last):
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 266, in wrapped
+    ret = await coro(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/app/cogs/prefix.py", line 204, in crime
+    success, amount, scenario, ready_at, jail_until = await self.economy.crime(ctx.guild.id, ctx.author.id)
+                                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/app/services/economy.py", line 224, in crime
+    await self.db.add_wallet(guild_id, user_id, amount, f"crime:{scenario}")
+  File "/home/container/app/database.py", line 479, in add_wallet
+    if new_wallet < 0 and not allow_negative:
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ValueError: Nincs elég pénz a tárcában.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/container/.local/lib/python3.13/site-packages/discord/client.py", line 508, in _run_event
+    await coro(*args, **kwargs)
+  File "/home/container/app/cogs/prefix.py", line 576, in on_command_error
+    view.message = await ctx.send(embed=view.embed(), view=view)
+    ^^^^^^^^^^^
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/bot.py", line 1376, in invoke
+    await ctx.command.invoke(ctx)
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 1064, in invoke
+    await injected(*ctx.args, **ctx.kwargs)  # type: ignore
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 275, in wrapped
+    raise CommandInvokeError(exc) from exc
+discord.ext.commands.errors.CommandInvokeError: Command raised an exception: ValueError: Nincs elég pénz a tárcában.

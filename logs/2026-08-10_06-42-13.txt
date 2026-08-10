@@ -1,0 +1,249 @@
+Defaulting to user installation because normal site-packages is not writeable
+Requirement already satisfied: discord.py==2.7.1 in ./.local/lib/python3.13/site-packages (2.7.1)
+Requirement already satisfied: aiohttp<4,>=3.7.4 in ./.local/lib/python3.13/site-packages (from discord.py==2.7.1) (3.14.3)
+Requirement already satisfied: audioop-lts in ./.local/lib/python3.13/site-packages (from discord.py==2.7.1) (0.2.2)
+Requirement already satisfied: aiohappyeyeballs>=2.5.0 in ./.local/lib/python3.13/site-packages (from aiohttp<4,>=3.7.4->discord.py==2.7.1) (2.7.1)
+Requirement already satisfied: aiosignal>=1.4.0 in ./.local/lib/python3.13/site-packages (from aiohttp<4,>=3.7.4->discord.py==2.7.1) (1.4.0)
+Requirement already satisfied: attrs>=17.3.0 in ./.local/lib/python3.13/site-packages (from aiohttp<4,>=3.7.4->discord.py==2.7.1) (26.1.0)
+Requirement already satisfied: frozenlist>=1.1.1 in ./.local/lib/python3.13/site-packages (from aiohttp<4,>=3.7.4->discord.py==2.7.1) (1.8.0)
+Requirement already satisfied: multidict<7.0,>=4.5 in ./.local/lib/python3.13/site-packages (from aiohttp<4,>=3.7.4->discord.py==2.7.1) (6.7.1)
+Requirement already satisfied: propcache>=0.2.0 in ./.local/lib/python3.13/site-packages (from aiohttp<4,>=3.7.4->discord.py==2.7.1) (0.5.2)
+Requirement already satisfied: yarl<2.0,>=1.17.0 in ./.local/lib/python3.13/site-packages (from aiohttp<4,>=3.7.4->discord.py==2.7.1) (1.24.5)
+Requirement already satisfied: idna>=2.0 in ./.local/lib/python3.13/site-packages (from yarl<2.0,>=1.17.0->aiohttp<4,>=3.7.4->discord.py==2.7.1) (3.18)
+
+[notice] A new release of pip is available: 25.0.1 -> 26.2.1
+[notice] To update, run: python3.13 -m pip install --upgrade pip
+Defaulting to user installation because normal site-packages is not writeable
+Requirement already satisfied: python-dotenv==1.1.1 in ./.local/lib/python3.13/site-packages (1.1.1)
+
+[notice] A new release of pip is available: 25.0.1 -> 26.2.1
+[notice] To update, run: python3.13 -m pip install --upgrade pip
+Defaulting to user installation because normal site-packages is not writeable
+Requirement already satisfied: aiosqlite==0.21.0 in ./.local/lib/python3.13/site-packages (0.21.0)
+Requirement already satisfied: typing_extensions>=4.0 in ./.local/lib/python3.13/site-packages (from aiosqlite==0.21.0) (4.16.0)
+
+[notice] A new release of pip is available: 25.0.1 -> 26.2.1
+[notice] To update, run: python3.13 -m pip install --upgrade pip
+2026-08-10 06:42:16,435 | WARNING | discord.client | PyNaCl is not installed, voice will NOT be supported
+2026-08-10 06:42:16,435 | WARNING | discord.client | davey is not installed, voice will NOT be supported
+2026-08-10 06:42:16,435 | INFO | discord.client | logging in using static token
+2026-08-10 06:42:17,948 | INFO | vaultbot | 100 tesztparancs szinkronizálva. A régi globális másolatok törölve.
+2026-08-10 06:42:18,535 | INFO | discord.gateway | Shard ID None has connected to Gateway (Session ID: 581b259f2e0b29bedc52580a40b07497).
+2026-08-10 06:42:20,544 | INFO | vaultbot.events | Auto event legkorábban 51.2 perc múlva; aktivitás kell: 20 üzenet / 4 user / 30 perc.
+2026-08-10 06:42:20,545 | INFO | vaultbot | Bejelentkezve: Yoru#3983 (1535022334048604264)
+2026-08-10 06:46:50,413 | ERROR | discord.client | Ignoring exception in on_message
+Traceback (most recent call last):
+  File "/home/container/.local/lib/python3.13/site-packages/discord/client.py", line 508, in _run_event
+    await coro(*args, **kwargs)
+  File "/home/container/app/main.py", line 238, in on_message
+    await self.process_commands(message)
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/bot.py", line 1418, in process_commands
+    await self.invoke(ctx)  # type: ignore
+    ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/bot.py", line 1380, in invoke
+    await ctx.command.dispatch_error(ctx, exc)
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 683, in dispatch_error
+    await wrapped(ctx, error)
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 248, in wrapped
+    ret = await coro(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/app/cogs/automod.py", line 845, in cog_command_error
+    raise error
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/bot.py", line 1376, in invoke
+    await ctx.command.invoke(ctx)
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 1680, in invoke
+    await ctx.invoked_subcommand.invoke(ctx)
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 1056, in invoke
+    await self.prepare(ctx)
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 973, in prepare
+    await self._parse_arguments(ctx)
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 880, in _parse_arguments
+    transformed = await self.transform(ctx, param, attachments)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 746, in transform
+    raise exc
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 740, in transform
+    ctx.current_argument = argument = view.get_quoted_word()
+                                      ~~~~~~~~~~~~~~~~~~~~^^
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/view.py", line 177, in get_quoted_word
+    raise UnexpectedQuoteError(current)
+discord.ext.commands.errors.UnexpectedQuoteError: Unexpected quote mark, '»', in non-quoted string
+2026-08-10 06:46:50,426 | ERROR | discord.client | Ignoring exception in on_command_error
+Traceback (most recent call last):
+  File "/home/container/.local/lib/python3.13/site-packages/discord/client.py", line 508, in _run_event
+    await coro(*args, **kwargs)
+  File "/home/container/app/cogs/prefix.py", line 590, in on_command_error
+    raise error
+  File "/home/container/.local/lib/python3.13/site-packages/discord/client.py", line 508, in _run_event
+    await coro(*args, **kwargs)
+  File "/home/container/app/main.py", line 238, in on_message
+    await self.process_commands(message)
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/bot.py", line 1418, in process_commands
+    await self.invoke(ctx)  # type: ignore
+    ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/bot.py", line 1380, in invoke
+    await ctx.command.dispatch_error(ctx, exc)
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 683, in dispatch_error
+    await wrapped(ctx, error)
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 248, in wrapped
+    ret = await coro(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/app/cogs/automod.py", line 845, in cog_command_error
+    raise error
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/bot.py", line 1376, in invoke
+    await ctx.command.invoke(ctx)
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 1680, in invoke
+    await ctx.invoked_subcommand.invoke(ctx)
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 1056, in invoke
+    await self.prepare(ctx)
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 973, in prepare
+    await self._parse_arguments(ctx)
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 880, in _parse_arguments
+    transformed = await self.transform(ctx, param, attachments)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 746, in transform
+    raise exc
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 740, in transform
+    ctx.current_argument = argument = view.get_quoted_word()
+                                      ~~~~~~~~~~~~~~~~~~~~^^
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/view.py", line 177, in get_quoted_word
+    raise UnexpectedQuoteError(current)
+discord.ext.commands.errors.UnexpectedQuoteError: Unexpected quote mark, '»', in non-quoted string
+2026-08-10 07:30:36,324 | ERROR | discord.client | Ignoring exception in on_message
+Traceback (most recent call last):
+  File "/home/container/.local/lib/python3.13/site-packages/discord/client.py", line 508, in _run_event
+    await coro(*args, **kwargs)
+  File "/home/container/app/main.py", line 238, in on_message
+    await self.process_commands(message)
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/bot.py", line 1418, in process_commands
+    await self.invoke(ctx)  # type: ignore
+    ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/bot.py", line 1380, in invoke
+    await ctx.command.dispatch_error(ctx, exc)
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 683, in dispatch_error
+    await wrapped(ctx, error)
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 248, in wrapped
+    ret = await coro(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/app/cogs/automod.py", line 845, in cog_command_error
+    raise error
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/bot.py", line 1376, in invoke
+    await ctx.command.invoke(ctx)
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 1680, in invoke
+    await ctx.invoked_subcommand.invoke(ctx)
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 1056, in invoke
+    await self.prepare(ctx)
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 973, in prepare
+    await self._parse_arguments(ctx)
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 880, in _parse_arguments
+    transformed = await self.transform(ctx, param, attachments)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 746, in transform
+    raise exc
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 740, in transform
+    ctx.current_argument = argument = view.get_quoted_word()
+                                      ~~~~~~~~~~~~~~~~~~~~^^
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/view.py", line 177, in get_quoted_word
+    raise UnexpectedQuoteError(current)
+discord.ext.commands.errors.UnexpectedQuoteError: Unexpected quote mark, '»', in non-quoted string
+2026-08-10 07:30:36,325 | ERROR | discord.client | Ignoring exception in on_command_error
+Traceback (most recent call last):
+  File "/home/container/.local/lib/python3.13/site-packages/discord/client.py", line 508, in _run_event
+    await coro(*args, **kwargs)
+  File "/home/container/app/cogs/prefix.py", line 590, in on_command_error
+    raise error
+  File "/home/container/.local/lib/python3.13/site-packages/discord/client.py", line 508, in _run_event
+    await coro(*args, **kwargs)
+  File "/home/container/app/main.py", line 238, in on_message
+    await self.process_commands(message)
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/bot.py", line 1418, in process_commands
+    await self.invoke(ctx)  # type: ignore
+    ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/bot.py", line 1380, in invoke
+    await ctx.command.dispatch_error(ctx, exc)
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 683, in dispatch_error
+    await wrapped(ctx, error)
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 248, in wrapped
+    ret = await coro(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/app/cogs/automod.py", line 845, in cog_command_error
+    raise error
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/bot.py", line 1376, in invoke
+    await ctx.command.invoke(ctx)
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 1680, in invoke
+    await ctx.invoked_subcommand.invoke(ctx)
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 1056, in invoke
+    await self.prepare(ctx)
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 973, in prepare
+    await self._parse_arguments(ctx)
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 880, in _parse_arguments
+    transformed = await self.transform(ctx, param, attachments)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 746, in transform
+    raise exc
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 740, in transform
+    ctx.current_argument = argument = view.get_quoted_word()
+                                      ~~~~~~~~~~~~~~~~~~~~^^
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/view.py", line 177, in get_quoted_word
+    raise UnexpectedQuoteError(current)
+discord.ext.commands.errors.UnexpectedQuoteError: Unexpected quote mark, '»', in non-quoted string
+2026-08-10 07:33:30,261 | INFO | vaultbot.events | Auto event timer lejárt, de nincs elég aktivitás guild=1533775190842933408 (4/20 üzenet, 3/4 user). Várakozás.
+2026-08-10 07:46:20,514 | INFO | vaultbot.events | Auto event aktivitás teljesült guild=1533775190842933408: 20 üzenet, 4 user.
+2026-08-10 07:46:21,310 | INFO | vaultbot.events | Auto event legkorábban 33.2 perc múlva; aktivitás kell: 20 üzenet / 4 user / 30 perc.
+2026-08-10 08:01:36,519 | INFO | discord.gateway | Shard ID None has successfully RESUMED session 581b259f2e0b29bedc52580a40b07497.
+2026-08-10 08:05:00,718 | INFO | vaultbot.events | Auto event aktivitás teljesült guild=1533775190842933408: 107 üzenet, 4 user.
+2026-08-10 08:19:32,452 | INFO | vaultbot.events | Auto event legkorábban 45.5 perc múlva; aktivitás kell: 20 üzenet / 4 user / 30 perc.
+2026-08-10 09:05:04,073 | INFO | vaultbot.events | Auto event timer lejárt, de nincs elég aktivitás guild=1533775190842933408 (11/20 üzenet, 4/4 user). Várakozás.
+2026-08-10 09:09:07,058 | INFO | discord.gateway | Shard ID None has successfully RESUMED session 581b259f2e0b29bedc52580a40b07497.
+2026-08-10 10:35:38,705 | INFO | vaultbot.events | Auto event aktivitás teljesült guild=1533775190842933408: 20 üzenet, 6 user.
+2026-08-10 10:35:39,472 | INFO | vaultbot.events | Auto event legkorábban 25.0 perc múlva; aktivitás kell: 20 üzenet / 4 user / 30 perc.
+2026-08-10 10:38:37,881 | INFO | discord.gateway | Shard ID None has successfully RESUMED session 581b259f2e0b29bedc52580a40b07497.
+2026-08-10 10:45:19,530 | INFO | vaultbot.events | Auto event aktivitás teljesült guild=1533775190842933408: 20 üzenet, 6 user.
+2026-08-10 11:00:42,611 | INFO | vaultbot.events | Auto event legkorábban 32.5 perc múlva; aktivitás kell: 20 üzenet / 4 user / 30 perc.
+2026-08-10 11:33:13,347 | INFO | vaultbot.events | Auto event timer lejárt, de nincs elég aktivitás guild=1533775190842933408 (10/20 üzenet, 3/4 user). Várakozás.
+2026-08-10 12:09:34,059 | INFO | vaultbot.events | Auto event aktivitás teljesült guild=1533775190842933408: 20 üzenet, 4 user.
+2026-08-10 12:09:34,774 | INFO | vaultbot.events | Auto event legkorábban 22.5 perc múlva; aktivitás kell: 20 üzenet / 4 user / 30 perc.
+2026-08-10 12:11:57,285 | INFO | vaultbot.events | Auto event aktivitás teljesült guild=1533775190842933408: 21 üzenet, 4 user.
+2026-08-10 12:32:02,739 | INFO | vaultbot.events | Auto event legkorábban 52.6 perc múlva; aktivitás kell: 20 üzenet / 4 user / 30 perc.
+2026-08-10 12:33:56,126 | INFO | vaultbot.events | Auto event aktivitás teljesült guild=1533775190842933408: 20 üzenet, 4 user.
+2026-08-10 13:24:37,343 | INFO | vaultbot.events | Auto event legkorábban 33.3 perc múlva; aktivitás kell: 20 üzenet / 4 user / 30 perc.
+2026-08-10 13:30:32,902 | INFO | vaultbot.events | Auto event aktivitás teljesült guild=1533775190842933408: 20 üzenet, 5 user.
+2026-08-10 13:46:20,476 | INFO | discord.gateway | Shard ID None has successfully RESUMED session 581b259f2e0b29bedc52580a40b07497.
+2026-08-10 13:57:54,235 | INFO | vaultbot.events | Auto event legkorábban 59.7 perc múlva; aktivitás kell: 20 üzenet / 4 user / 30 perc.
+2026-08-10 14:22:55,407 | INFO | vaultbot.events | Auto event aktivitás teljesült guild=1533775190842933408: 20 üzenet, 4 user.
+2026-08-10 14:57:39,154 | INFO | vaultbot.events | Auto event legkorábban 65.6 perc múlva; aktivitás kell: 20 üzenet / 4 user / 30 perc.
+2026-08-10 15:00:38,836 | INFO | vaultbot.events | Auto event aktivitás teljesült guild=1533775190842933408: 20 üzenet, 5 user.
+2026-08-10 15:28:07,473 | INFO | discord.gateway | Shard ID None has successfully RESUMED session 581b259f2e0b29bedc52580a40b07497.
+2026-08-10 16:03:16,819 | INFO | vaultbot.events | Auto event legkorábban 23.3 perc múlva; aktivitás kell: 20 üzenet / 4 user / 30 perc.
+2026-08-10 16:19:38,787 | INFO | vaultbot.events | Auto event aktivitás teljesült guild=1533775190842933408: 20 üzenet, 4 user.
+2026-08-10 16:26:37,170 | INFO | vaultbot.events | Auto event legkorábban 73.2 perc múlva; aktivitás kell: 20 üzenet / 4 user / 30 perc.
+2026-08-10 16:33:35,140 | ERROR | discord.client | Ignoring exception in on_command_error
+Traceback (most recent call last):
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 266, in wrapped
+    ret = await coro(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/app/cogs/community.py", line 527, in open_blackmarket_admin
+    await ctx.message.add_reaction("✅")
+  File "/home/container/.local/lib/python3.13/site-packages/discord/message.py", line 1543, in add_reaction
+    await self._state.http.add_reaction(self.channel.id, self.id, emoji)
+  File "/home/container/.local/lib/python3.13/site-packages/discord/http.py", line 774, in request
+    raise NotFound(response, data)
+discord.errors.NotFound: 404 Not Found (error code: 10008): Unknown Message
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/container/.local/lib/python3.13/site-packages/discord/client.py", line 508, in _run_event
+    await coro(*args, **kwargs)
+  File "/home/container/app/cogs/prefix.py", line 590, in on_command_error
+    raise error
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/bot.py", line 1376, in invoke
+    await ctx.command.invoke(ctx)
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 1064, in invoke
+    await injected(*ctx.args, **ctx.kwargs)  # type: ignore
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 275, in wrapped
+    raise CommandInvokeError(exc) from exc
+discord.ext.commands.errors.CommandInvokeError: Command raised an exception: NotFound: 404 Not Found (error code: 10008): Unknown Message
+2026-08-10 16:39:30,314 | INFO | vaultbot.events | Auto event aktivitás teljesült guild=1533775190842933408: 20 üzenet, 5 user.
+2026-08-10 16:56:54,419 | INFO | discord.gateway | Shard ID None has successfully RESUMED session 581b259f2e0b29bedc52580a40b07497.

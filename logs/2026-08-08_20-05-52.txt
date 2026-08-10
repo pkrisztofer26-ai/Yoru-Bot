@@ -1,0 +1,73 @@
+Defaulting to user installation because normal site-packages is not writeable
+Collecting discord.py==2.7.1
+  Downloading discord_py-2.7.1-py3-none-any.whl.metadata (7.5 kB)
+Collecting aiohttp<4,>=3.7.4 (from discord.py==2.7.1)
+  Downloading aiohttp-3.14.3-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (8.3 kB)
+Collecting audioop-lts (from discord.py==2.7.1)
+  Downloading audioop_lts-0.2.2-cp313-abi3-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl.metadata (2.0 kB)
+Collecting aiohappyeyeballs>=2.5.0 (from aiohttp<4,>=3.7.4->discord.py==2.7.1)
+  Downloading aiohappyeyeballs-2.7.1-py3-none-any.whl.metadata (5.9 kB)
+Collecting aiosignal>=1.4.0 (from aiohttp<4,>=3.7.4->discord.py==2.7.1)
+  Downloading aiosignal-1.4.0-py3-none-any.whl.metadata (3.7 kB)
+Collecting attrs>=17.3.0 (from aiohttp<4,>=3.7.4->discord.py==2.7.1)
+  Downloading attrs-26.1.0-py3-none-any.whl.metadata (8.8 kB)
+Collecting frozenlist>=1.1.1 (from aiohttp<4,>=3.7.4->discord.py==2.7.1)
+  Downloading frozenlist-1.8.0-cp313-cp313-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl.metadata (20 kB)
+Collecting multidict<7.0,>=4.5 (from aiohttp<4,>=3.7.4->discord.py==2.7.1)
+  Downloading multidict-6.7.1-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (5.3 kB)
+Collecting propcache>=0.2.0 (from aiohttp<4,>=3.7.4->discord.py==2.7.1)
+  Downloading propcache-0.5.2-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (16 kB)
+Collecting yarl<2.0,>=1.17.0 (from aiohttp<4,>=3.7.4->discord.py==2.7.1)
+  Downloading yarl-1.24.5-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (103 kB)
+Collecting idna>=2.0 (from yarl<2.0,>=1.17.0->aiohttp<4,>=3.7.4->discord.py==2.7.1)
+  Downloading idna-3.18-py3-none-any.whl.metadata (6.1 kB)
+Downloading discord_py-2.7.1-py3-none-any.whl (1.2 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.2/1.2 MB 61.1 MB/s eta 0:00:00
+Downloading aiohttp-3.14.3-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (1.8 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.8/1.8 MB 74.5 MB/s eta 0:00:00
+Downloading audioop_lts-0.2.2-cp313-abi3-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl (85 kB)
+Downloading aiohappyeyeballs-2.7.1-py3-none-any.whl (15 kB)
+Downloading aiosignal-1.4.0-py3-none-any.whl (7.5 kB)
+Downloading attrs-26.1.0-py3-none-any.whl (67 kB)
+Downloading frozenlist-1.8.0-cp313-cp313-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl (234 kB)
+Downloading multidict-6.7.1-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (254 kB)
+Downloading propcache-0.5.2-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (61 kB)
+Downloading yarl-1.24.5-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (110 kB)
+Downloading idna-3.18-py3-none-any.whl (65 kB)
+Installing collected packages: propcache, multidict, idna, frozenlist, audioop-lts, attrs, aiohappyeyeballs, yarl, aiosignal, aiohttp, discord.py
+  WARNING: The script idna is installed in '/home/container/.local/bin' which is not on PATH.
+  Consider adding this directory to PATH or, if you prefer to suppress this warning, use --no-warn-script-location.
+Successfully installed aiohappyeyeballs-2.7.1 aiohttp-3.14.3 aiosignal-1.4.0 attrs-26.1.0 audioop-lts-0.2.2 discord.py-2.7.1 frozenlist-1.8.0 idna-3.18 multidict-6.7.1 propcache-0.5.2 yarl-1.24.5
+
+[notice] A new release of pip is available: 25.0.1 -> 26.2.1
+[notice] To update, run: python3.13 -m pip install --upgrade pip
+Defaulting to user installation because normal site-packages is not writeable
+Collecting python-dotenv==1.1.1
+  Downloading python_dotenv-1.1.1-py3-none-any.whl.metadata (24 kB)
+Downloading python_dotenv-1.1.1-py3-none-any.whl (20 kB)
+Installing collected packages: python-dotenv
+  WARNING: The script dotenv is installed in '/home/container/.local/bin' which is not on PATH.
+  Consider adding this directory to PATH or, if you prefer to suppress this warning, use --no-warn-script-location.
+Successfully installed python-dotenv-1.1.1
+
+[notice] A new release of pip is available: 25.0.1 -> 26.2.1
+[notice] To update, run: python3.13 -m pip install --upgrade pip
+Defaulting to user installation because normal site-packages is not writeable
+Collecting aiosqlite==0.21.0
+  Downloading aiosqlite-0.21.0-py3-none-any.whl.metadata (4.3 kB)
+Collecting typing_extensions>=4.0 (from aiosqlite==0.21.0)
+  Downloading typing_extensions-4.16.0-py3-none-any.whl.metadata (3.3 kB)
+Downloading aiosqlite-0.21.0-py3-none-any.whl (15 kB)
+Downloading typing_extensions-4.16.0-py3-none-any.whl (45 kB)
+Installing collected packages: typing_extensions, aiosqlite
+Successfully installed aiosqlite-0.21.0 typing_extensions-4.16.0
+
+[notice] A new release of pip is available: 25.0.1 -> 26.2.1
+[notice] To update, run: python3.13 -m pip install --upgrade pip
+2026-08-08 20:05:57,234 | WARNING | discord.client | PyNaCl is not installed, voice will NOT be supported
+2026-08-08 20:05:57,234 | WARNING | discord.client | davey is not installed, voice will NOT be supported
+2026-08-08 20:05:57,235 | INFO | discord.client | logging in using static token
+2026-08-08 20:05:58,133 | INFO | vaultbot | 93 tesztparancs szinkronizálva. A régi globális másolatok törölve.
+2026-08-08 20:05:58,517 | INFO | discord.gateway | Shard ID None has connected to Gateway (Session ID: bbd0a78f9a2a7c29bb0871df87315f00).
+2026-08-08 20:06:00,529 | INFO | vaultbot.events | Következő automatikus event 52.9 perc múlva.
+2026-08-08 20:06:00,529 | INFO | vaultbot | Bejelentkezve: Yoru#3983 (1535022334048604264)

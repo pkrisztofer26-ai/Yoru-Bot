@@ -1,0 +1,62 @@
+Defaulting to user installation because normal site-packages is not writeable
+Requirement already satisfied: discord.py==2.7.1 in ./.local/lib/python3.13/site-packages (2.7.1)
+Requirement already satisfied: aiohttp<4,>=3.7.4 in ./.local/lib/python3.13/site-packages (from discord.py==2.7.1) (3.14.3)
+Requirement already satisfied: audioop-lts in ./.local/lib/python3.13/site-packages (from discord.py==2.7.1) (0.2.2)
+Requirement already satisfied: aiohappyeyeballs>=2.5.0 in ./.local/lib/python3.13/site-packages (from aiohttp<4,>=3.7.4->discord.py==2.7.1) (2.7.1)
+Requirement already satisfied: aiosignal>=1.4.0 in ./.local/lib/python3.13/site-packages (from aiohttp<4,>=3.7.4->discord.py==2.7.1) (1.4.0)
+Requirement already satisfied: attrs>=17.3.0 in ./.local/lib/python3.13/site-packages (from aiohttp<4,>=3.7.4->discord.py==2.7.1) (26.1.0)
+Requirement already satisfied: frozenlist>=1.1.1 in ./.local/lib/python3.13/site-packages (from aiohttp<4,>=3.7.4->discord.py==2.7.1) (1.8.0)
+Requirement already satisfied: multidict<7.0,>=4.5 in ./.local/lib/python3.13/site-packages (from aiohttp<4,>=3.7.4->discord.py==2.7.1) (6.7.1)
+Requirement already satisfied: propcache>=0.2.0 in ./.local/lib/python3.13/site-packages (from aiohttp<4,>=3.7.4->discord.py==2.7.1) (0.5.2)
+Requirement already satisfied: yarl<2.0,>=1.17.0 in ./.local/lib/python3.13/site-packages (from aiohttp<4,>=3.7.4->discord.py==2.7.1) (1.24.5)
+Requirement already satisfied: idna>=2.0 in ./.local/lib/python3.13/site-packages (from yarl<2.0,>=1.17.0->aiohttp<4,>=3.7.4->discord.py==2.7.1) (3.18)
+
+[notice] A new release of pip is available: 25.0.1 -> 26.2.1
+[notice] To update, run: python3.13 -m pip install --upgrade pip
+Defaulting to user installation because normal site-packages is not writeable
+Requirement already satisfied: python-dotenv==1.1.1 in ./.local/lib/python3.13/site-packages (1.1.1)
+
+[notice] A new release of pip is available: 25.0.1 -> 26.2.1
+[notice] To update, run: python3.13 -m pip install --upgrade pip
+Defaulting to user installation because normal site-packages is not writeable
+Requirement already satisfied: aiosqlite==0.21.0 in ./.local/lib/python3.13/site-packages (0.21.0)
+Requirement already satisfied: typing_extensions>=4.0 in ./.local/lib/python3.13/site-packages (from aiosqlite==0.21.0) (4.16.0)
+
+[notice] A new release of pip is available: 25.0.1 -> 26.2.1
+[notice] To update, run: python3.13 -m pip install --upgrade pip
+2026-08-10 17:43:26,107 | WARNING | discord.client | PyNaCl is not installed, voice will NOT be supported
+2026-08-10 17:43:26,107 | WARNING | discord.client | davey is not installed, voice will NOT be supported
+2026-08-10 17:43:26,107 | INFO | discord.client | logging in using static token
+2026-08-10 17:43:27,324 | INFO | vaultbot | 82 tesztparancs szinkronizálva. A régi globális másolatok törölve.
+2026-08-10 17:43:27,712 | INFO | discord.gateway | Shard ID None has connected to Gateway (Session ID: 2a9003dd13603f136732ecca471ee9c2).
+2026-08-10 17:43:29,718 | INFO | vaultbot.events | Auto event legkorábban 17.1 perc múlva; aktivitás kell: 20 üzenet / 4 user / 30 perc.
+2026-08-10 17:43:29,718 | INFO | vaultbot | Bejelentkezve: Yoru#3983 (1535022334048604264)
+2026-08-10 17:50:25,396 | ERROR | discord.client | Ignoring exception in on_command_error
+Traceback (most recent call last):
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 266, in wrapped
+    ret = await coro(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/app/cogs/community.py", line 527, in open_blackmarket_admin
+    await ctx.message.add_reaction("✅")
+  File "/home/container/.local/lib/python3.13/site-packages/discord/message.py", line 1543, in add_reaction
+    await self._state.http.add_reaction(self.channel.id, self.id, emoji)
+  File "/home/container/.local/lib/python3.13/site-packages/discord/http.py", line 774, in request
+    raise NotFound(response, data)
+discord.errors.NotFound: 404 Not Found (error code: 10008): Unknown Message
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/container/.local/lib/python3.13/site-packages/discord/client.py", line 508, in _run_event
+    await coro(*args, **kwargs)
+  File "/home/container/app/cogs/prefix.py", line 590, in on_command_error
+    raise error
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/bot.py", line 1376, in invoke
+    await ctx.command.invoke(ctx)
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 1064, in invoke
+    await injected(*ctx.args, **ctx.kwargs)  # type: ignore
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/container/.local/lib/python3.13/site-packages/discord/ext/commands/core.py", line 275, in wrapped
+    raise CommandInvokeError(exc) from exc
+discord.ext.commands.errors.CommandInvokeError: Command raised an exception: NotFound: 404 Not Found (error code: 10008): Unknown Message
+2026-08-10 17:54:31,378 | INFO | vaultbot.events | Auto event aktivitás teljesült guild=1533775190842933408: 20 üzenet, 6 user.
