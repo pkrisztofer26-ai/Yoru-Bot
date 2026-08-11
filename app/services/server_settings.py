@@ -67,7 +67,7 @@ class ServerSettingsService:
 
     async def get_bool(self, guild_id: int, key: str, default: bool = False) -> bool:
         raw = await self.db.get_guild_state(guild_id, key)
-        if raw is None:
+        if raw is None or not raw.strip():
             return default
         return raw == "1"
 

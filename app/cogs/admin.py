@@ -7,6 +7,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from app.database import Database
+from app.services.economy_events_settings import EconomyEventsSettingsService
 from app.ui import base_embed, money
 
 
@@ -24,47 +25,50 @@ class AdminCog(commands.Cog):
     def __init__(self, bot: commands.Bot, db: Database) -> None:
         self.bot = bot
         self.db = db
+        self.guild_settings = EconomyEventsSettingsService(db)
 
     async def _config_embed(self, guild: discord.Guild) -> discord.Embed:
         settings = self.bot.settings  # type: ignore[attr-defined]
+        await self.guild_settings.prepare_currency(guild.id)
+        event_cfg = await self.guild_settings.get_event_config(guild.id, settings)
         users, wallets, banks, richest = await self.db.economy_summary(guild.id)
         effects = await self.db.list_guild_effects(guild.id)
         embed = base_embed("⚙️ Yoru szerverbeállítások")
-        embed.add_field(name="🎁 Event csatorna", value=(f"<#{settings.event_channel_id}>" if settings.event_channel_id else "Nincs beállítva"), inline=True)
-        embed.add_field(name="🤖 Auto event", value="✅ Bekapcsolva" if settings.auto_events_enabled else "❌ Kikapcsolva", inline=True)
-        embed.add_field(
-            name="⏱️ Auto intervallum",
-            value=f"{_duration_label(settings.auto_event_min_hours)} – {_duration_label(settings.auto_event_max_hours)}",
-            inline=True,
-        )
+        embed.add_field(name="💰 Economy", value="✅ Bekapcsolva" if await self.guild_settings.get_economy_enabled(guild.id) else "❌ Kikapcsolva", inline=True)
+        eco_channels = await self.guild_settings.get_economy_channel_ids(guild.id)
+        eco_categories = await self.guild_settings.get_economy_category_ids(guild.id)
+        if eco_channels or eco_categories:
+            eco_places = f"{len(eco_channels)} csatorna • {len(eco_categories)} kategória"
+        else:
+            eco_places = "Minden csatorna"
+        embed.add_field(name="💬 Economy helyek", value=eco_places, inline=True)
+        embed.add_field(name="🎁 Event csatorna", value=(f"<#{event_cfg.channel_id}>" if event_cfg.channel_id else "Nincs beállítva"), inline=True)
+        embed.add_field(name="🤖 Auto event", value="✅ Bekapcsolva" if event_cfg.auto_enabled else "❌ Kikapcsolva", inline=True)
+        embed.add_field(name="⏱️ Auto intervallum", value=f"{_duration_label(event_cfg.min_hours)} – {_duration_label(event_cfg.max_hours)}", inline=True)
 
         event_cog = self.bot.get_cog("EventCog")
         activity_status = None
         if event_cog is not None:
+            runtime = getattr(event_cog, "get_runtime_config", None)
+            if callable(runtime):
+                await runtime(guild.id)
             getter = getattr(event_cog, "get_activity_status", None)
             if callable(getter):
                 activity_status = getter(guild.id)
         if activity_status:
             state = "🟢 Felfegyverezve" if activity_status["armed"] else "🟡 Gyűjtés"
             activity_value = (
-                f"{state}\n"
-                f"**{activity_status['messages']}/{activity_status['required_messages']}** üzenet • "
+                f"{state}\n**{activity_status['messages']}/{activity_status['required_messages']}** üzenet • "
                 f"**{activity_status['users']}/{activity_status['required_users']}** user\n"
-                f"{activity_status['window_minutes']} perc ablak • "
-                f"{activity_status['user_cooldown_seconds']} mp/user"
+                f"{activity_status['window_minutes']} perc ablak • {activity_status['user_cooldown_seconds']} mp/user"
             )
         else:
-            activity_value = (
-                f"**{settings.auto_event_activity_messages}** üzenet • "
-                f"**{settings.auto_event_activity_min_users}** user\n"
-                f"{settings.auto_event_activity_window_minutes} perc ablak • "
-                f"{settings.auto_event_activity_user_cooldown_seconds} mp/user"
-            )
+            activity_value = f"**{event_cfg.activity_messages}** üzenet • **{event_cfg.activity_min_users}** user\n{event_cfg.activity_window_minutes} perc ablak • {event_cfg.activity_user_cooldown_seconds} mp/user"
         embed.add_field(name="💬 Event aktivitás", value=activity_value, inline=False)
-        embed.add_field(name="🎁 Auto Láda", value=f"{money(settings.auto_safe_min_reward)} – {money(settings.auto_safe_max_reward)}", inline=True)
-        embed.add_field(name="☠️ Auto HH belépő", value=f"{money(settings.auto_bomb_min_entry)} – {money(settings.auto_bomb_max_entry)}", inline=True)
-        embed.add_field(name="⏳ Nevezési idő", value=f"{settings.auto_join_seconds} mp", inline=True)
-        embed.add_field(name="💥 HH köridő", value=f"{settings.auto_bomb_round_seconds} mp", inline=True)
+        embed.add_field(name="🎁 Auto Láda", value=f"{money(event_cfg.safe_min_reward)} – {money(event_cfg.safe_max_reward)}", inline=True)
+        embed.add_field(name="☠️ Auto HH belépő", value=f"{money(event_cfg.bomb_min_entry)} – {money(event_cfg.bomb_max_entry)}", inline=True)
+        embed.add_field(name="⏳ Nevezési idő", value=f"{event_cfg.join_seconds} mp", inline=True)
+        embed.add_field(name="💥 HH köridő", value=f"{event_cfg.bomb_round_seconds} mp", inline=True)
         embed.add_field(name="👥 Economy userek", value=str(users), inline=True)
         embed.add_field(name="💵 Tárcák összesen", value=money(wallets), inline=True)
         embed.add_field(name="🏦 Bankok összesen", value=money(banks), inline=True)

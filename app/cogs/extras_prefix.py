@@ -15,6 +15,24 @@ class ExtrasPrefixCog(commands.Cog):
         self.extras = extras
         self.economy = economy
 
+    _FEATURES = {
+        "weekly": "weekly", "monthly": "monthly", "interest": "interest",
+        "scratch": "economy", "giveitem": "economy",
+        "chickenfight": "gambling", "highlow": "gambling", "rps": "gambling",
+    }
+
+    async def cog_before_invoke(self, ctx: commands.Context) -> None:
+        if ctx.guild is None or ctx.command is None:
+            return
+        feature = self._FEATURES.get(ctx.command.name)
+        if feature is None:
+            return
+        try:
+            await self.economy.require_access(ctx.guild.id, feature, ctx.channel.id, getattr(ctx.channel, "category_id", None))
+        except ValueError as error:
+            await ctx.send(embed=error_embed(ctx.author, str(error)))
+            raise commands.CheckFailure(str(error)) from error
+
     @commands.command(name="weekly", aliases=["wk", "week"])
     @commands.guild_only()
     async def weekly(self, ctx: commands.Context) -> None:
@@ -86,6 +104,8 @@ class ExtrasPrefixCog(commands.Cog):
         embed.add_field(name="Eredmény", value=(f"✅ **+{money(amount)}**" if won else f"❌ **-{money(amount)}**"), inline=True)
         embed.add_field(name="💵 Kifizetés", value=f"**{money(payout)}**", inline=True)
         embed.add_field(name="💰 Egyenleg", value=f"**{money(wallet)}**", inline=False)
+        if not won:
+            embed.add_field(name="🐔 Chicken", value="**A Chickened elpusztult a csatában.** Vegyél újat a shopból a következő harchoz.", inline=False)
         await ctx.send(embed=embed)
 
     @commands.command(name="highlow", aliases=["hl"])
@@ -101,7 +121,7 @@ class ExtrasPrefixCog(commands.Cog):
         embed = player_embed("🃏 High / Low", ctx.author, description=f"A húzott lap: **{card}**", color=color)
         embed.add_field(name="🎯 Tipp", value=f"**{choice.title()}**", inline=True)
         embed.add_field(name="🎟️ Tét", value=f"**{money(parsed)}**", inline=True)
-        result_text = "🤝 **$0**" if result == "tie" else (f"✅ **+{money(amount)}**" if result == "win" else f"❌ **-{money(amount)}**")
+        result_text = f"🤝 **{money(0)}**" if result == "tie" else (f"✅ **+{money(amount)}**" if result == "win" else f"❌ **-{money(amount)}**")
         payout = parsed if result == "tie" else (parsed + amount if result == "win" else 0)
         embed.add_field(name="Eredmény", value=result_text, inline=True)
         embed.add_field(name="💵 Kifizetés", value=f"**{money(payout)}**", inline=True)
@@ -132,7 +152,7 @@ class ExtrasPrefixCog(commands.Cog):
         embed.add_field(name="Te", value=f"{icons[player]} **{player.title()}**", inline=True)
         embed.add_field(name="Yoru", value=f"{icons[bot]} **{bot.title()}**", inline=True)
         embed.add_field(name="🎟️ Tét", value=f"**{money(parsed)}**", inline=True)
-        result_text = "🤝 **Döntetlen • $0**" if profit == 0 else (f"✅ **+{money(profit)}**" if profit > 0 else f"❌ **-{money(abs(profit))}**")
+        result_text = f"🤝 **Döntetlen • {money(0)}**" if profit == 0 else (f"✅ **+{money(profit)}**" if profit > 0 else f"❌ **-{money(abs(profit))}**")
         payout = parsed + profit if profit >= 0 else 0
         embed.add_field(name="Eredmény", value=result_text, inline=True)
         embed.add_field(name="💵 Kifizetés", value=f"**{money(payout)}**", inline=True)

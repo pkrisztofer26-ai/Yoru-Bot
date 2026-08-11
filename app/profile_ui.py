@@ -4,7 +4,7 @@ from datetime import datetime
 
 import discord
 
-from app.ui import BRAND, DANGER, GOLD, SUCCESS, money, progress_bar
+from app.ui import BRAND, DANGER, GOLD, SUCCESS, currency_symbol, money, progress_bar
 from app.services.progression import ACHIEVEMENTS, BADGES, TITLE_REQUIREMENTS
 from app.progression_config import ACHIEVEMENT_DEFINITIONS
 from app.crew_ui import build_crew_embed
@@ -53,6 +53,12 @@ def compact_number(value: int) -> str:
     if value >= 1_000:
         return f"{sign}{value / 1_000:.1f}K"
     return f"{sign}{value}"
+
+def compact_money(value: int) -> str:
+    value = int(value)
+    sign = "-" if value < 0 else ""
+    return f"{sign}{currency_symbol()}{compact_number(abs(value))}"
+
 
 
 def _level_progress(xp_points: int) -> tuple[int, int, int, int]:
@@ -118,7 +124,7 @@ async def build_overview_embed(bot, guild_id: int, target: discord.abc.User) -> 
     )
     embed.add_field(
         name="💹 Pénzmozgás",
-        value=f"Kereset: **${compact_number(earned)}**\nVeszteség: **${compact_number(lost)}**",
+        value=f"Kereset: **{compact_money(earned)}**\nVeszteség: **{compact_money(lost)}**",
         inline=True,
     )
 
@@ -146,10 +152,10 @@ async def build_statistics_embed(bot, guild_id: int, target: discord.abc.User) -
     embed.add_field(
         name="💰 Economy",
         value=(
-            f"Kereset: **${compact_number(earned)}**\n"
-            f"Veszteség: **${compact_number(lost)}**\n"
-            f"Befizetve: **${compact_number(s('economy.deposited'))}**\n"
-            f"Kivéve: **${compact_number(s('economy.withdrawn'))}**"
+            f"Kereset: **{compact_money(earned)}**\n"
+            f"Veszteség: **{compact_money(lost)}**\n"
+            f"Befizetve: **{compact_money(s('economy.deposited'))}**\n"
+            f"Kivéve: **{compact_money(s('economy.withdrawn'))}**"
         ),
         inline=True,
     )
@@ -170,7 +176,7 @@ async def build_statistics_embed(bot, guild_id: int, target: discord.abc.User) -
         value=(
             f"Crime: **{s('crime.success', int(data.get('crime_success', 0)))}W / {s('crime.fail', int(data.get('crime_failed', 0)))}L**\n"
             f"Rablás: **{s('rob.success', int(data.get('rob_success', 0)))}W / {s('rob.fail', int(data.get('rob_failed', 0)))}L**\n"
-            f"Rob profit: **${compact_number(s('rob.profit', int(data.get('rob_profit', 0))))}**"
+            f"Rob profit: **{compact_money(s('rob.profit', int(data.get('rob_profit', 0))))}**"
         ),
         inline=True,
     )
@@ -184,7 +190,7 @@ async def build_statistics_embed(bot, guild_id: int, target: discord.abc.User) -
         value=(
             f"Játékok: **{gamble_plays:,}**\n"
             f"Eredmény: **{gamble_wins}W / {gamble_losses}L**\n"
-            f"Profit: **${compact_number(gamble_profit)}**\n"
+            f"Profit: **{compact_money(gamble_profit)}**\n"
             f"Kedvenc: **{_favorite_game(stats)}**"
         ).replace(",", " "),
         inline=True,
@@ -204,7 +210,7 @@ async def build_statistics_embed(bot, guild_id: int, target: discord.abc.User) -
     embed.add_field(
         name="📈 Egyéb",
         value=(
-            f"Befektetés profit: **${compact_number(s('investment.profit', int(data.get('investment_profit', 0))))}**\n"
+            f"Befektetés profit: **{compact_money(s('investment.profit', int(data.get('investment_profit', 0))))}**\n"
             f"Sorsjegy: **{s('scratch.count', int(data.get('scratch_count', 0)))}**\n"
             f"Weekly / Monthly: **{s('weekly.count', int(data.get('weekly_count', 0)))} / {s('monthly.count', int(data.get('monthly_count', 0)))}**"
         ),
@@ -217,8 +223,8 @@ async def build_statistics_embed(bot, guild_id: int, target: discord.abc.User) -
         value=(
             f"Rang: **P{prestige_state.rank}**\n"
             f"Income bónusz: **+{round(prestige_state.income_bonus * 100)}%**\n"
-            f"Feláldozott vagyon: **${compact_number(s('prestige.wealth_sacrificed'))}**\n"
-            f"Extra income: **${compact_number(s('prestige.bonus_earned'))}**"
+            f"Feláldozott vagyon: **{compact_money(s('prestige.wealth_sacrificed'))}**\n"
+            f"Extra income: **{compact_money(s('prestige.bonus_earned'))}**"
         ),
         inline=True,
     )
@@ -228,8 +234,8 @@ async def build_statistics_embed(bot, guild_id: int, target: discord.abc.User) -
         name="👥 Crew",
         value=(
             f"Crew: **{crew_membership.crew.name if crew_membership else '—'}**\n"
-            f"Befizetve: **${compact_number(s('crew.contributed'))}**\n"
-            f"Crew bónusz: **${compact_number(s('crew.bonus_earned'))}**\n"
+            f"Befizetve: **{compact_money(s('crew.contributed'))}**\n"
+            f"Crew bónusz: **{compact_money(s('crew.bonus_earned'))}**\n"
             f"Csatlakozások: **{s('crew.joined')}**"
         ),
         inline=True,

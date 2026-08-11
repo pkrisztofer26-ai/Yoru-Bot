@@ -84,6 +84,22 @@ HELP_PAGES: dict[str, dict[str, object]] = {
             ("🚔 Állapot", "`!jail [@tag]` börtönstátusz • `!ping` bot válaszideje • `!version` futó verzió", False),
         ],
     },
+    "music": {
+        "title": "🎵 Music",
+        "description": "Voice zenelejátszó kereséssel, queue-val és vezérléssel.",
+        "fields": [
+            ("▶️ Lejátszás", "`!play <keresés vagy URL>` • `/music play`\n`!queue` • `/music queue` • `!np` • `/music now`", False),
+            ("🎛️ Vezérlés", "`!pause` • `!resume` • `!skip` • `!stop`\n`!vol 75` • `!loop` • `!shuffle` • `!leave`", False),
+            ("⚙️ Beállítás", "`/settings → Music`: be/ki, Music csatorna, DJ rang, alap hangerő és queue limit.", False),
+        ],
+    },
+    "fun": {
+        "title": "💞 Fun • Ship 2.0",
+        "description": "Letisztított Fun modul: a Ship maradt, szebb kétprofilos megjelenítéssel.",
+        "fields": [
+            ("💞 Ship", "`!ship @tag [@tag]` • `/fun ship`\nStabil százalék ugyanarra a párosra, két profilképpel, compatibility barral és Yoru-ítélettel.", False),
+        ],
+    },
     "staff": {
         "title": "🛡️ Moderáció & Staff",
         "description": "A parancsokhoz megfelelő Discord jogosultság szükséges.",
@@ -107,6 +123,8 @@ BUTTONS = (
     ("profile", "Profil", "👤", discord.ButtonStyle.secondary, 1),
     ("staff", "Staff", "🛡️", discord.ButtonStyle.secondary, 1),
     ("home", "Kezdőlap", "🌙", discord.ButtonStyle.secondary, 1),
+    ("music", "Music", "🎵", discord.ButtonStyle.secondary, 2),
+    ("fun", "Fun", "🎉", discord.ButtonStyle.secondary, 2),
 )
 
 

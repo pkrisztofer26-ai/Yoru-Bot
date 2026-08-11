@@ -1,0 +1,20 @@
+from __future__ import annotations
+
+MUSIC_DEFAULT_ENABLED = True
+MUSIC_DEFAULT_VOLUME = 75
+MUSIC_MIN_VOLUME = 5
+MUSIC_MAX_VOLUME = 150
+MUSIC_DEFAULT_MAX_QUEUE = 50
+MUSIC_MIN_QUEUE = 5
+MUSIC_MAX_QUEUE = 100
+MUSIC_IDLE_DISCONNECT_SECONDS = 300
+MUSIC_MAX_PLAYLIST_ITEMS = 100
+MUSIC_SPOTIFY_TIMEOUT_SECONDS = 120
+
+MUSIC_ENABLED_KEY = "music_enabled"
+MUSIC_VOLUME_KEY = "music_default_volume"
+MUSIC_MAX_QUEUE_KEY = "music_max_queue"
+MUSIC_CHANNEL_KEY = "music_text_channel_id"
+MUSIC_DJ_ROLE_KEY = "music_dj_role_id"
+MUSIC_PANEL_CHANNEL_KEY = "music_panel_channel_id"
+MUSIC_PANEL_MESSAGE_KEY = "music_panel_message_id"

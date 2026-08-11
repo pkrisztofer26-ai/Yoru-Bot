@@ -104,7 +104,8 @@ class BlackjackView(discord.ui.View):
             if player_natural and dealer_natural:
                 payout, text, color = self.bet, "🤝 **Mindketten BLACKJACK-et kaptatok.** A téted visszajárt.", GOLD
             elif player_natural:
-                payout = int(self.bet * eco.BLACKJACK_WIN_TOTAL_PAYOUT)
+                total_payout = await self.gambling.payout_total(self.guild_id, eco.BLACKJACK_WIN_TOTAL_PAYOUT)
+                payout = int(self.bet * total_payout)
                 text, color = "✨ **BLACKJACK! Azonnali győzelem.**", SUCCESS
             else:
                 payout, text, color = 0, "🃏 **Az osztó BLACKJACK-et kapott.** Az osztó nyert.", DANGER
@@ -115,7 +116,8 @@ class BlackjackView(discord.ui.View):
             if player_value > 21:
                 payout, text, color = 0, "💥 **Besokalltál.** Az osztó nyert.", DANGER
             elif dealer_value > 21 or player_value > dealer_value:
-                payout = int(self.bet * eco.BLACKJACK_WIN_TOTAL_PAYOUT)
+                total_payout = await self.gambling.payout_total(self.guild_id, eco.BLACKJACK_WIN_TOTAL_PAYOUT)
+                payout = int(self.bet * total_payout)
                 text, color = "✅ **Megnyerted a kört!**", SUCCESS
             elif player_value == dealer_value:
                 payout, text, color = self.bet, "🤝 **Döntetlen.** A téted visszajárt.", GOLD
@@ -128,7 +130,7 @@ class BlackjackView(discord.ui.View):
         elif profit < 0:
             text += f"\n💵 Veszteség: **-{money(abs(profit))}**"
         else:
-            text += "\n💵 Eredmény: **$0**"
+            text += f"\n💵 Eredmény: **{money(0)}**"
         text += f"\n💸 Kifizetés: **{money(payout)}**"
         text += f"\n💰 Egyenleg: **{money(wallet)}**"
         for child in self.children:
@@ -161,11 +163,25 @@ class GamblingCog(commands.Cog):
         self.bot = bot
         self.gambling = gambling
 
+    async def _guard(self, interaction: discord.Interaction) -> bool:
+        if interaction.guild_id is None:
+            return False
+        try:
+            await self.gambling.guild_settings.prepare_currency(interaction.guild_id)
+            await self.gambling.guild_settings.require_feature(interaction.guild_id, "gambling")
+            await self.gambling.guild_settings.require_channel(interaction.guild_id, interaction.channel_id, getattr(interaction.channel, "category_id", None))
+        except ValueError as error:
+            await interaction.response.send_message(embed=error_embed(interaction.user, str(error)), ephemeral=True)
+            return False
+        return True
+
     @app_commands.command(name="coinflip", description="Fej vagy írás pénztétért.")
     @app_commands.choices(oldal=[app_commands.Choice(name="Fej", value="fej"), app_commands.Choice(name="Írás", value="írás")])
     @app_commands.describe(osszeg="Tét: pl. 25k, 2m, 1b, 1t vagy all")
     async def coinflip(self, interaction: discord.Interaction, oldal: app_commands.Choice[str], osszeg: str) -> None:
         if interaction.guild_id is None:
+            return
+        if not await self._guard(interaction):
             return
         wallet, _ = await self.gambling.db.get_balance(interaction.guild_id, interaction.user.id)
         try:
@@ -179,6 +195,8 @@ class GamblingCog(commands.Cog):
     async def dice(self, interaction: discord.Interaction, tipped: app_commands.Range[int, 1, 6], osszeg: str) -> None:
         if interaction.guild_id is None:
             return
+        if not await self._guard(interaction):
+            return
         wallet, _ = await self.gambling.db.get_balance(interaction.guild_id, interaction.user.id)
         try:
             tet = parse_amount(osszeg, wallet)
@@ -191,6 +209,8 @@ class GamblingCog(commands.Cog):
     async def slots(self, interaction: discord.Interaction, osszeg: str) -> None:
         if interaction.guild_id is None:
             return
+        if not await self._guard(interaction):
+            return
         wallet, _ = await self.gambling.db.get_balance(interaction.guild_id, interaction.user.id)
         try:
             tet = parse_amount(osszeg, wallet)
@@ -202,6 +222,8 @@ class GamblingCog(commands.Cog):
     @app_commands.describe(osszeg="Tét: pl. 25k, 2m, 1b, 1t vagy all")
     async def roulette(self, interaction: discord.Interaction, valasztas: str, osszeg: str) -> None:
         if interaction.guild_id is None:
+            return
+        if not await self._guard(interaction):
             return
         wallet, _ = await self.gambling.db.get_balance(interaction.guild_id, interaction.user.id)
         try:
@@ -243,6 +265,8 @@ class GamblingCog(commands.Cog):
     @app_commands.describe(osszeg="Tét: pl. 25k, 2m, 1b, 1t vagy all")
     async def blackjack(self, interaction: discord.Interaction, osszeg: str) -> None:
         if interaction.guild_id is None:
+            return
+        if not await self._guard(interaction):
             return
         wallet, _ = await self.gambling.db.get_balance(interaction.guild_id, interaction.user.id)
         try:

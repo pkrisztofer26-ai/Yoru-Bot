@@ -35,7 +35,11 @@ from app.cogs.prestige import PrestigeCog
 from app.cogs.crew import CrewCog
 from app.cogs.help import HelpCog
 from app.cogs.settings import SettingsCog
+from app.cogs.economy_events_settings import EconomyEventsSettingsCog
 from app.cogs.welcome_roles import WelcomeRolesCog
+from app.cogs.tickets import TicketCog
+from app.cogs.music import MusicCog
+from app.cogs.fun import FunCog
 from app import economy_config as eco
 
 logging.basicConfig(
@@ -53,8 +57,6 @@ ADMIN_PREFIX_COMMANDS = {
     "addmoney", "am",
     "removemoney", "rm",
     "setmoney", "sm",
-    "kincseslada", "lada", "chest",
-    "hirtelenhalal", "bomb", "hh", "sd",
     "drawlottery", "drawlot",
     "openblackmarket", "openbm",
     "yoruconfig", "yc", "config",
@@ -83,6 +85,8 @@ STAFF_PREFIX_PERMISSIONS = {
     "giveaway": "manage_messages", "gw": "manage_messages",
     "giveawayreroll": "manage_messages", "gwreroll": "manage_messages", "reroll": "manage_messages",
     "sticky": "manage_messages", "stickyoff": "manage_messages", "unsticky": "manage_messages",
+    "kincseslada": "manage_guild", "lada": "manage_guild", "chest": "manage_guild",
+    "hirtelenhalal": "manage_guild", "bomb": "manage_guild", "hh": "manage_guild", "sd": "manage_guild",
 }
 
 
@@ -111,6 +115,7 @@ RATE_LIMITED_PREFIX_COMMANDS = {
     "crewupgrade", "cupgrade", "clanupgrade", "crewdescription", "crewdesc", "cdesc",
     "crewdisband", "cdisband", "clandisband",
     "suggest", "suggestion", "javaslat", "poll", "szavazas", "votecreate", "afk", "away",
+    "play", "mplay", "musicplay",
 }
 
 ADMIN_HIDDEN_PREFIX_COMMANDS = {
@@ -159,7 +164,11 @@ class VaultBot(commands.Bot):
         await self.add_cog(ModerationCog(self, self.database))
         await self.add_cog(AutomodCog(self, self.database))
         await self.add_cog(SettingsCog(self, self.database))
+        await self.add_cog(EconomyEventsSettingsCog(self, self.database))
         await self.add_cog(WelcomeRolesCog(self, self.database))
+        await self.add_cog(TicketCog(self, self.database))
+        await self.add_cog(MusicCog(self, self.database))
+        await self.add_cog(FunCog(self, self.database))
 
         @self.tree.command(name="ping", description="Megmutatja, hogy működik-e a bot.")
         async def ping(interaction: discord.Interaction) -> None:

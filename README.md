@@ -1,4 +1,4 @@
-# Yoru Bot v3.8.0
+# Yoru Bot v3.11.1
 
 Saját Discord economy + gambling bot Python / discord.py / SQLite alapon.
 
@@ -14,6 +14,8 @@ A meglévő `data/vaultbot.db` adatbázist **nem kell törölni**. Induláskor a
 
 ### Economy
 `!bal`, `!daily`, `!wk`, `!mo`, `!w`, `!cr`, `!rob @tag`, `!beg`, `!search`, `!cd`, `!dep all`, `!with all`, `!pay @tag 25k`, `!int`
+
+A `/settings → Economy` oldalon szerverenként kapcsolható az economy, gambling, bank, interest és role income, valamint külön a Daily/Weekly/Monthly/Work/Crime/Search/Beg/Rob/Slut funkciók. Beállítható több engedélyezett economy csatorna **és teljes kategória**, cooldownok és reward range-ek, a rob arány, a gambling nyerő profit-szorzó, továbbá a pénznem neve és jele. Ha nincs engedélyezett hely megadva, az economy bárhol használható. **Frissítés után minden régi szerver a v3.10.1 alapértékekkel működik tovább**, amíg egy admin nem ír felül valamit a Settingsben.
 
 ### Progression
 `!profile`, `!ach`, `!titles`, `!title <cím>`, `!boost`, `!bl`, `!invest low|medium|high <összeg>`, `!prestige`, `!prestigetop`
@@ -35,14 +37,28 @@ Jackpot: az első beszállás után 60 másodperces kör indul. A nyerési esél
 
 Lottery: $25 000 / jegy, automatikus sorsolás óránként. A pot 90%-a kerül kiosztásra.
 
+### Music
+`!play <keresés / YouTube / Spotify>`, `!musicpanel`, `!queue`, `!np`, `!pause`, `!resume`, `!skip`, `!stop`, `!vol 75`, `!loop`, `!shuffle`, `!leave`
+
+Slash: `/music play`, `/music panel`, `/music queue`, `/music now`, `/music pause`, `/music resume`, `/music skip`, `/music stop`, `/music volume`, `/music loop`, `/music shuffle`, `/music leave`.
+
+Támogatott bemenetek: sima keresés, YouTube videó, **YouTube playlist**, Spotify **track / album / playlist**. Spotify esetén Yoru a Spotify metadata alapján azonosítja a zenéket, majd YouTube-ról keres hozzájuk lejátszható hangforrást.
+
+A `/music panel` egy persistent, tagoknak is használható interaktív Music Player embedet hoz létre/frissít. Gombok: Zene hozzáadása, Pause/Resume, Skip, Queue, Refresh, Shuffle, Loop, Hangerő, Stop, Leave. Ugyanez a `/settings → Music → Player panel` gombbal is publikálható.
+
+A `/settings → Music` alatt kapcsolható a modul, kijelölhető Music text channel és DJ rang, valamint beállítható az alap hangerő és queue limit. A voice lejátszáshoz a Python dependency-k mellett **FFmpeg** bináris is kell a hoston. A requirements a discord.py hivatalos `voice` extráját használja (PyNaCl + davey).
+
+### Fun
+`!ship @tag [@tag]` • `/fun ship`
+
+A Fun modul v3.11.1-ben letisztult: csak a **Ship 2.0** maradt. Stabil páros-százalék, mindkét tag profilképe, compatibility bar és szebb eredmény embed. A `/settings → Fun` oldalon továbbra is ki-/bekapcsolható és opcionálisan egyetlen text csatornára korlátozható.
+
 ### Eventek
 `!lada <összeg> <mp>`, `!hh <összeg> <join mp> <kör mp>`, `!bm`, `!bm buy <item> [db]`, `!effects`
 
-Az automata Kincses Láda / Hirtelen Halál random időzítését az `.env` kezeli (a példa 15 perc–1,5 óra).
-A pénzügyi alapértékek az `app/economy_config.py`-ban vannak: Kincses Láda **$100k–$500k teljes reward**, Hirtelen Halál belépő **$25k–$150k**, nevezés **30 mp**, köridő **15 mp**.
-Az auto Kincses Láda / Hirtelen Halál csak aktivitási gate után indul: alapból 20 érvényes üzenet / 30 perc / legalább 4 user.
-A Feketepiac / Work Rush / Crime Rush / Lucky Hour egy külön, ritkább 1–4 órás közösségi event loop.
-Az `AUTO_EVENTS_ENABLED=false` mindkét automatikus event loopot leállítja; a Lottery ettől függetlenül óránként sorsol.
+A `/settings → Events` oldalon szerverenként kapcsolható az automatikus eventrendszer, a **Kincses Láda**, a **Hirtelen Halál** és a manuális staff indítás. Beállítható az event csatorna, minimum/maximum random időköz, jelentkezési és HH köridő, aktivitási gate, Láda reward range, HH belépő range és a Láda/HH választási esély.
+
+A régi `.env` event beállítások továbbra is **fallback alapértékek**, ezért meglévő szerveren frissítés után nem változik meg automatikusan a működés. A Feketepiac / Work Rush / Crime Rush / Lucky Hour külön, ritkább 1–4 órás közösségi event loop marad, de ugyanazt a szerverenkénti **Auto Events** kapcsolót és event csatornát használja. A Lottery ettől függetlenül óránként sorsol, az eredményt pedig a konfigurált Events csatornába küldi, ha van ilyen.
 
 ### Toplisták
 `!top money`, `wallet`, `bank`, `rob`, `gambling`, `wins`, `work`, `crime`, `daily`, `earned`, `level`, `investment`, `jackpot`, `lottery`, `chicken`, `scratch`, `weekly`
@@ -236,3 +252,56 @@ A `/settings` új **Community** oldala szerverenként, interaktívan kezeli a k�
 - A régi közösségi economy slash parancsok is a `/community` groupba kerültek, így csökkent a top-level slash terhelés. Prefix parancsok változatlanok.
 - A Settings csatorna- **és rangválasztói** 23 elemes lapozást használnak; native ChannelSelect/RoleSelect nincs a konfigurációs UI-ban.
 - Release regression védelem: slash-limit, selector-pagination, economy és Community persistence/source tesztek.
+
+## v3.9.0 — Tickets
+
+A `/settings` panelben most már aktív a **Tickets** modul is, új top-level slash command nélkül.
+
+- Reaction-role jellegű, persistent gombos ticket panelek, panelenként legfeljebb 5 konfigurálható ticket típussal.
+- Privát ticket csatornák a kiválasztott Ticket kategóriában; a megnyitó, a konfigurált staff rangok és Yoru fér hozzá.
+- A Ticket kategória automatikusan Yoru AutoMod invite- és link-kivételt kap, így a ticketekben invite link, normál link, kép és fájl is küldhető.
+- Interaktív kezelés: **Claim**, **Add User**, **Remove User**, **Rename**, **Close**, **Reopen**, **Delete**.
+- Konfigurálható staff rangok, log csatorna, felhasználónkénti nyitott-ticket limit és opcionális DM transcript.
+- Lezáráskor `.txt` transcript készül, opcionálisan a ticket log csatornába és a megnyitó DM-jébe kerül.
+- A ticket panelek és kezelőgombok restart után is működnek persistent view-val.
+- A ticket adatstruktúrák induláskor automatikusan létrejönnek a meglévő SQLite adatbázisban; a meglévő adatbázist nem kell törölni vagy lecserélni.
+- A Settings kategória-, csatorna- és staff-rang választói továbbra is a 23 elemes Yoru lapozást használják nagy szervereken.
+
+
+## v3.10.0 — Music + Fun
+
+A `/settings` két következő modulja, a **Music** és **Fun** aktív lett.
+
+- **Music:** keresés/URL alapú voice lejátszás, queue, pause/resume, skip/stop, now playing, hangerő, current-track loop, shuffle és automatikus 5 perces idle disconnect.
+- **Music settings:** globális ON/OFF, opcionális dedikált Music csatorna, opcionális DJ rang, alap hangerő és queue limit. A dedikált Music csatorna automatikus generic-link AutoMod kivételt kap, hogy a `!play <URL>` működjön.
+- **Music hosting:** `yt-dlp` + `PyNaCl` Python dependency került a requirementsbe; a host rendszerén FFmpeg bináris szükséges. Ha valamelyik runtime elem hiányzik, a bot többi része tovább indul, csak a Music ad érthető hibát.
+- **Fun:** `/fun` group + prefix megfelelői: 8Ball, choose, dice roll, tét nélküli coin, deterministic rate/ship, Truth, Dare, Would You Rather, mock és joke.
+- **Fun settings:** ON/OFF és opcionális dedikált Fun csatorna.
+- A Help panel külön Music és Fun oldalt kapott.
+- Slash-limit védelem: Music és Fun is egy-egy GroupCog, így összesen csak 2 új top-level application command került be.
+- Prefix név/alias collision regression teszt bekerült.
+
+
+## v3.11.0 — Economy + Events Settings
+
+A `/settings` panelben most már az **Economy** és **Events** modul is teljesen interaktívan konfigurálható, új top-level slash command nélkül.
+
+- **Economy:** globális ON/OFF, parancsonkénti kapcsolók, opcionális dedikált economy csatorna, szerverenkénti cooldownok és reward range-ek.
+- **Advanced economy:** rob arány, gambling nyerő profit-szorzó, pénznem név/jel és egygombos visszaállítás.
+- **Events:** Auto / Kincses Láda / Hirtelen Halál / manuális staff event külön kapcsolóval, lapozott event-csatorna választóval.
+- **Event tuning:** min/max random idő, jelentkezési idő, HH köridő, aktivitási gate, reward/belépő range és Láda esély.
+- A meglévő `.env` és `app/economy_config.py` értékek fallbackként megmaradnak; frissítés önmagában nem borítja fel a jelenlegi szerver balance-át.
+- A Community market event loop az Events oldal Auto kapcsolóját és csatornáját követi, saját ritkább időzítését megtartva.
+- Manuális Láda/HH indításhoz elég a **Szerver kezelése** jogosultság, ha a manuális eventek engedélyezve vannak.
+- A konfiguráció a meglévő `guild_state` backendben marad, így későbbi web dashboard ugyanazokat az értékeket tudja használni.
+- A Settings csatornaválasztók továbbra is a 23 elemes Yoru lapozást használják nagy szervereken.
+
+
+## v3.11.1 — Stability + Multi Economy Channels + Ship 2.0
+
+- **Multi Economy Channels:** több text csatorna és több teljes Discord kategória engedélyezhető egyszerre. Ha nincs megadva egy sem, az economy bárhol használható. A v3.11.0 egyetlen dedikált csatornája automatikusan legacy fallbackként megmarad.
+- **Chicken Fight:** vereségnél 1 Chicken meghal és eltűnik az inventoryból; győzelemnél túléli a harcot. A shop leírása ezt jelzi.
+- **Quest bugfix:** a napi/heti questek már az adott időszak első quest-releváns aktivitása **előtt** kiosztódnak, ezért a progress akkor is számít, ha a Quest menüt csak később nyitod meg.
+- **Fun cleanup:** Eight Ball / Choose / Roll / Coin / Rate / Truth / Dare / WYR / Mock / Joke kikerült.
+- **Ship 2.0:** mindkét profilkép, compatibility bar, eredményfüggő Yoru-ítélet és stabil páros-százalék.
+- A hosszú távú fejlesztési terv a projektben lévő `ROADMAP.md` fájlban van rögzítve: Activity Level + automatikus milestone role-ok, Social Economy, **Frakció 2.0**, magyarországi late-game **Biznisz Empire**, **Heist / Nagy Meló**, majd finomhangolás és Web Dashboard.

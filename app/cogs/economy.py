@@ -23,9 +23,20 @@ class EconomyCog(commands.Cog):
         self.bot = bot
         self.economy = economy
 
+    async def _guard(self, interaction: discord.Interaction, feature: str = "economy") -> bool:
+        if interaction.guild_id is None:
+            return False
+        try:
+            await self.economy.require_access(interaction.guild_id, feature, interaction.channel_id, getattr(interaction.channel, "category_id", None))
+        except ValueError as error:
+            await interaction.response.send_message(embed=error_embed(interaction.user, str(error)), ephemeral=True)
+            return False
+        return True
+
     @app_commands.command(name="balance", description="Megmutatja az egyenleget.")
     async def balance(self, interaction: discord.Interaction, member: discord.Member | None = None) -> None:
         if interaction.guild_id is None: return await interaction.response.send_message("Csak szerveren használható.", ephemeral=True)
+        if not await self._guard(interaction): return
         target = member or interaction.user
         wallet, bank = await self.economy.balance(interaction.guild_id, target.id)
         embed = discord.Embed(title=f"💰 {target.display_name} egyenlege", color=discord.Color.gold())
@@ -38,6 +49,8 @@ class EconomyCog(commands.Cog):
     async def profile(self, interaction: discord.Interaction, member: discord.Member | None = None) -> None:
         if interaction.guild_id is None:
             return await interaction.response.send_message("Csak szerveren használható.", ephemeral=True)
+        if not await self._guard(interaction):
+            return
         target = member or interaction.user
         embed, view = await make_profile_view(self.bot, interaction.guild_id, target, interaction.user.id)
         await interaction.response.send_message(embed=embed, view=view)
@@ -46,6 +59,8 @@ class EconomyCog(commands.Cog):
     async def stats(self, interaction: discord.Interaction, member: discord.Member | None = None) -> None:
         if interaction.guild_id is None:
             return await interaction.response.send_message("Csak szerveren használható.", ephemeral=True)
+        if not await self._guard(interaction):
+            return
         target = member or interaction.user
         embed, view = await make_profile_view(self.bot, interaction.guild_id, target, interaction.user.id, initial_page="stats")
         await interaction.response.send_message(embed=embed, view=view)
@@ -53,6 +68,7 @@ class EconomyCog(commands.Cog):
     @app_commands.command(name="bank", description="Megmutatja a bankod és a tárcád állapotát.")
     async def bank(self, interaction: discord.Interaction) -> None:
         if interaction.guild_id is None: return await interaction.response.send_message("Csak szerveren használható.", ephemeral=True)
+        if not await self._guard(interaction, "bank"): return
         wallet, bank = await self.economy.balance(interaction.guild_id, interaction.user.id)
         embed = action_embed("🏦 Bank", interaction.user)
         embed.add_field(name="💵 Tárca", value=f"**{money(wallet)}**", inline=True)
@@ -64,6 +80,8 @@ class EconomyCog(commands.Cog):
     @app_commands.describe(osszeg="Összeg: pl. 500000, 25k, 2m vagy all")
     async def deposit(self, interaction: discord.Interaction, osszeg: str) -> None:
         if interaction.guild_id is None:
+            return
+        if not await self._guard(interaction, "bank"):
             return
         current_wallet, _ = await self.economy.balance(interaction.guild_id, interaction.user.id)
         try:
@@ -82,6 +100,8 @@ class EconomyCog(commands.Cog):
     async def withdraw(self, interaction: discord.Interaction, osszeg: str) -> None:
         if interaction.guild_id is None:
             return
+        if not await self._guard(interaction, "bank"):
+            return
         _, current_bank = await self.economy.balance(interaction.guild_id, interaction.user.id)
         try:
             amount = parse_amount_input(osszeg, current_bank)
@@ -98,6 +118,7 @@ class EconomyCog(commands.Cog):
     @app_commands.describe(osszeg="Tét: pl. 25k, 2m, 1b, 1t vagy all")
     async def pay(self, interaction: discord.Interaction, member: discord.Member, osszeg: str) -> None:
         if interaction.guild_id is None: return
+        if not await self._guard(interaction): return
         if member.bot: return await interaction.response.send_message(embed=error_embed(interaction.user, "Botnak nem küldhetsz pénzt."), ephemeral=True)
         current_wallet, _ = await self.economy.balance(interaction.guild_id, interaction.user.id)
         try:
@@ -113,8 +134,10 @@ class EconomyCog(commands.Cog):
     @app_commands.command(name="daily", description="Átveszed a napi jutalmadat.")
     async def daily(self, interaction: discord.Interaction) -> None:
         if interaction.guild_id is None: return
+        if not await self._guard(interaction, "daily"): return
         try: reward, streak, ready_at = await self.economy.claim_daily(interaction.guild_id, interaction.user.id)
         except CooldownError as error: return await interaction.response.send_message(embed=cooldown_embed(interaction.user, "Daily", error.ready_at), ephemeral=True)
+        except ValueError as error: return await interaction.response.send_message(embed=error_embed(interaction.user, str(error)), ephemeral=True)
         embed = action_embed("🎁 Daily", interaction.user, color=SUCCESS)
         embed.add_field(name="💰 Jutalom", value=f"**{money(reward)}**", inline=True)
         embed.add_field(name="🔥 Streak", value=f"**{streak} nap**", inline=True)
@@ -124,8 +147,10 @@ class EconomyCog(commands.Cog):
     @app_commands.command(name="beg", description="Kérsz egy kis aprót.")
     async def beg(self, interaction: discord.Interaction) -> None:
         if interaction.guild_id is None: return
+        if not await self._guard(interaction, "beg"): return
         try: reward, outcome, ready_at = await self.economy.beg(interaction.guild_id, interaction.user.id)
         except CooldownError as error: return await interaction.response.send_message(embed=cooldown_embed(interaction.user, "Beg", error.ready_at), ephemeral=True)
+        except ValueError as error: return await interaction.response.send_message(embed=error_embed(interaction.user, str(error)), ephemeral=True)
         embed = action_embed("🙏 Beg", interaction.user, description=outcome, color=SUCCESS if reward else GOLD)
         embed.add_field(name="💰 Eredmény", value=f"**{money(reward)}**" if reward else "**Nem kaptál semmit.**", inline=True)
         embed.add_field(name="⏳ Következő", value=f"<t:{int(ready_at.timestamp())}:R>", inline=True)
@@ -134,8 +159,10 @@ class EconomyCog(commands.Cog):
     @app_commands.command(name="search", description="Véletlenszerű helyen pénzt keresel.")
     async def search(self, interaction: discord.Interaction) -> None:
         if interaction.guild_id is None: return
+        if not await self._guard(interaction, "search"): return
         try: reward, place, ready_at, dropped = await self.economy.search(interaction.guild_id, interaction.user.id)
         except CooldownError as error: return await interaction.response.send_message(embed=cooldown_embed(interaction.user, "Search", error.ready_at), ephemeral=True)
+        except ValueError as error: return await interaction.response.send_message(embed=error_embed(interaction.user, str(error)), ephemeral=True)
         embed = action_embed("🔎 Search", interaction.user, color=SUCCESS)
         embed.add_field(name="📍 Hely", value=f"**{place}**", inline=False)
         embed.add_field(name="💰 Találtál", value=f"**{money(reward)}**", inline=True)
@@ -148,12 +175,15 @@ class EconomyCog(commands.Cog):
     @app_commands.command(name="slut", description="Kurválkodsz egy kis pénz reményében.")
     async def slut(self, interaction: discord.Interaction) -> None:
         if interaction.guild_id is None: return
+        if not await self._guard(interaction, "slut"): return
         try:
             success, amount, text, ready_at = await self.economy.slut(interaction.guild_id, interaction.user.id)
         except JailError as error:
             return await interaction.response.send_message(embed=error_embed(interaction.user, f"Börtönben vagy még: <t:{int(error.ready_at.timestamp())}:R>", title="🚔 Börtön"), ephemeral=True)
         except CooldownError as error:
             return await interaction.response.send_message(embed=cooldown_embed(interaction.user, "Slut", error.ready_at), ephemeral=True)
+        except ValueError as error:
+            return await interaction.response.send_message(embed=error_embed(interaction.user, str(error)), ephemeral=True)
         embed = action_embed("💋 Slut", interaction.user, description=text, color=SUCCESS if success else DANGER)
         embed.add_field(name="💰 Eredmény", value=(f"**+{money(amount)}**" if success else f"**-{money(amount)}**"), inline=True)
         embed.add_field(name="⏳ Következő", value=f"<t:{int(ready_at.timestamp())}:R>", inline=True)
@@ -162,6 +192,7 @@ class EconomyCog(commands.Cog):
     @app_commands.command(name="cooldowns", description="Megmutatja az economy cooldownjaidat.")
     async def cooldowns(self, interaction: discord.Interaction) -> None:
         if interaction.guild_id is None: return
+        if not await self._guard(interaction): return
         values = await self.economy.cooldowns(interaction.guild_id, interaction.user.id)
         labels = {"daily":"🎁 Daily","beg":"🙏 Beg","search":"🔎 Search","work":"🛠️ Work","crime":"🕵️ Crime","rob":"🥷 Rob","weekly":"📅 Weekly","monthly":"🗓️ Monthly","interest":"🏦 Interest","slut":"💋 Slut","claimincome":"💼 Role Income"}
         lines = []
@@ -173,9 +204,11 @@ class EconomyCog(commands.Cog):
     @app_commands.command(name="work", description="Dolgozol egy kis pénzért.")
     async def work(self, interaction: discord.Interaction) -> None:
         if interaction.guild_id is None: return
+        if not await self._guard(interaction, "work"): return
         try: reward, job, ready_at = await self.economy.work(interaction.guild_id, interaction.user.id)
         except JailError as error: return await interaction.response.send_message(embed=error_embed(interaction.user, f"Börtönben vagy még: <t:{int(error.ready_at.timestamp())}:R>", title="🚔 Börtön"), ephemeral=True)
         except CooldownError as error: return await interaction.response.send_message(embed=cooldown_embed(interaction.user, "Work", error.ready_at), ephemeral=True)
+        except ValueError as error: return await interaction.response.send_message(embed=error_embed(interaction.user, str(error)), ephemeral=True)
         embed = action_embed("🛠️ Work", interaction.user, description=job.capitalize(), color=SUCCESS)
         embed.add_field(name="💰 Fizetés", value=f"**{money(reward)}**", inline=True)
         embed.add_field(name="⏳ Következő műszak", value=f"<t:{int(ready_at.timestamp())}:R>", inline=True)
@@ -184,9 +217,11 @@ class EconomyCog(commands.Cog):
     @app_commands.command(name="crime", description="Kockázatos bűncselekményt követsz el pénzért.")
     async def crime(self, interaction: discord.Interaction) -> None:
         if interaction.guild_id is None: return
+        if not await self._guard(interaction, "crime"): return
         try: success, amount, scenario, ready_at, jail_until = await self.economy.crime(interaction.guild_id, interaction.user.id)
         except JailError as error: return await interaction.response.send_message(embed=error_embed(interaction.user, f"Börtönben vagy még: <t:{int(error.ready_at.timestamp())}:R>", title="🚔 Börtön"), ephemeral=True)
         except CooldownError as error: return await interaction.response.send_message(embed=cooldown_embed(interaction.user, "Crime", error.ready_at), ephemeral=True)
+        except ValueError as error: return await interaction.response.send_message(embed=error_embed(interaction.user, str(error)), ephemeral=True)
         embed = action_embed("🕵️ Crime", interaction.user, description=scenario.capitalize(), color=SUCCESS if success else DANGER)
         embed.add_field(name="✅ Eredmény" if success else "🚓 Lebuktál", value=(f"**+{money(amount)}**" if success else f"**-{money(amount)}**"), inline=True)
         embed.add_field(name="⏳ Következő", value=f"<t:{int(ready_at.timestamp())}:R>", inline=True)
@@ -196,6 +231,7 @@ class EconomyCog(commands.Cog):
     @app_commands.command(name="rob", description="Megpróbálsz kirabolni egy másik tagot.")
     async def rob(self, interaction: discord.Interaction, member: discord.Member) -> None:
         if interaction.guild_id is None: return
+        if not await self._guard(interaction, "rob"): return
         if member.bot: return await interaction.response.send_message(embed=error_embed(interaction.user, "Botot nem rabolhatsz ki."), ephemeral=True)
         try: success, amount, ready_at = await self.economy.rob(interaction.guild_id, interaction.user.id, member.id)
         except JailError as error: return await interaction.response.send_message(embed=error_embed(interaction.user, f"Börtönben vagy még: <t:{int(error.ready_at.timestamp())}:R>", title="🚔 Börtön"), ephemeral=True)
@@ -210,6 +246,7 @@ class EconomyCog(commands.Cog):
     @app_commands.command(name="roleincome", description="Megmutatja a szerver rangalapú bevételeit.")
     async def roleincome(self, interaction: discord.Interaction) -> None:
         if interaction.guild_id is None: return
+        if not await self._guard(interaction, "role_income"): return
         rows = await self.economy.role_income_list(interaction.guild_id)
         if not rows:
             return await interaction.response.send_message(
@@ -224,6 +261,7 @@ class EconomyCog(commands.Cog):
     @app_commands.command(name="claimincome", description="Átveszed a rangjaid után járó bevételt.")
     async def claimincome(self, interaction: discord.Interaction) -> None:
         if interaction.guild_id is None or not isinstance(interaction.user, discord.Member): return
+        if not await self._guard(interaction, "role_income"): return
         role_ids = {role.id for role in interaction.user.roles}
         try:
             reward, hours, _ = await self.economy.claim_role_income(interaction.guild_id, interaction.user.id, role_ids)
@@ -268,6 +306,8 @@ class EconomyCog(commands.Cog):
 
     async def _send_top(self, interaction: discord.Interaction, category: str) -> None:
         if interaction.guild_id is None:
+            return
+        if not await self._guard(interaction):
             return
         rows = await self.economy.leaderboard(interaction.guild_id, category, 10)
         labels = {
@@ -333,6 +373,8 @@ class EconomyCog(commands.Cog):
     @app_commands.command(name="jail", description="Megmutatja, hogy valaki börtönben van-e.")
     async def jail(self, interaction: discord.Interaction, member: discord.Member | None = None) -> None:
         if interaction.guild_id is None:
+            return
+        if not await self._guard(interaction):
             return
         target = member or interaction.user
         until = await self.economy.jail_status(interaction.guild_id, target.id)

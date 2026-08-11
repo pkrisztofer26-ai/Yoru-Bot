@@ -28,16 +28,28 @@ class ShopCog(commands.Cog):
         self.bot = bot
         self.shop = shop
 
+    async def _guard(self, interaction: discord.Interaction) -> bool:
+        if interaction.guild_id is None:
+            return False
+        try:
+            await self.bot.economy.require_access(interaction.guild_id, "economy", interaction.channel_id, getattr(interaction.channel, "category_id", None))
+        except ValueError as error:
+            await interaction.response.send_message(f"❌ {error}", ephemeral=True)
+            return False
+        return True
+
     @app_commands.command(name="shop", description="Megnyitja az interaktív Yoru Store-t.")
     async def shop_command(self, interaction: discord.Interaction, kategoria: str | None = None) -> None:
         if interaction.guild_id is None:
             return await interaction.response.send_message("Csak szerveren használható.", ephemeral=True)
+        if not await self._guard(interaction): return
         view = await build_shop_view(self.shop, interaction.guild_id, category=kategoria)
         await interaction.response.send_message(view=view)
 
     @app_commands.command(name="buy", description="Tárgy vásárlása a shopból.")
     async def buy(self, interaction: discord.Interaction, item: str, mennyiseg: app_commands.Range[int, 1, 100] = 1) -> None:
         if interaction.guild_id is None: return
+        if not await self._guard(interaction): return
         try:
             name, emoji, total_price, new_wallet, stock = await self.shop.buy(interaction.guild_id, interaction.user.id, item, mennyiseg)
         except (ValueError, LookupError) as error:
@@ -51,6 +63,7 @@ class ShopCog(commands.Cog):
     @app_commands.command(name="sell", description="Tárgy eladása. A napi piaci tárgyak az aktuális ár 90%-án válthatók vissza.")
     async def sell(self, interaction: discord.Interaction, item: str, mennyiseg: app_commands.Range[int, 1, 100] = 1) -> None:
         if interaction.guild_id is None: return
+        if not await self._guard(interaction): return
         try:
             name, emoji, value, wallet, stock = await self.shop.sell(interaction.guild_id, interaction.user.id, item, mennyiseg)
         except (ValueError, LookupError) as error:
@@ -61,6 +74,7 @@ class ShopCog(commands.Cog):
     @app_commands.command(name="use", description="Láda vagy booster használata.")
     async def use(self, interaction: discord.Interaction, item: str) -> None:
         if interaction.guild_id is None: return
+        if not await self._guard(interaction): return
         try: label, reward, extra = await self.shop.use(interaction.guild_id, interaction.user.id, item)
         except ValueError as error: return await interaction.response.send_message(f"❌ {error}", ephemeral=True)
         if reward:
@@ -73,6 +87,7 @@ class ShopCog(commands.Cog):
     async def inventory(self, interaction: discord.Interaction, member: discord.Member | None = None) -> None:
         if interaction.guild_id is None:
             return
+        if not await self._guard(interaction): return
         target = member or interaction.user
         embed, view = await make_profile_view(self.bot, interaction.guild_id, target, interaction.user.id, initial_page="inventory")
         await interaction.response.send_message(embed=embed, view=view)

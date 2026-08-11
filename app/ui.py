@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from contextvars import ContextVar
+
 import discord
 
 BRAND = discord.Color.from_rgb(116, 73, 255)
@@ -8,11 +10,23 @@ DANGER = discord.Color.from_rgb(231, 76, 60)
 GOLD = discord.Color.from_rgb(241, 196, 15)
 NEUTRAL = discord.Color.from_rgb(88, 101, 242)
 
+_CURRENCY_SYMBOL: ContextVar[str] = ContextVar("yoru_currency_symbol", default="$")
+
+
+def set_currency_symbol(symbol: str) -> None:
+    clean = str(symbol).strip()[:12]
+    _CURRENCY_SYMBOL.set(clean or "$")
+
+
+def currency_symbol() -> str:
+    return _CURRENCY_SYMBOL.get()
+
 
 def money(value: int) -> str:
     value = int(value)
     sign = "-" if value < 0 else ""
-    return sign + "$" + f"{abs(value):,}".replace(",", " ")
+    symbol = _CURRENCY_SYMBOL.get()
+    return sign + symbol + f"{abs(value):,}".replace(",", " ")
 
 
 def progress_bar(current: int, target: int, width: int = 10) -> str:

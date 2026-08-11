@@ -8,6 +8,8 @@ from app import economy_config as eco
 from app.services.statistics import StatisticsService
 from app.services.prestige import PrestigeService
 from app.services.crew import CrewService
+from app.services.economy_events_settings import EconomyEventsSettingsService
+from app.ui import money
 
 
 class EconomyService:
@@ -33,6 +35,21 @@ class EconomyService:
         self.stats = statistics
         self.prestige = prestige
         self.crew = crew
+        self.guild_settings = EconomyEventsSettingsService(database)
+
+    async def prepare_context(self, guild_id: int) -> None:
+        await self.guild_settings.prepare_currency(guild_id)
+
+    async def require_access(
+        self,
+        guild_id: int,
+        feature: str,
+        channel_id: int | None = None,
+        category_id: int | None = None,
+    ) -> None:
+        await self.prepare_context(guild_id)
+        await self.guild_settings.require_feature(guild_id, feature)
+        await self.guild_settings.require_channel(guild_id, channel_id, category_id)
 
     async def apply_prestige_bonus(self, guild_id: int, user_id: int, amount: int, source: str) -> int:
         """Apply permanent progression bonuses in a stable order.
@@ -49,16 +66,31 @@ class EconomyService:
             boosted, _bonus = await self.crew.boost_reward(guild_id, user_id, boosted, source)
         return boosted
 
-    async def balance(self, guild_id: int, user_id: int) -> tuple[int, int]: return await self.db.get_balance(guild_id, user_id)
+    async def balance(self, guild_id: int, user_id: int) -> tuple[int, int]:
+        await self.prepare_context(guild_id)
+        return await self.db.get_balance(guild_id, user_id)
     async def profile(self, guild_id: int, user_id: int) -> dict[str, object]:
+        await self.prepare_context(guild_id)
         data: dict[str, object] = dict(await self.db.get_profile(guild_id, user_id))
         data["statistics"] = await self.stats.get_many(guild_id, user_id)
         return data
-    async def deposit(self, guild_id: int, user_id: int, amount: int) -> tuple[int, int]: return await self.db.move_wallet_to_bank(guild_id, user_id, amount)
-    async def withdraw(self, guild_id: int, user_id: int, amount: int) -> tuple[int, int]: return await self.db.move_bank_to_wallet(guild_id, user_id, amount)
-    async def pay(self, guild_id: int, sender_id: int, receiver_id: int, amount: int) -> tuple[int, int]: return await self.db.transfer_wallet(guild_id, sender_id, receiver_id, amount)
-    async def leaderboard(self, guild_id: int, category: str = "money", limit: int = 10): return await self.db.leaderboard(guild_id, category, limit)
-    async def history(self, guild_id: int, user_id: int, limit: int = 10): return await self.db.get_transactions(guild_id, user_id, limit)
+    async def deposit(self, guild_id: int, user_id: int, amount: int) -> tuple[int, int]:
+        await self.guild_settings.require_feature(guild_id, "bank")
+        return await self.db.move_wallet_to_bank(guild_id, user_id, amount)
+
+    async def withdraw(self, guild_id: int, user_id: int, amount: int) -> tuple[int, int]:
+        await self.guild_settings.require_feature(guild_id, "bank")
+        return await self.db.move_bank_to_wallet(guild_id, user_id, amount)
+
+    async def pay(self, guild_id: int, sender_id: int, receiver_id: int, amount: int) -> tuple[int, int]:
+        await self.guild_settings.require_feature(guild_id, "economy")
+        return await self.db.transfer_wallet(guild_id, sender_id, receiver_id, amount)
+    async def leaderboard(self, guild_id: int, category: str = "money", limit: int = 10):
+        await self.prepare_context(guild_id)
+        return await self.db.leaderboard(guild_id, category, limit)
+    async def history(self, guild_id: int, user_id: int, limit: int = 10):
+        await self.prepare_context(guild_id)
+        return await self.db.get_transactions(guild_id, user_id, limit)
 
     async def admin_add(self, guild_id: int, user_id: int, amount: int, admin_id: int) -> int:
         return await self.db.add_wallet(guild_id, user_id, amount, f"admin_adjust:{admin_id}")
@@ -95,7 +127,9 @@ class EconomyService:
         return amount
 
     async def claim_daily(self, guild_id: int, user_id: int) -> tuple[int, int, datetime]:
-        now = await self._check_cooldown(guild_id, user_id, "last_daily", self.DAILY_COOLDOWN)
+        await self.guild_settings.require_feature(guild_id, "daily")
+        cooldown = await self.guild_settings.get_cooldown(guild_id, "daily")
+        now = await self._check_cooldown(guild_id, user_id, "last_daily", cooldown)
         profile = await self.db.get_profile(guild_id, user_id)
         previous = await self.db.get_timestamp(guild_id, user_id, "last_daily")
         current_streak = int(profile.get("daily_streak", 0))
@@ -103,7 +137,7 @@ class EconomyService:
             streak = current_streak + 1
         else:
             streak = 1
-        base = random.randint(*eco.DAILY_REWARD)
+        base = random.randint(*(await self.guild_settings.get_reward_range(guild_id, "daily")))
         bonus = min(streak - 1, eco.DAILY_STREAK_BONUS_MAX_DAYS) * eco.DAILY_STREAK_BONUS
         reward = base + bonus
         reward = await self.apply_prestige_bonus(guild_id, user_id, reward, "daily")
@@ -115,10 +149,12 @@ class EconomyService:
         await self.stats.set_max(guild_id, user_id, "daily.biggest_reward", reward)
         await self._award_activity_xp(guild_id, user_id, "daily")
         await self.db.set_timestamp(guild_id, user_id, "last_daily", now)
-        return reward, streak, now + self.DAILY_COOLDOWN
+        return reward, streak, now + cooldown
 
     async def beg(self, guild_id: int, user_id: int) -> tuple[int, str, datetime]:
-        now = await self._check_cooldown(guild_id, user_id, "last_beg", self.BEG_COOLDOWN)
+        await self.guild_settings.require_feature(guild_id, "beg")
+        cooldown = await self.guild_settings.get_cooldown(guild_id, "beg")
+        now = await self._check_cooldown(guild_id, user_id, "last_beg", cooldown)
         outcomes = eco.BEG_OUTCOMES
         text, minimum, maximum = random.choice(outcomes)
         reward = random.randint(minimum, maximum) if maximum > 0 else 0
@@ -134,11 +170,13 @@ class EconomyService:
             await self.stats.increment(guild_id, user_id, "beg.empty")
         await self._award_activity_xp(guild_id, user_id, "beg")
         await self.db.set_timestamp(guild_id, user_id, "last_beg", now)
-        return reward, text, now + self.BEG_COOLDOWN
+        return reward, text, now + cooldown
 
 
     async def search(self, guild_id: int, user_id: int) -> tuple[int, str, datetime, tuple[str, str, str] | None]:
-        now = await self._check_cooldown(guild_id, user_id, "last_search", self.SEARCH_COOLDOWN)
+        await self.guild_settings.require_feature(guild_id, "search")
+        cooldown = await self.guild_settings.get_cooldown(guild_id, "search")
+        now = await self._check_cooldown(guild_id, user_id, "last_search", cooldown)
         places = eco.SEARCH_PLACES
         place, minimum, maximum = random.choice(places)
         reward = random.randint(minimum, maximum)
@@ -166,22 +204,23 @@ class EconomyService:
         await self.stats.set_max(guild_id, user_id, "search.biggest_reward", reward)
         await self._award_activity_xp(guild_id, user_id, "search")
         await self.db.set_timestamp(guild_id, user_id, "last_search", now)
-        return reward, place, now + self.SEARCH_COOLDOWN, dropped
+        return reward, place, now + cooldown, dropped
 
     async def cooldowns(self, guild_id: int, user_id: int) -> dict[str, datetime | None]:
+        await self.prepare_context(guild_id)
         now = datetime.now(timezone.utc)
         definitions = {
-            "daily": ("last_daily", self.DAILY_COOLDOWN),
-            "beg": ("last_beg", self.BEG_COOLDOWN),
-            "search": ("last_search", self.SEARCH_COOLDOWN),
-            "work": ("last_work", self.WORK_COOLDOWN),
-            "crime": ("last_crime", self.CRIME_COOLDOWN),
-            "rob": ("last_rob", self.ROB_COOLDOWN),
-            "weekly": ("last_weekly", eco.WEEKLY_COOLDOWN),
-            "monthly": ("last_monthly", eco.MONTHLY_COOLDOWN),
-            "interest": ("last_interest", eco.INTEREST_COOLDOWN),
-            "slut": ("last_slut", self.SLUT_COOLDOWN),
-            "claimincome": ("last_role_income", self.CLAIM_INCOME_COOLDOWN),
+            "daily": ("last_daily", await self.guild_settings.get_cooldown(guild_id, "daily")),
+            "beg": ("last_beg", await self.guild_settings.get_cooldown(guild_id, "beg")),
+            "search": ("last_search", await self.guild_settings.get_cooldown(guild_id, "search")),
+            "work": ("last_work", await self.guild_settings.get_cooldown(guild_id, "work")),
+            "crime": ("last_crime", await self.guild_settings.get_cooldown(guild_id, "crime")),
+            "rob": ("last_rob", await self.guild_settings.get_cooldown(guild_id, "rob")),
+            "weekly": ("last_weekly", await self.guild_settings.get_cooldown(guild_id, "weekly")),
+            "monthly": ("last_monthly", await self.guild_settings.get_cooldown(guild_id, "monthly")),
+            "interest": ("last_interest", await self.guild_settings.get_cooldown(guild_id, "interest")),
+            "slut": ("last_slut", await self.guild_settings.get_cooldown(guild_id, "slut")),
+            "claimincome": ("last_role_income", await self.guild_settings.get_cooldown(guild_id, "role_income")),
         }
         result: dict[str, datetime | None] = {}
         for name, (column, duration) in definitions.items():
@@ -191,15 +230,18 @@ class EconomyService:
         return result
 
     async def work(self, guild_id: int, user_id: int) -> tuple[int, str, datetime]:
+        await self.guild_settings.require_feature(guild_id, "work")
         await self.require_not_jailed(guild_id, user_id)
-        now = await self._check_cooldown(guild_id, user_id, "last_work", self.WORK_COOLDOWN)
+        cooldown = await self.guild_settings.get_cooldown(guild_id, "work")
+        now = await self._check_cooldown(guild_id, user_id, "last_work", cooldown)
         jobs = eco.WORK_JOBS
         job, minimum, maximum = random.choice(jobs)
         # A munkák íze eltérő marad, de a teljes economy tartomány központilag szabályozható.
-        low = max(eco.WORK_REWARD[0], minimum)
-        high = min(eco.WORK_REWARD[1], maximum)
+        work_range = await self.guild_settings.get_reward_range(guild_id, "work")
+        low = max(work_range[0], minimum)
+        high = min(work_range[1], maximum)
         if high < low:
-            low, high = eco.WORK_REWARD
+            low, high = work_range
         reward = random.randint(low, high)
         booster = await self.db.get_active_booster(guild_id, user_id, "work_booster")
         if booster:
@@ -215,16 +257,18 @@ class EconomyService:
         await self.stats.set_max(guild_id, user_id, "work.biggest_reward", reward)
         await self._award_activity_xp(guild_id, user_id, "work")
         await self.db.set_timestamp(guild_id, user_id, "last_work", now)
-        return reward, job, now + self.WORK_COOLDOWN
+        return reward, job, now + cooldown
 
     async def crime(self, guild_id: int, user_id: int) -> tuple[bool, int, str, datetime, datetime | None]:
+        await self.guild_settings.require_feature(guild_id, "crime")
         await self.require_not_jailed(guild_id, user_id)
-        now = await self._check_cooldown(guild_id, user_id, "last_crime", self.CRIME_COOLDOWN)
+        cooldown = await self.guild_settings.get_cooldown(guild_id, "crime")
+        now = await self._check_cooldown(guild_id, user_id, "last_crime", cooldown)
         crimes = eco.CRIME_SCENARIOS
         scenario, chance = random.choice(crimes)
         success = random.random() < chance
         if success:
-            amount = random.randint(*eco.CRIME_REWARD)
+            amount = random.randint(*(await self.guild_settings.get_reward_range(guild_id, "crime_reward")))
             booster = await self.db.get_active_booster(guild_id, user_id, "crime_booster")
             if booster:
                 amount = int(amount * booster[0])
@@ -238,7 +282,7 @@ class EconomyService:
             await self.stats.add(guild_id, user_id, "crime.earned", amount)
             await self.stats.set_max(guild_id, user_id, "crime.biggest_reward", amount)
         else:
-            amount = random.randint(*eco.CRIME_FINE)
+            amount = random.randint(*(await self.guild_settings.get_reward_range(guild_id, "crime_fine")))
             await self.db.add_wallet(
                 guild_id, user_id, -amount, f"crime_fine:{scenario}", allow_negative=True
             )
@@ -254,20 +298,22 @@ class EconomyService:
             await self.stats.increment(guild_id, user_id, "crime.jailed")
         await self._award_activity_xp(guild_id, user_id, "crime")
         await self.db.set_timestamp(guild_id, user_id, "last_crime", now)
-        return success, amount, scenario, now + self.CRIME_COOLDOWN, jail_until
+        return success, amount, scenario, now + cooldown, jail_until
 
     async def rob(self, guild_id: int, robber_id: int, victim_id: int) -> tuple[bool, int, datetime]:
+        await self.guild_settings.require_feature(guild_id, "rob")
         await self.require_not_jailed(guild_id, robber_id)
         if robber_id == victim_id: raise ValueError("Saját magadat nem rabolhatod ki.")
-        now = await self._check_cooldown(guild_id, robber_id, "last_rob", self.ROB_COOLDOWN)
+        cooldown = await self.guild_settings.get_cooldown(guild_id, "rob")
+        now = await self._check_cooldown(guild_id, robber_id, "last_rob", cooldown)
         victim_wallet, _ = await self.db.get_balance(guild_id, victim_id)
         robber_wallet, _ = await self.db.get_balance(guild_id, robber_id)
         if victim_wallet < eco.ROB_MIN_VICTIM_WALLET:
-            raise ValueError(f"A célpont tárcájában nincs legalább ${eco.ROB_MIN_VICTIM_WALLET:,}.".replace(",", " "))
+            raise ValueError(f"A célpont tárcájában nincs legalább {money(eco.ROB_MIN_VICTIM_WALLET)}.")
         required_cover = max(eco.ROB_MIN_ATTEMPT_WALLET, int(victim_wallet * eco.ROB_MIN_COVERAGE_SHARE))
         if robber_wallet < required_cover:
             raise ValueError(
-                f"Ehhez a rabláshoz legalább ${required_cover:,} kell a saját tárcádban kockázati fedezetként.".replace(",", " ")
+                f"Ehhez a rabláshoz legalább {money(required_cover)} kell a saját tárcádban kockázati fedezetként."
             )
         rob_chance = eco.ROB_SUCCESS_CHANCE
         rob_booster = await self.db.get_active_booster(guild_id, robber_id, "rob_booster")
@@ -282,9 +328,10 @@ class EconomyService:
             await self.stats.increment(guild_id, robber_id, "rob.fail")
             await self.stats.increment(guild_id, robber_id, "rob.blocked_by_shield")
             await self._award_activity_xp(guild_id, robber_id, "rob")
-            return False, 0, now + self.ROB_COOLDOWN
+            return False, 0, now + cooldown
         if success:
-            amount = max(1, int(victim_wallet * eco.ROB_SUCCESS_SHARE))
+            rob_share = await self.guild_settings.get_rob_share(guild_id)
+            amount = max(1, int(victim_wallet * rob_share))
             stolen, _ = await self.db.rob_wallet(guild_id, robber_id, victim_id, amount)
             await self.db.increment_stat(guild_id, robber_id, "rob_success")
             await self.db.increment_stat(guild_id, robber_id, "rob_profit", stolen)
@@ -305,14 +352,16 @@ class EconomyService:
             await self.stats.add(guild_id, robber_id, "rob.lost", amount)
         await self._award_activity_xp(guild_id, robber_id, "rob")
         await self.db.set_timestamp(guild_id, robber_id, "last_rob", now)
-        return success, amount, now + self.ROB_COOLDOWN
+        return success, amount, now + cooldown
 
     async def slut(self, guild_id: int, user_id: int) -> tuple[bool, int, str, datetime]:
+        await self.guild_settings.require_feature(guild_id, "slut")
         await self.require_not_jailed(guild_id, user_id)
-        now = await self._check_cooldown(guild_id, user_id, "last_slut", self.SLUT_COOLDOWN)
+        cooldown = await self.guild_settings.get_cooldown(guild_id, "slut")
+        now = await self._check_cooldown(guild_id, user_id, "last_slut", cooldown)
         success = random.random() < eco.SLUT_SUCCESS_CHANCE
         if success:
-            amount = random.randint(*eco.SLUT_REWARD)
+            amount = random.randint(*(await self.guild_settings.get_reward_range(guild_id, "slut_reward")))
             amount = await self.apply_prestige_bonus(guild_id, user_id, amount, "slut")
             text = random.choice(eco.SLUT_SUCCESS_MESSAGES)
             await self.db.add_wallet(guild_id, user_id, amount, "slut_success")
@@ -320,7 +369,7 @@ class EconomyService:
             await self.stats.add(guild_id, user_id, "slut.earned", amount)
             await self.stats.set_max(guild_id, user_id, "slut.biggest_reward", amount)
         else:
-            amount = random.randint(*eco.SLUT_FINE)
+            amount = random.randint(*(await self.guild_settings.get_reward_range(guild_id, "slut_fine")))
             text = random.choice(eco.SLUT_FAIL_MESSAGES)
             await self.db.add_wallet(
                 guild_id, user_id, -amount, "slut_fail", allow_negative=True
@@ -331,7 +380,7 @@ class EconomyService:
         await self.stats.increment(guild_id, user_id, "slut.count")
         await self._award_activity_xp(guild_id, user_id, "slut")
         await self.db.set_timestamp(guild_id, user_id, "last_slut", now)
-        return success, amount, text, now + self.SLUT_COOLDOWN
+        return success, amount, text, now + cooldown
 
     async def set_role_income(self, guild_id: int, role_id: int, hourly_amount: int) -> None:
         await self.db.set_role_income(guild_id, role_id, hourly_amount)
@@ -340,6 +389,8 @@ class EconomyService:
         return await self.db.get_role_incomes(guild_id)
 
     async def claim_role_income(self, guild_id: int, user_id: int, role_ids: set[int]) -> tuple[int, int, datetime]:
+        await self.guild_settings.require_feature(guild_id, "role_income")
+        cooldown = await self.guild_settings.get_cooldown(guild_id, "role_income")
         now = datetime.now(timezone.utc)
         rates = await self.db.get_role_incomes(guild_id)
         eligible_rates = [amount for role_id, amount in rates if role_id in role_ids]
@@ -356,8 +407,8 @@ class EconomyService:
             last = now - timedelta(hours=self.ROLE_INCOME_FIRST_CLAIM_HOURS)
         elapsed = min(now - last, self.ROLE_INCOME_MAX_ACCUMULATION)
         full_hours = int(elapsed.total_seconds() // 3600)
-        if elapsed < self.CLAIM_INCOME_COOLDOWN:
-            raise CooldownError(last + self.CLAIM_INCOME_COOLDOWN)
+        if elapsed < cooldown:
+            raise CooldownError(last + cooldown)
         reward = hourly * full_hours
         reward = await self.apply_prestige_bonus(guild_id, user_id, reward, "role_income")
         await self.db.add_wallet(guild_id, user_id, reward, f"role_income:{full_hours}h")

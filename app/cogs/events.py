@@ -15,6 +15,7 @@ from discord.ext import commands
 
 from app import economy_config as eco
 from app.services.economy import EconomyService
+from app.services.economy_events_settings import EconomyEventsSettingsService, EventRuntimeConfig
 from app.ui import DANGER, GOLD, SUCCESS, base_embed, money
 
 logger = logging.getLogger("vaultbot.events")
@@ -33,20 +34,46 @@ class EventCog(commands.Cog):
     def __init__(self, bot: commands.Bot, economy: EconomyService) -> None:
         self.bot = bot
         self.economy = economy
+        self.settings_service = EconomyEventsSettingsService(economy.db)
         self.active_events: dict[int, ActiveEvent] = {}
         self.auto_task: asyncio.Task[None] | None = None
         self._activity_messages: dict[int, deque[tuple[float, int]]] = {}
         self._activity_last_user_message: dict[tuple[int, int], float] = {}
         self._activity_ready: dict[int, asyncio.Event] = {}
+        self._event_config_cache: dict[int, EventRuntimeConfig] = {}
+        self._next_auto_event_at: dict[int, float] = {}
 
     async def cog_load(self) -> None:
-        settings = self.bot.settings  # type: ignore[attr-defined]
-        if settings.auto_events_enabled and settings.event_channel_id:
-            self.auto_task = asyncio.create_task(self._automatic_event_loop())
+        self.auto_task = asyncio.create_task(self._automatic_event_loop())
 
     async def cog_unload(self) -> None:
         if self.auto_task:
             self.auto_task.cancel()
+
+    async def get_runtime_config(self, guild_id: int) -> EventRuntimeConfig:
+        cfg = await self.settings_service.get_event_config(guild_id, self.bot.settings)  # type: ignore[attr-defined]
+        self._event_config_cache[guild_id] = cfg
+        return cfg
+
+    def _fallback_event_config(self) -> EventRuntimeConfig:
+        settings = self.bot.settings  # type: ignore[attr-defined]
+        return EventRuntimeConfig(
+            auto_enabled=bool(settings.auto_events_enabled), safe_enabled=True, bomb_enabled=True, manual_enabled=True,
+            channel_id=settings.event_channel_id, min_hours=float(settings.auto_event_min_hours),
+            max_hours=float(settings.auto_event_max_hours), join_seconds=int(settings.auto_join_seconds),
+            safe_min_reward=int(settings.auto_safe_min_reward), safe_max_reward=int(settings.auto_safe_max_reward),
+            bomb_min_entry=int(settings.auto_bomb_min_entry), bomb_max_entry=int(settings.auto_bomb_max_entry),
+            bomb_round_seconds=int(settings.auto_bomb_round_seconds),
+            activity_messages=int(settings.auto_event_activity_messages),
+            activity_window_minutes=int(settings.auto_event_activity_window_minutes),
+            activity_min_users=int(settings.auto_event_activity_min_users),
+            activity_user_cooldown_seconds=int(settings.auto_event_activity_user_cooldown_seconds),
+            safe_chance=float(eco.AUTO_EVENT_SAFE_CHANCE),
+        )
+
+    def reschedule_auto_event(self, guild_id: int) -> None:
+        self._next_auto_event_at.pop(guild_id, None)
+        self._event_config_cache.pop(guild_id, None)
 
     def _activity_gate(self, guild_id: int) -> asyncio.Event:
         gate = self._activity_ready.get(guild_id)
@@ -55,10 +82,10 @@ class EventCog(commands.Cog):
             self._activity_ready[guild_id] = gate
         return gate
 
-    def _prune_activity(self, guild_id: int, now: float | None = None) -> None:
-        settings = self.bot.settings  # type: ignore[attr-defined]
+    def _prune_activity(self, guild_id: int, now: float | None = None, config: EventRuntimeConfig | None = None) -> None:
+        config = config or self._event_config_cache.get(guild_id) or self._fallback_event_config()
         now = time.monotonic() if now is None else now
-        cutoff = now - (settings.auto_event_activity_window_minutes * 60)
+        cutoff = now - (config.activity_window_minutes * 60)
         messages = self._activity_messages.setdefault(guild_id, deque())
         while messages and messages[0][0] < cutoff:
             messages.popleft()
@@ -67,29 +94,21 @@ class EventCog(commands.Cog):
                 self._activity_last_user_message.pop(key, None)
 
     def get_activity_status(self, guild_id: int) -> dict[str, int | bool]:
-        self._prune_activity(guild_id)
+        config = self._event_config_cache.get(guild_id) or self._fallback_event_config()
+        self._prune_activity(guild_id, config=config)
         messages = self._activity_messages.setdefault(guild_id, deque())
         users = {user_id for _, user_id in messages}
         gate = self._activity_gate(guild_id)
-        settings = self.bot.settings  # type: ignore[attr-defined]
-        qualifies = (
-            len(messages) >= settings.auto_event_activity_messages
-            and len(users) >= settings.auto_event_activity_min_users
-        )
-        # Az activity gate csak addig marad aktív, amíg a rolling ablak alapján
-        # tényleg él a chat. Így egy esti aktivitás nem indít eventet órákkal később.
+        qualifies = len(messages) >= config.activity_messages and len(users) >= config.activity_min_users
         if qualifies:
             gate.set()
         else:
             gate.clear()
         return {
-            "messages": len(messages),
-            "required_messages": settings.auto_event_activity_messages,
-            "users": len(users),
-            "required_users": settings.auto_event_activity_min_users,
-            "window_minutes": settings.auto_event_activity_window_minutes,
-            "user_cooldown_seconds": settings.auto_event_activity_user_cooldown_seconds,
-            "armed": qualifies,
+            "messages": len(messages), "required_messages": config.activity_messages,
+            "users": len(users), "required_users": config.activity_min_users,
+            "window_minutes": config.activity_window_minutes,
+            "user_cooldown_seconds": config.activity_user_cooldown_seconds, "armed": qualifies,
         }
 
     def _reset_activity(self, guild_id: int) -> None:
@@ -102,46 +121,31 @@ class EventCog(commands.Cog):
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message) -> None:
-        settings = self.bot.settings  # type: ignore[attr-defined]
-        if (
-            not settings.auto_events_enabled
-            or not settings.event_channel_id
-            or message.guild is None
-            or message.channel.id != settings.event_channel_id
-            or message.author.bot
-            or message.webhook_id is not None
-        ):
+        if message.guild is None or message.author.bot or message.webhook_id is not None:
+            return
+        config = await self.get_runtime_config(message.guild.id)
+        if not config.auto_enabled or not config.channel_id or message.channel.id != config.channel_id:
             return
 
         guild_id = message.guild.id
         gate = self._activity_gate(guild_id)
         now = time.monotonic()
-        self._prune_activity(guild_id, now)
-        cooldown = settings.auto_event_activity_user_cooldown_seconds
+        self._prune_activity(guild_id, now, config)
         user_key = (guild_id, message.author.id)
         last = self._activity_last_user_message.get(user_key)
-        if last is not None and now - last < cooldown:
+        if last is not None and now - last < config.activity_user_cooldown_seconds:
             return
 
         self._activity_last_user_message[user_key] = now
         messages = self._activity_messages.setdefault(guild_id, deque())
         messages.append((now, message.author.id))
         users = {user_id for _, user_id in messages}
-
-        qualifies = (
-            len(messages) >= settings.auto_event_activity_messages
-            and len(users) >= settings.auto_event_activity_min_users
-        )
+        qualifies = len(messages) >= config.activity_messages and len(users) >= config.activity_min_users
         was_armed = gate.is_set()
         if qualifies:
             gate.set()
             if not was_armed:
-                logger.info(
-                    "Auto event aktivitás teljesült guild=%s: %s üzenet, %s user.",
-                    guild_id,
-                    len(messages),
-                    len(users),
-                )
+                logger.info("Auto event aktivitás teljesült guild=%s: %s üzenet, %s user.", guild_id, len(messages), len(users))
         else:
             gate.clear()
 
@@ -162,9 +166,9 @@ class EventCog(commands.Cog):
     def _release_event(self, guild_id: int) -> None:
         self.active_events.pop(guild_id, None)
 
-    @app_commands.command(name="kincseslada", description="Admin Kincses Láda eventet indít, amely egyenlően szétosztja a jutalmat.")
+    @app_commands.command(name="kincseslada", description="Staff Kincses Láda eventet indít, amely egyenlően szétosztja a jutalmat.")
     @app_commands.describe(osszeg="A teljes kiosztandó pénzösszeg", jelentkezes="Hány másodpercig lehessen csatlakozni?")
-    @app_commands.checks.has_permissions(administrator=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
     async def kincseslada(
         self,
         interaction: discord.Interaction,
@@ -173,6 +177,9 @@ class EventCog(commands.Cog):
     ) -> None:
         if interaction.guild_id is None or interaction.channel is None:
             return await interaction.response.send_message("Ez a parancs csak szerveren használható.", ephemeral=True)
+        config = await self.get_runtime_config(interaction.guild_id)
+        if not config.manual_enabled or not config.safe_enabled:
+            return await interaction.response.send_message("❌ A manuális Kincses Láda ezen a szerveren ki van kapcsolva.", ephemeral=True)
         if interaction.guild_id in self.active_events:
             return await interaction.response.send_message("❌ Már fut egy event ezen a szerveren.", ephemeral=True)
 
@@ -185,16 +192,16 @@ class EventCog(commands.Cog):
     @kincseslada.error
     async def kincseslada_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError) -> None:
         if isinstance(error, app_commands.MissingPermissions):
-            return await interaction.response.send_message("❌ Ezt csak admin indíthatja.", ephemeral=True)
+            return await interaction.response.send_message("❌ Ehhez **Szerver kezelése** jogosultság kell.", ephemeral=True)
         raise error
 
-    @app_commands.command(name="hirtelenhalal", description="Admin Hirtelen Halál eventet indít belépési díjjal.")
+    @app_commands.command(name="hirtelenhalal", description="Staff Hirtelen Halál eventet indít belépési díjjal.")
     @app_commands.describe(
         belepo="Belépési díj játékosonként; a teljes pot ebből áll össze",
         jelentkezes="Hány másodpercig lehessen csatlakozni?",
         kor="Hány másodpercenként essen ki valaki?",
     )
-    @app_commands.checks.has_permissions(administrator=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
     async def hirtelenhalal(
         self,
         interaction: discord.Interaction,
@@ -204,6 +211,9 @@ class EventCog(commands.Cog):
     ) -> None:
         if interaction.guild_id is None or interaction.channel is None:
             return await interaction.response.send_message("Ez a parancs csak szerveren használható.", ephemeral=True)
+        config = await self.get_runtime_config(interaction.guild_id)
+        if not config.manual_enabled or not config.bomb_enabled:
+            return await interaction.response.send_message("❌ A manuális Hirtelen Halál ezen a szerveren ki van kapcsolva.", ephemeral=True)
         if interaction.guild_id in self.active_events:
             return await interaction.response.send_message("❌ Már fut egy event ezen a szerveren.", ephemeral=True)
 
@@ -216,7 +226,7 @@ class EventCog(commands.Cog):
     @hirtelenhalal.error
     async def hirtelenhalal_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError) -> None:
         if isinstance(error, app_commands.MissingPermissions):
-            return await interaction.response.send_message("❌ Ezt csak admin indíthatja.", ephemeral=True)
+            return await interaction.response.send_message("❌ Ehhez **Szerver kezelése** jogosultság kell.", ephemeral=True)
         raise error
 
     async def _post_safe(
@@ -228,6 +238,7 @@ class EventCog(commands.Cog):
         starter: discord.abc.User | None,
         automatic: bool,
     ) -> discord.Message | None:
+        await self.economy.prepare_context(guild_id)
         end_at = int(datetime.now(timezone.utc).timestamp()) + join_seconds
         embed = discord.Embed(
             title="🎁 Kincses Láda",
@@ -403,6 +414,7 @@ class EventCog(commands.Cog):
         starter: discord.abc.User | None,
         automatic: bool,
     ) -> discord.Message | None:
+        await self.economy.prepare_context(guild_id)
         end_at = int(datetime.now(timezone.utc).timestamp()) + join_seconds
         embed = self._bomb_signup_embed(
             entry_fee=entry_fee,
@@ -573,96 +585,60 @@ class EventCog(commands.Cog):
 
     async def _automatic_event_loop(self) -> None:
         await self.bot.wait_until_ready()
-        settings = self.bot.settings  # type: ignore[attr-defined]
-
         while not self.bot.is_closed():
-            # A random időzítés megmarad, de ez csak a legkorábbi auto-event idő.
-            # Ha addig nincs elég aktivitás, a bot csendben vár az activity gate-re.
-            delay_seconds = random.uniform(
-                settings.auto_event_min_hours * 3600,
-                settings.auto_event_max_hours * 3600,
-            )
-            logger.info(
-                "Auto event legkorábban %.1f perc múlva; aktivitás kell: %s üzenet / %s user / %s perc.",
-                delay_seconds / 60,
-                settings.auto_event_activity_messages,
-                settings.auto_event_activity_min_users,
-                settings.auto_event_activity_window_minutes,
-            )
-            await asyncio.sleep(delay_seconds)
-
-            channel = self.bot.get_channel(settings.event_channel_id)
-            if channel is None:
+            now = time.monotonic()
+            for guild in list(self.bot.guilds):
                 try:
-                    channel = await self.bot.fetch_channel(settings.event_channel_id)
-                except discord.DiscordException:
-                    logger.exception("Az EVENT_CHANNEL_ID csatorna nem érhető el.")
-                    continue
+                    config = await self.get_runtime_config(guild.id)
+                    if (
+                        not config.auto_enabled
+                        or not config.channel_id
+                        or not (config.safe_enabled or config.bomb_enabled)
+                    ):
+                        self._next_auto_event_at.pop(guild.id, None)
+                        continue
 
-            guild = getattr(channel, "guild", None)
-            if guild is None:
-                continue
+                    channel = guild.get_channel(config.channel_id)
+                    if channel is None:
+                        continue
 
-            gate = self._activity_gate(guild.id)
-            status = self.get_activity_status(guild.id)
-            if not status["armed"]:
-                logger.info(
-                    "Auto event timer lejárt, de nincs elég aktivitás guild=%s (%s/%s üzenet, %s/%s user). Várakozás.",
-                    guild.id,
-                    status["messages"],
-                    status["required_messages"],
-                    status["users"],
-                    status["required_users"],
-                )
-                await gate.wait()
+                    due = self._next_auto_event_at.get(guild.id)
+                    if due is None:
+                        delay = random.uniform(config.min_hours * 3600, config.max_hours * 3600)
+                        self._next_auto_event_at[guild.id] = now + delay
+                        logger.info("Auto event ütemezve guild=%s %.1f perc múlva.", guild.id, delay / 60)
+                        continue
+                    if now < due or guild.id in self.active_events:
+                        continue
 
-            # Manuális event alatt nem indítunk rá automatikusat. Ha közben a chat
-            # lecsendesedik és lejár a rolling activity ablak, új aktivitást várunk.
-            while not self.bot.is_closed():
-                while guild.id in self.active_events and not self.bot.is_closed():
-                    await asyncio.sleep(5)
-                if self.bot.is_closed():
-                    break
-                status = self.get_activity_status(guild.id)
-                if status["armed"]:
-                    break
-                logger.info(
-                    "Az auto event aktivitás közben elévült guild=%s; új aktivitásra várunk.",
-                    guild.id,
-                )
-                await gate.wait()
-            if self.bot.is_closed():
-                break
+                    status = self.get_activity_status(guild.id)
+                    if not status["armed"]:
+                        continue
 
-            started = False
-            try:
-                if random.random() < eco.AUTO_EVENT_SAFE_CHANCE:
-                    amount = random.randint(settings.auto_safe_min_reward, settings.auto_safe_max_reward)
-                    started = (
-                        await self._post_safe(
-                            channel, guild.id, amount, settings.auto_join_seconds, None, True
-                        )
-                    ) is not None
-                else:
-                    entry_fee = random.randint(settings.auto_bomb_min_entry, settings.auto_bomb_max_entry)
-                    started = (
-                        await self._post_bomb(
-                            channel,
-                            guild.id,
-                            entry_fee,
-                            settings.auto_join_seconds,
-                            settings.auto_bomb_round_seconds,
-                            None,
-                            True,
-                        )
-                    ) is not None
-            except Exception:
-                logger.exception("Nem sikerült automatikus eventet indítani.")
+                    kinds: list[str] = []
+                    if config.safe_enabled:
+                        kinds.append("safe")
+                    if config.bomb_enabled:
+                        kinds.append("bomb")
+                    if len(kinds) == 2:
+                        kind = "safe" if random.random() < config.safe_chance else "bomb"
+                    else:
+                        kind = kinds[0]
 
-            if started:
-                # Egy sikeresen elindult auto event elfogyasztja az aktivitást.
-                # A következőhöz ismét új, valódi chat activity kell.
-                self._reset_activity(guild.id)
-            else:
-                # Technikai hiba / race esetén ne pörögjön forró loopban.
-                await asyncio.sleep(30)
+                    if kind == "safe":
+                        amount = random.randint(config.safe_min_reward, config.safe_max_reward)
+                        started = await self._post_safe(channel, guild.id, amount, config.join_seconds, None, True) is not None
+                    else:
+                        entry_fee = random.randint(config.bomb_min_entry, config.bomb_max_entry)
+                        started = await self._post_bomb(
+                            channel, guild.id, entry_fee, config.join_seconds, config.bomb_round_seconds, None, True
+                        ) is not None
+
+                    if started:
+                        self._reset_activity(guild.id)
+                    delay = random.uniform(config.min_hours * 3600, config.max_hours * 3600)
+                    self._next_auto_event_at[guild.id] = time.monotonic() + delay
+                except Exception:
+                    logger.exception("Nem sikerült automatikus eventet kezelni guild=%s.", guild.id)
+                    self._next_auto_event_at[guild.id] = time.monotonic() + 60
+            await asyncio.sleep(5)

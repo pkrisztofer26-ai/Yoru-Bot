@@ -131,7 +131,7 @@ class Database:
                 VALUES (?, ?, ?, ?, ?, 1)
                 """,
                 [
-                    ("chicken", "Chicken", "Szükséges a Chicken Fight játékhoz. Nem fogy el játék közben.", eco.SHOP_PRICES["chicken"], "🐔"),
+                    ("chicken", "Chicken", "Szükséges a Chicken Fighthoz. Vereségnél a Chicken meghal és elvész.", eco.SHOP_PRICES["chicken"], "🐔"),
                     ("lottery_ticket", "Sorsjegy", "Kapard le a !scratch paranccsal véletlen nyereményért.", eco.SHOP_PRICES["lottery_ticket"], "🎟️"),
                     ("mystery_box", "Mystery Box", "Nyisd ki a !use mystery_box paranccsal véletlen jutalomért.", eco.SHOP_PRICES["mystery_box"], "📦"),
                     ("rob_shield", "Rablásvédelem", "Egyszer automatikusan megvéd egy sikeres rablástól.", eco.SHOP_PRICES["rob_shield"], "🛡️"),
@@ -139,7 +139,7 @@ class Database:
                 ],
             )
             await db.execute("UPDATE shop_items SET active = 0 WHERE item_id IN ('safe_key', 'bomb_shield')")
-            await db.execute("UPDATE shop_items SET description = ? WHERE item_id = 'chicken'", ("Szükséges a Chicken Fight játékhoz. Nem fogy el játék közben.",))
+            await db.execute("UPDATE shop_items SET description = ? WHERE item_id = 'chicken'", ("Szükséges a Chicken Fighthoz. Vereségnél a Chicken meghal és elvész.",))
             await db.execute("UPDATE shop_items SET description = ? WHERE item_id = 'lottery_ticket'", ("Kapard le a !scratch paranccsal véletlen nyereményért.",))
 
             # Yoru v2 progression / event tables
@@ -595,7 +595,7 @@ class Database:
             # v2.1 nagyobb economy + napi árfolyamos értéktárgyak + valódi jutalom itemek.
             # UPSERT-et használunk, így a meglévő adatbázisban is frissülnek az árak/leírások.
             shop_catalog = [
-                ("chicken", "Chicken", "Szükséges a Chicken Fight játékhoz. Nem fogy el játék közben.", eco.SHOP_PRICES["chicken"], "🐔", "common", "game"),
+                ("chicken", "Chicken", "Szükséges a Chicken Fighthoz. Vereségnél a Chicken meghal és elvész.", eco.SHOP_PRICES["chicken"], "🐔", "common", "game"),
                 ("lottery_ticket", "Sorsjegy", "Kapard le a !scratch paranccsal. A base EV enyhén a vételár alatt marad.", eco.SHOP_PRICES["lottery_ticket"], "🎟️", "common", "game"),
                 ("mystery_box", "Mystery Box", "Nagy szórású pénzláda. !use mystery_box", eco.SHOP_PRICES["mystery_box"], "📦", "rare", "lootbox"),
                 ("rob_shield", "Rablásvédelem", "Egyszer automatikusan megvéd egy sikeres rablástól. A 60%-os rob miatt értékes védelmi item.", eco.SHOP_PRICES["rob_shield"], "🛡️", "rare", "utility"),

@@ -15,9 +15,20 @@ class ExtrasCog(commands.Cog):
         self.bot = bot
         self.extras = extras
 
+    async def _guard(self, interaction: discord.Interaction, feature: str) -> bool:
+        if interaction.guild_id is None:
+            return False
+        try:
+            await self.extras.economy.require_access(interaction.guild_id, feature, interaction.channel_id, getattr(interaction.channel, "category_id", None))
+        except ValueError as e:
+            await interaction.response.send_message(embed=error_embed(interaction.user, str(e)), ephemeral=True)
+            return False
+        return True
+
     @app_commands.command(name="weekly", description="Átveszed a heti economy jutalmadat.")
     async def weekly(self, interaction: discord.Interaction) -> None:
         if interaction.guild_id is None: return
+        if not await self._guard(interaction, "weekly"): return
         try: reward, ready = await self.extras.weekly(interaction.guild_id, interaction.user.id)
         except CooldownError as e: return await interaction.response.send_message(embed=cooldown_embed(interaction.user, "Weekly", e.ready_at), ephemeral=True)
         except ValueError as e: return await interaction.response.send_message(embed=error_embed(interaction.user, str(e)), ephemeral=True)
@@ -29,6 +40,7 @@ class ExtrasCog(commands.Cog):
     @app_commands.command(name="monthly", description="Átveszed a havi economy jutalmadat.")
     async def monthly(self, interaction: discord.Interaction) -> None:
         if interaction.guild_id is None: return
+        if not await self._guard(interaction, "monthly"): return
         try: reward, ready = await self.extras.monthly(interaction.guild_id, interaction.user.id)
         except CooldownError as e: return await interaction.response.send_message(embed=cooldown_embed(interaction.user, "Monthly", e.ready_at), ephemeral=True)
         except ValueError as e: return await interaction.response.send_message(embed=error_embed(interaction.user, str(e)), ephemeral=True)
@@ -40,6 +52,7 @@ class ExtrasCog(commands.Cog):
     @app_commands.command(name="interest", description="Banki kamatot veszel fel 6 óránként.")
     async def interest(self, interaction: discord.Interaction) -> None:
         if interaction.guild_id is None: return
+        if not await self._guard(interaction, "interest"): return
         try: reward, bank, ready = await self.extras.interest(interaction.guild_id, interaction.user.id)
         except CooldownError as e: return await interaction.response.send_message(embed=cooldown_embed(interaction.user, "Interest", e.ready_at), ephemeral=True)
         except ValueError as e: return await interaction.response.send_message(embed=error_embed(interaction.user, str(e)), ephemeral=True)
@@ -52,6 +65,7 @@ class ExtrasCog(commands.Cog):
     @app_commands.command(name="scratch", description="Felhasználsz egy Sorsjegyet.")
     async def scratch(self, interaction: discord.Interaction) -> None:
         if interaction.guild_id is None: return
+        if not await self._guard(interaction, "economy"): return
         try: label, reward, wallet = await self.extras.scratch(interaction.guild_id, interaction.user.id)
         except ValueError as e: return await interaction.response.send_message(embed=error_embed(interaction.user, str(e)), ephemeral=True)
         embed = action_embed("🎟️ Sorsjegy", interaction.user, description=f"**{label}**", color=SUCCESS if reward else GOLD)
@@ -62,6 +76,7 @@ class ExtrasCog(commands.Cog):
     @app_commands.command(name="giveitem", description="Tárgyat adsz egy másik tagnak.")
     async def giveitem(self, interaction: discord.Interaction, member: discord.Member, item: str, mennyiseg: app_commands.Range[int, 1, 1000] = 1) -> None:
         if interaction.guild_id is None: return
+        if not await self._guard(interaction, "economy"): return
         if member.bot: return await interaction.response.send_message(embed=error_embed(interaction.user, "Botnak nem adhatsz tárgyat."), ephemeral=True)
         try: name, emoji, qty = await self.extras.give_item(interaction.guild_id, interaction.user.id, member.id, item, mennyiseg)
         except (ValueError, LookupError) as e: return await interaction.response.send_message(embed=error_embed(interaction.user, str(e)), ephemeral=True)
@@ -71,6 +86,7 @@ class ExtrasCog(commands.Cog):
     @app_commands.describe(osszeg="Tét: pl. 25k, 2m, 1b, 1t vagy all")
     async def chickenfight(self, interaction: discord.Interaction, osszeg: str) -> None:
         if interaction.guild_id is None: return
+        if not await self._guard(interaction, "gambling"): return
         current_wallet, _ = await self.extras.economy.balance(interaction.guild_id, interaction.user.id)
         try:
             tet = parse_amount(osszeg, current_wallet)
@@ -85,12 +101,15 @@ class ExtrasCog(commands.Cog):
         embed.add_field(name="Eredmény", value=(f"✅ **+{money(amount)}**" if won else f"❌ **-{money(amount)}**"), inline=True)
         embed.add_field(name="💵 Kifizetés", value=f"**{money(payout)}**", inline=True)
         embed.add_field(name="💰 Egyenleg", value=f"**{money(wallet)}**", inline=False)
+        if not won:
+            embed.add_field(name="🐔 Chicken", value="**A Chickened elpusztult a csatában.** Vegyél újat a shopból a következő harchoz.", inline=False)
         await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="highlow", description="Tippeld meg, 7-nél magasabb vagy alacsonyabb lap jön-e.")
     @app_commands.describe(osszeg="Tét: pl. 25k, 2m, 1b, 1t vagy all")
     async def highlow(self, interaction: discord.Interaction, tipp: str, osszeg: str) -> None:
         if interaction.guild_id is None: return
+        if not await self._guard(interaction, "gambling"): return
         current_wallet, _ = await self.extras.economy.balance(interaction.guild_id, interaction.user.id)
         try:
             tet = parse_amount(osszeg, current_wallet)
@@ -102,7 +121,7 @@ class ExtrasCog(commands.Cog):
         embed = player_embed("🃏 High / Low", interaction.user, description=f"A húzott lap: **{card}**", color=color)
         embed.add_field(name="🎯 Tipp", value=f"**{tipp.title()}**", inline=True)
         embed.add_field(name="🎟️ Tét", value=f"**{money(tet)}**", inline=True)
-        result_text = "🤝 **$0**" if result == "tie" else (f"✅ **+{money(amount)}**" if result == "win" else f"❌ **-{money(amount)}**")
+        result_text = f"🤝 **{money(0)}**" if result == "tie" else (f"✅ **+{money(amount)}**" if result == "win" else f"❌ **-{money(amount)}**")
         payout = tet if result == "tie" else (tet + amount if result == "win" else 0)
         embed.add_field(name="Eredmény", value=result_text, inline=True)
         embed.add_field(name="💵 Kifizetés", value=f"**{money(payout)}**", inline=True)
@@ -113,6 +132,7 @@ class ExtrasCog(commands.Cog):
     @app_commands.describe(osszeg="Tét: pl. 25k, 2m, 1b, 1t vagy all")
     async def rps(self, interaction: discord.Interaction, valasztas: str, osszeg: str) -> None:
         if interaction.guild_id is None: return
+        if not await self._guard(interaction, "gambling"): return
         current_wallet, _ = await self.extras.economy.balance(interaction.guild_id, interaction.user.id)
         try:
             tet = parse_amount(osszeg, current_wallet)
@@ -126,7 +146,7 @@ class ExtrasCog(commands.Cog):
         embed.add_field(name="Te", value=f"{icons[player]} **{player.title()}**", inline=True)
         embed.add_field(name="Yoru", value=f"{icons[bot]} **{bot.title()}**", inline=True)
         embed.add_field(name="🎟️ Tét", value=f"**{money(tet)}**", inline=True)
-        result = "🤝 **Döntetlen • $0**" if profit == 0 else (f"✅ **+{money(profit)}**" if profit > 0 else f"❌ **-{money(abs(profit))}**")
+        result = f"🤝 **Döntetlen • {money(0)}**" if profit == 0 else (f"✅ **+{money(profit)}**" if profit > 0 else f"❌ **-{money(abs(profit))}**")
         payout = tet + profit if profit >= 0 else 0
         embed.add_field(name="Eredmény", value=result, inline=True)
         embed.add_field(name="💵 Kifizetés", value=f"**{money(payout)}**", inline=True)

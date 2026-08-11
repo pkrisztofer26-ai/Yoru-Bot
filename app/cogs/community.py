@@ -4,6 +4,7 @@ import asyncio
 import logging
 import random
 import re
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
@@ -414,6 +415,7 @@ class CommunityCog(commands.GroupCog, group_name="community", group_description=
         self.black_markets: dict[int, BlackMarketState] = {}
         self.lottery_task: asyncio.Task | None = None
         self.market_task: asyncio.Task | None = None
+        self._next_market_event_at: dict[int, float] = {}
         self.next_lottery_at = datetime.now(timezone.utc) + self.LOTTERY_INTERVAL
         self.settings_service = ServerSettingsService(db)
         self.poll_tasks: dict[int, asyncio.Task] = {}
@@ -424,9 +426,7 @@ class CommunityCog(commands.GroupCog, group_name="community", group_description=
     async def cog_load(self) -> None:
         self.lottery_task = asyncio.create_task(self._lottery_loop())
         await self._restore_community_runtime()
-        settings = getattr(self.bot, "settings", None)
-        if settings and settings.auto_events_enabled and settings.event_channel_id:
-            self.market_task = asyncio.create_task(self._market_loop())
+        self.market_task = asyncio.create_task(self._market_loop())
 
     async def cog_unload(self) -> None:
         for task in [self.lottery_task, self.market_task, *self.poll_tasks.values(), *self.giveaway_tasks.values()]:
@@ -435,6 +435,9 @@ class CommunityCog(commands.GroupCog, group_name="community", group_description=
         for round_ in self.jackpots.values():
             if round_.task:
                 round_.task.cancel()
+
+    def reschedule_event_config(self, guild_id: int) -> None:
+        self._next_market_event_at.pop(guild_id, None)
 
     async def _jackpot_embed(self, round_: JackpotRound, finished: bool = False, winner_id: int | None = None, payout: int = 0) -> discord.Embed:
         total = sum(round_.entries.values())
@@ -465,7 +468,8 @@ class CommunityCog(commands.GroupCog, group_name="community", group_description=
         except discord.HTTPException:
             pass
 
-    async def _join_jackpot(self, guild_id: int, channel_id: int, user_id: int, amount: int) -> JackpotRound:
+    async def _join_jackpot(self, guild_id: int, channel_id: int, user_id: int, amount: int, category_id: int | None = None) -> JackpotRound:
+        await self.economy.require_access(guild_id, "economy", channel_id, category_id)
         await self.economy.require_not_jailed(guild_id, user_id)
         wallet, _ = await self.economy.balance(guild_id, user_id)
         if amount < eco.JACKPOT_MIN_ENTRY:
@@ -527,7 +531,7 @@ class CommunityCog(commands.GroupCog, group_name="community", group_description=
         wallet, _ = await self.economy.balance(interaction.guild_id, interaction.user.id)
         try:
             tet = parse_amount(osszeg, wallet)
-            round_ = await self._join_jackpot(interaction.guild_id, interaction.channel_id, interaction.user.id, tet)
+            round_ = await self._join_jackpot(interaction.guild_id, interaction.channel_id, interaction.user.id, tet, getattr(interaction.channel, "category_id", None))
         except Exception as error:
             return await interaction.response.send_message(f"❌ {error}", ephemeral=True)
         await interaction.response.send_message(f"🎰 Beszálltál **{money(tet)}** összeggel.", ephemeral=True)
@@ -541,7 +545,7 @@ class CommunityCog(commands.GroupCog, group_name="community", group_description=
         wallet, _ = await self.economy.balance(ctx.guild.id, ctx.author.id)
         try:
             parsed = parse_amount(amount, wallet)
-            round_ = await self._join_jackpot(ctx.guild.id, ctx.channel.id, ctx.author.id, parsed)
+            round_ = await self._join_jackpot(ctx.guild.id, ctx.channel.id, ctx.author.id, parsed, getattr(ctx.channel, "category_id", None))
         except Exception as error:
             return await ctx.send(f"❌ {error}")
         await ctx.message.add_reaction("✅")
@@ -558,6 +562,7 @@ class CommunityCog(commands.GroupCog, group_name="community", group_description=
                 await self._draw_lottery(guild)
 
     async def _draw_lottery(self, guild: discord.Guild, force_channel: discord.TextChannel | None = None) -> None:
+        await self.economy.prepare_context(guild.id)
         entries = await self.db.get_lottery_entries(guild.id)
         if not entries:
             return
@@ -574,15 +579,16 @@ class CommunityCog(commands.GroupCog, group_name="community", group_description=
         await self.db.clear_lottery(guild.id)
         channel = force_channel
         if channel is None:
-            settings = getattr(self.bot, "settings", None)
-            if settings and settings.event_channel_id:
-                candidate = self.bot.get_channel(settings.event_channel_id)
-                if isinstance(candidate, discord.TextChannel) and candidate.guild.id == guild.id:
+            event_cfg = await self.economy.guild_settings.get_event_config(guild.id, self.bot.settings)
+            if event_cfg.channel_id:
+                candidate = guild.get_channel(event_cfg.channel_id)
+                if isinstance(candidate, discord.TextChannel):
                     channel = candidate
         if channel:
             await channel.send(embed=base_embed("🎟️ YORU LOTTERY", f"🏆 Nyertes: <@{winner}>\n🎫 Jegyek: **{total_tickets} db**\n💰 Nyeremény: **{money(pot)}**", GOLD))
 
-    async def _buy_lottery(self, guild_id: int, user_id: int, tickets: int) -> int:
+    async def _buy_lottery(self, guild_id: int, user_id: int, tickets: int, channel_id: int | None = None, category_id: int | None = None) -> int:
+        await self.economy.require_access(guild_id, "economy", channel_id, category_id)
         if tickets < 1 or tickets > eco.LOTTERY_MAX_TICKETS_PER_BUY:
             raise ValueError(f"Egyszerre 1–{eco.LOTTERY_MAX_TICKETS_PER_BUY} jegyet vehetsz.")
         cost = tickets * self.LOTTERY_TICKET_PRICE
@@ -600,7 +606,7 @@ class CommunityCog(commands.GroupCog, group_name="community", group_description=
         if interaction.guild_id is None:
             return
         try:
-            cost = await self._buy_lottery(interaction.guild_id, interaction.user.id, jegyek)
+            cost = await self._buy_lottery(interaction.guild_id, interaction.user.id, jegyek, interaction.channel_id, getattr(interaction.channel, "category_id", None))
         except ValueError as error:
             return await interaction.response.send_message(f"❌ {error}", ephemeral=True)
         await interaction.response.send_message(f"🎟️ Vettél **{jegyek} db** lottery jegyet **{money(cost)}** összegért.\nSorsolás: <t:{int(self.next_lottery_at.timestamp())}:R>")
@@ -609,7 +615,7 @@ class CommunityCog(commands.GroupCog, group_name="community", group_description=
     @commands.guild_only()
     async def lottery_prefix(self, ctx: commands.Context, tickets: int = 1) -> None:
         try:
-            cost = await self._buy_lottery(ctx.guild.id, ctx.author.id, tickets)
+            cost = await self._buy_lottery(ctx.guild.id, ctx.author.id, tickets, ctx.channel.id, getattr(ctx.channel, "category_id", None))
         except ValueError as error:
             return await ctx.send(f"❌ {error}")
         await ctx.send(f"🎟️ Vettél **{tickets} db** lottery jegyet **{money(cost)}** összegért. Sorsolás: <t:{int(self.next_lottery_at.timestamp())}:R>")
@@ -624,31 +630,47 @@ class CommunityCog(commands.GroupCog, group_name="community", group_description=
     async def _market_loop(self) -> None:
         await self.bot.wait_until_ready()
         while not self.bot.is_closed():
-            await asyncio.sleep(random.uniform(eco.GUILD_ECONOMY_EVENT_MIN_HOURS, eco.GUILD_ECONOMY_EVENT_MAX_HOURS) * 3600)
-            settings = getattr(self.bot, "settings", None)
-            if not settings or not settings.event_channel_id:
-                continue
-            channel = self.bot.get_channel(settings.event_channel_id)
-            if not isinstance(channel, discord.TextChannel):
-                continue
-            guild_id = channel.guild.id
-            event = random.choice(["blackmarket", "double_work", "crime_rush", "lucky_hour"])
-            if event == "blackmarket":
-                if guild_id in self.black_markets and self.black_markets[guild_id].expires_at > datetime.now(timezone.utc):
-                    continue
-                await self._open_black_market(channel)
-            elif event == "double_work":
-                expires = datetime.now(timezone.utc) + timedelta(hours=eco.GUILD_ECONOMY_EVENT_DURATION_HOURS)
-                await self.db.set_guild_effect(guild_id, "work_multiplier", eco.GUILD_EVENT_WORK_MULTIPLIER, expires)
-                await channel.send(embed=base_embed("🛠️ WORK RUSH", f"A `!work` jutalmak **x{eco.GUILD_EVENT_WORK_MULTIPLIER:.2f}** szorzót kaptak!\n⏳ Vége: <t:{int(expires.timestamp())}:R>", SUCCESS))
-            elif event == "crime_rush":
-                expires = datetime.now(timezone.utc) + timedelta(hours=eco.GUILD_ECONOMY_EVENT_DURATION_HOURS)
-                await self.db.set_guild_effect(guild_id, "crime_multiplier", eco.GUILD_EVENT_CRIME_MULTIPLIER, expires)
-                await channel.send(embed=base_embed("🚨 CRIME RUSH", f"A sikeres `!crime` jutalmak **x{eco.GUILD_EVENT_CRIME_MULTIPLIER:.2f}** szorzót kaptak!\n⏳ Vége: <t:{int(expires.timestamp())}:R>"))
-            else:
-                expires = datetime.now(timezone.utc) + timedelta(hours=eco.GUILD_ECONOMY_EVENT_DURATION_HOURS)
-                await self.db.set_guild_effect(guild_id, "luck_multiplier", eco.GUILD_EVENT_LUCK_MULTIPLIER, expires)
-                await channel.send(embed=base_embed("🍀 LUCKY HOUR", f"Jobb esélyek a ládáknál és sorsjegyeknél.\n⏳ Vége: <t:{int(expires.timestamp())}:R>", SUCCESS))
+            now = time.monotonic()
+            for guild in list(self.bot.guilds):
+                try:
+                    event_cfg = await self.economy.guild_settings.get_event_config(guild.id, self.bot.settings)
+                    if not event_cfg.auto_enabled or not event_cfg.channel_id:
+                        self._next_market_event_at.pop(guild.id, None)
+                        continue
+                    channel = guild.get_channel(event_cfg.channel_id)
+                    if not isinstance(channel, discord.TextChannel):
+                        continue
+                    due = self._next_market_event_at.get(guild.id)
+                    if due is None:
+                        delay = random.uniform(eco.GUILD_ECONOMY_EVENT_MIN_HOURS, eco.GUILD_ECONOMY_EVENT_MAX_HOURS) * 3600
+                        self._next_market_event_at[guild.id] = now + delay
+                        continue
+                    if now < due:
+                        continue
+
+                    await self.economy.prepare_context(guild.id)
+                    event = random.choice(["blackmarket", "double_work", "crime_rush", "lucky_hour"])
+                    if event == "blackmarket":
+                        if guild.id not in self.black_markets or self.black_markets[guild.id].expires_at <= datetime.now(timezone.utc):
+                            await self._open_black_market(channel)
+                    elif event == "double_work":
+                        expires = datetime.now(timezone.utc) + timedelta(hours=eco.GUILD_ECONOMY_EVENT_DURATION_HOURS)
+                        await self.db.set_guild_effect(guild.id, "work_multiplier", eco.GUILD_EVENT_WORK_MULTIPLIER, expires)
+                        await channel.send(embed=base_embed("🛠️ WORK RUSH", f"A `!work` jutalmak **x{eco.GUILD_EVENT_WORK_MULTIPLIER:.2f}** szorzót kaptak!\n⏳ Vége: <t:{int(expires.timestamp())}:R>", SUCCESS))
+                    elif event == "crime_rush":
+                        expires = datetime.now(timezone.utc) + timedelta(hours=eco.GUILD_ECONOMY_EVENT_DURATION_HOURS)
+                        await self.db.set_guild_effect(guild.id, "crime_multiplier", eco.GUILD_EVENT_CRIME_MULTIPLIER, expires)
+                        await channel.send(embed=base_embed("🚨 CRIME RUSH", f"A sikeres `!crime` jutalmak **x{eco.GUILD_EVENT_CRIME_MULTIPLIER:.2f}** szorzót kaptak!\n⏳ Vége: <t:{int(expires.timestamp())}:R>"))
+                    else:
+                        expires = datetime.now(timezone.utc) + timedelta(hours=eco.GUILD_ECONOMY_EVENT_DURATION_HOURS)
+                        await self.db.set_guild_effect(guild.id, "luck_multiplier", eco.GUILD_EVENT_LUCK_MULTIPLIER, expires)
+                        await channel.send(embed=base_embed("🍀 LUCKY HOUR", f"Jobb esélyek a ládáknál és sorsjegyeknél.\n⏳ Vége: <t:{int(expires.timestamp())}:R>", SUCCESS))
+                    delay = random.uniform(eco.GUILD_ECONOMY_EVENT_MIN_HOURS, eco.GUILD_ECONOMY_EVENT_MAX_HOURS) * 3600
+                    self._next_market_event_at[guild.id] = time.monotonic() + delay
+                except Exception:
+                    logger.exception("Community economy event loop hiba guild=%s", guild.id)
+                    self._next_market_event_at[guild.id] = time.monotonic() + 60
+            await asyncio.sleep(10)
 
 
     async def _build_black_market_view(self, guild_id: int) -> discord.ui.LayoutView:
@@ -698,6 +720,7 @@ class CommunityCog(commands.GroupCog, group_name="community", group_description=
         return view
 
     async def _open_black_market(self, channel: discord.TextChannel) -> None:
+        await self.economy.prepare_context(channel.guild.id)
         candidates = ["rare_crate", "epic_crate", "legendary_crate", "work_booster", "crime_booster", "luck_booster", "rob_booster", "interest_booster", "rob_shield"]
         chosen = random.sample(candidates, k=4)
         items: dict[str, tuple[int, int]] = {}
@@ -718,6 +741,10 @@ class CommunityCog(commands.GroupCog, group_name="community", group_description=
     async def blackmarket_slash(self, interaction: discord.Interaction) -> None:
         if interaction.guild_id is None:
             return
+        try:
+            await self.economy.require_access(interaction.guild_id, "economy", interaction.channel_id, getattr(interaction.channel, "category_id", None))
+        except ValueError as error:
+            return await interaction.response.send_message(f"❌ {error}", ephemeral=True)
         state = self.black_markets.get(interaction.guild_id)
         if not state or state.expires_at <= datetime.now(timezone.utc):
             return await interaction.response.send_message("🌑 A Feketepiac jelenleg zárva van.", ephemeral=True)
@@ -727,6 +754,10 @@ class CommunityCog(commands.GroupCog, group_name="community", group_description=
     async def blackmarket_buy_slash(self, interaction: discord.Interaction, item: str, mennyiseg: app_commands.Range[int,1,20]=1) -> None:
         if interaction.guild_id is None:
             return
+        try:
+            await self.economy.require_access(interaction.guild_id, "economy", interaction.channel_id, getattr(interaction.channel, "category_id", None))
+        except ValueError as error:
+            return await interaction.response.send_message(f"❌ {error}", ephemeral=True)
         state=self.black_markets.get(interaction.guild_id)
         if not state or state.expires_at<=datetime.now(timezone.utc):
             return await interaction.response.send_message("🌑 A Feketepiac jelenleg zárva van.", ephemeral=True)
@@ -769,6 +800,10 @@ class CommunityCog(commands.GroupCog, group_name="community", group_description=
     @commands.group(name="blackmarket", aliases=["bm", "feketepiac"], invoke_without_command=True)
     @commands.guild_only()
     async def blackmarket_prefix(self, ctx: commands.Context) -> None:
+        try:
+            await self.economy.require_access(ctx.guild.id, "economy", ctx.channel.id, getattr(ctx.channel, "category_id", None))
+        except ValueError as error:
+            return await ctx.send(f"❌ {error}")
         state = self.black_markets.get(ctx.guild.id)
         now = datetime.now(timezone.utc)
         if not state or state.expires_at <= now:
@@ -777,6 +812,10 @@ class CommunityCog(commands.GroupCog, group_name="community", group_description=
 
     @blackmarket_prefix.command(name="buy", aliases=["b"])
     async def blackmarket_buy(self, ctx: commands.Context, item_id: str, quantity: int = 1) -> None:
+        try:
+            await self.economy.require_access(ctx.guild.id, "economy", ctx.channel.id, getattr(ctx.channel, "category_id", None))
+        except ValueError as error:
+            return await ctx.send(f"❌ {error}")
         state = self.black_markets.get(ctx.guild.id)
         if not state or state.expires_at <= datetime.now(timezone.utc):
             return await ctx.send("🌑 A Feketepiac jelenleg zárva van.")

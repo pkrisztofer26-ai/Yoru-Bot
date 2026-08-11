@@ -25,6 +25,30 @@ class PrefixCog(commands.Cog):
         self.shop = shop
         self.gambling = gambling
 
+    _ECONOMY_GUARDS = {
+        "balance": "economy", "profile": "economy", "stats": "economy",
+        "bank": "bank", "deposit": "bank", "withdraw": "bank", "pay": "economy",
+        "daily": "daily", "beg": "beg", "search": "search", "slut": "slut",
+        "cooldowns": "economy", "work": "work", "crime": "crime", "rob": "rob",
+        "roleincome": "role_income", "claimincome": "role_income", "top": "economy",
+        "history": "economy", "shop": "economy", "buy": "economy", "sell": "economy",
+        "use": "economy", "inventory": "economy", "jail": "economy",
+        "coinflip": "gambling", "dice": "gambling", "slots": "gambling",
+        "roulette": "gambling", "blackjack": "gambling",
+    }
+
+    async def cog_before_invoke(self, ctx: commands.Context) -> None:
+        if ctx.guild is None or ctx.command is None:
+            return
+        feature = self._ECONOMY_GUARDS.get(ctx.command.name)
+        if feature is None:
+            return
+        try:
+            await self.economy.require_access(ctx.guild.id, feature, ctx.channel.id, getattr(ctx.channel, "category_id", None))
+        except ValueError as error:
+            await ctx.send(embed=error_embed(ctx.author, str(error)))
+            raise commands.CheckFailure(str(error)) from error
+
     @commands.command(name="ping")
     async def ping(self, ctx: commands.Context) -> None:
         await ctx.send(f"🏓 Pong! **{round(self.bot.latency * 1000)} ms**")
@@ -430,7 +454,7 @@ class PrefixCog(commands.Cog):
         await ctx.send(embed=embed)
 
     @commands.command(name="kincseslada", aliases=["lada", "chest"])
-    @commands.has_permissions(administrator=True)
+    @commands.has_permissions(manage_guild=True)
     @commands.guild_only()
     async def kincseslada(self, ctx: commands.Context, amount: str, join_seconds: int = 60) -> None:
         try:
@@ -444,6 +468,9 @@ class PrefixCog(commands.Cog):
         events = self.bot.get_cog("EventCog")
         if events is None:
             return await ctx.send("❌ Az event modul nem érhető el.")
+        config = await events.get_runtime_config(ctx.guild.id)
+        if not config.manual_enabled or not config.safe_enabled:
+            return await ctx.send(embed=error_embed(ctx.author, "A manuális Kincses Láda ezen a szerveren ki van kapcsolva."))
         if ctx.guild.id in events.active_events:
             return await ctx.send("❌ Már fut egy event ezen a szerveren.")
         message = await events._post_safe(ctx.channel, ctx.guild.id, parsed_amount, join_seconds, ctx.author, False)
@@ -451,7 +478,7 @@ class PrefixCog(commands.Cog):
             await ctx.send("❌ Nem sikerült elindítani.", delete_after=5)
 
     @commands.command(name="hirtelenhalal", aliases=["bomb", "hh", "sd"])
-    @commands.has_permissions(administrator=True)
+    @commands.has_permissions(manage_guild=True)
     @commands.guild_only()
     async def hirtelenhalal(self, ctx: commands.Context, belepo: str, join_seconds: int = 60, round_seconds: int = 15) -> None:
         try:
@@ -467,6 +494,9 @@ class PrefixCog(commands.Cog):
         events = self.bot.get_cog("EventCog")
         if events is None:
             return await ctx.send("❌ Az event modul nem érhető el.")
+        config = await events.get_runtime_config(ctx.guild.id)
+        if not config.manual_enabled or not config.bomb_enabled:
+            return await ctx.send(embed=error_embed(ctx.author, "A manuális Hirtelen Halál ezen a szerveren ki van kapcsolva."))
         if ctx.guild.id in events.active_events:
             return await ctx.send("❌ Már fut egy event ezen a szerveren.")
         message = await events._post_bomb(ctx.channel, ctx.guild.id, entry_fee, join_seconds, round_seconds, ctx.author, False)
@@ -581,7 +611,7 @@ class PrefixCog(commands.Cog):
     async def on_command_error(self, ctx: commands.Context, error: commands.CommandError) -> None:
         if isinstance(error, commands.CommandNotFound):
             return
-        if isinstance(error, commands.MissingPermissions):
+        if isinstance(error, (commands.MissingPermissions, commands.CheckFailure)):
             return
         if isinstance(error, commands.MissingRequiredArgument):
             return await ctx.send(embed=error_embed(ctx.author, f"Hiányzó adat: `{error.param.name}`. Használd a `!help` parancsot."))

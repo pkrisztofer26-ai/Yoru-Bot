@@ -276,25 +276,43 @@ class HomeView(OwnedView):
     async def roles(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
         await self.cog.show_roles(interaction, self.owner_id)
 
-    @discord.ui.button(label="Tickets", emoji="🎫", style=discord.ButtonStyle.secondary, disabled=True, row=1)
-    async def tickets(self, *_args) -> None:  # pragma: no cover - disabled
-        pass
+    @discord.ui.button(label="Tickets", emoji="🎫", style=discord.ButtonStyle.secondary, row=1)
+    async def tickets(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
+        ticket_cog = self.cog.bot.get_cog("TicketCog")
+        if ticket_cog is None or not hasattr(ticket_cog, "show_settings"):
+            await interaction.response.send_message("❌ A Tickets modul jelenleg nem elérhető.", ephemeral=True)
+            return
+        await ticket_cog.show_settings(interaction, self.owner_id)
 
-    @discord.ui.button(label="Music", emoji="🎵", style=discord.ButtonStyle.secondary, disabled=True, row=1)
-    async def music(self, *_args) -> None:  # pragma: no cover - disabled
-        pass
+    @discord.ui.button(label="Music", emoji="🎵", style=discord.ButtonStyle.secondary, row=1)
+    async def music(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
+        music_cog = self.cog.bot.get_cog("MusicCog")
+        if music_cog is None or not hasattr(music_cog, "show_settings"):
+            await interaction.response.send_message("❌ A Music modul jelenleg nem elérhető.", ephemeral=True)
+            return
+        await music_cog.show_settings(interaction, self.owner_id)
 
-    @discord.ui.button(label="Fun", emoji="🎉", style=discord.ButtonStyle.secondary, disabled=True, row=1)
-    async def fun(self, *_args) -> None:  # pragma: no cover - disabled
-        pass
+    @discord.ui.button(label="Fun", emoji="🎉", style=discord.ButtonStyle.secondary, row=1)
+    async def fun(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
+        fun_cog = self.cog.bot.get_cog("FunCog")
+        if fun_cog is None or not hasattr(fun_cog, "show_settings"):
+            await interaction.response.send_message("❌ A Fun modul jelenleg nem elérhető.", ephemeral=True)
+            return
+        await fun_cog.show_settings(interaction, self.owner_id)
 
-    @discord.ui.button(label="Economy", emoji="💰", style=discord.ButtonStyle.secondary, disabled=True, row=2)
-    async def economy(self, *_args) -> None:  # pragma: no cover - disabled
-        pass
+    @discord.ui.button(label="Economy", emoji="💰", style=discord.ButtonStyle.secondary, row=2)
+    async def economy(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
+        config_cog = self.cog.bot.get_cog("EconomyEventsSettingsCog")
+        if config_cog is None or not hasattr(config_cog, "show_economy"):
+            return await interaction.response.send_message("❌ Az Economy settings modul jelenleg nem elérhető.", ephemeral=True)
+        await config_cog.show_economy(interaction, self.owner_id)
 
-    @discord.ui.button(label="Events", emoji="🎁", style=discord.ButtonStyle.secondary, disabled=True, row=2)
-    async def events(self, *_args) -> None:  # pragma: no cover - disabled
-        pass
+    @discord.ui.button(label="Events", emoji="🎁", style=discord.ButtonStyle.secondary, row=2)
+    async def events(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
+        config_cog = self.cog.bot.get_cog("EconomyEventsSettingsCog")
+        if config_cog is None or not hasattr(config_cog, "show_events"):
+            return await interaction.response.send_message("❌ Az Events settings modul jelenleg nem elérhető.", ephemeral=True)
+        await config_cog.show_events(interaction, self.owner_id)
 
     @discord.ui.button(label="Community", emoji="🌙", style=discord.ButtonStyle.secondary, row=2)
     async def community(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
@@ -1893,6 +1911,35 @@ class SettingsCog(commands.Cog):
             await self.settings.get_afk_enabled(guild.id),
             await self.settings.get_sticky_enabled(guild.id),
         ])
+        ticket_cog = self.bot.get_cog("TicketCog")
+        ticket_status = (
+            await ticket_cog.home_status(guild)
+            if ticket_cog is not None and hasattr(ticket_cog, "home_status")
+            else "⚪ Nem elérhető"
+        )
+        music_cog = self.bot.get_cog("MusicCog")
+        music_status = (
+            await music_cog.home_status(guild)
+            if music_cog is not None and hasattr(music_cog, "home_status")
+            else "⚪ Nem elérhető"
+        )
+        fun_cog = self.bot.get_cog("FunCog")
+        fun_status = (
+            await fun_cog.home_status(guild)
+            if fun_cog is not None and hasattr(fun_cog, "home_status")
+            else "⚪ Nem elérhető"
+        )
+        economy_events_cog = self.bot.get_cog("EconomyEventsSettingsCog")
+        economy_status = (
+            await economy_events_cog.economy_home_status(guild)
+            if economy_events_cog is not None and hasattr(economy_events_cog, "economy_home_status")
+            else "⚪ Nem elérhető"
+        )
+        events_status = (
+            await economy_events_cog.events_home_status(guild)
+            if economy_events_cog is not None and hasattr(economy_events_cog, "events_home_status")
+            else "⚪ Nem elérhető"
+        )
         embed = base_embed(
             "⚙️ Yoru • Szerver beállítások",
             "Innen lehet a Yoru szerverfunkcióit interaktívan konfigurálni. A beállítások szerverenként az adatbázisban maradnak meg.",
@@ -1903,7 +1950,12 @@ class SettingsCog(commands.Cog):
         embed.add_field(name="👋 Welcome", value="🟢 Aktív" if welcome_enabled else "⚪ Kikapcsolva", inline=True)
         embed.add_field(name="🎭 Roles", value=f"{len(human_roles)} human • {len(bot_roles)} bot autorole • {len(role_panels)} panel", inline=True)
         embed.add_field(name="🌙 Community", value=f"{community_enabled}/6 modul aktív", inline=True)
-        embed.add_field(name="🔜 Következő modulok", value="🎫 Tickets • 🎵 Music • 🎉 Fun", inline=True)
+        embed.add_field(name="🎫 Tickets", value=ticket_status, inline=True)
+        embed.add_field(name="🎵 Music", value=music_status, inline=True)
+        embed.add_field(name="🎉 Fun", value=fun_status, inline=True)
+        embed.add_field(name="💰 Economy", value=economy_status, inline=True)
+        embed.add_field(name="🎁 Events", value=events_status, inline=True)
+        embed.add_field(name="🔜 Következő modul", value="🌐 Web Dashboard / Profile & Leveling", inline=True)
         embed.set_footer(text="Yoru • Settings • Csak Manage Server jogosultsággal")
         return embed
 
