@@ -47,6 +47,7 @@ class Track:
     requester_id: int
     source: str = "YouTube"
     thumbnail: str | None = None
+    fallback_query: str | None = None
 
 
 @dataclass
@@ -173,7 +174,7 @@ class MusicCog(commands.GroupCog, group_name="music", group_description="Yoru ze
         runtime = self._runtime_problem()
         embed = base_embed(
             "🎵 Yoru • Music",
-            "YouTube, YouTube playlist és Spotify track/album/playlist támogatás. Spotify esetén Yoru a metadata alapján YouTube-forrást keres.",
+            "YouTube, YouTube playlist és Spotify track/album/playlist támogatás. Spotify esetén Yoru spotDL source-preloadot használ, majd biztonságos fallbackekkel keres lejátszható forrást.",
         )
         embed.add_field(name="Állapot", value="🟢 Bekapcsolva" if enabled else "🔴 Kikapcsolva", inline=True)
         embed.add_field(name="🔊 Alap hangerő", value=f"**{volume}%**", inline=True)
@@ -181,7 +182,7 @@ class MusicCog(commands.GroupCog, group_name="music", group_description="Yoru ze
         embed.add_field(name="💬 Music csatorna", value=channel.mention if isinstance(channel, discord.abc.GuildChannel) else "Bármelyik", inline=True)
         embed.add_field(name="🎧 DJ rang", value=role.mention if role else "Nincs • bárki vezérelhet", inline=True)
         embed.add_field(name="🧰 Voice runtime", value=(f"⚠️ {runtime}" if runtime else "✅ discord voice + yt-dlp + FFmpeg"), inline=False)
-        embed.add_field(name="🟢 Spotify", value="✅ spotDL metadata bridge" if self._spotify_available() else "⚠️ spotDL nincs telepítve • YouTube ettől még működik", inline=False)
+        embed.add_field(name="🟢 Spotify", value="✅ spotDL preload → URL → ytsearch fallback" if self._spotify_available() else "⚠️ spotDL nincs telepítve • YouTube ettől még működik", inline=False)
         embed.set_footer(text="Yoru • Settings • Music")
         return embed
 
@@ -372,17 +373,35 @@ class MusicCog(commands.GroupCog, group_name="music", group_description="Yoru ze
             raise ValueError("A YouTube playlistben nem találtam betölthető videót.")
         return tracks
 
-    async def _extract_spotify_tracks(self, query: str, requester_id: int, limit: int) -> list[Track]:
-        if not self._spotify_available():
-            raise ValueError("Spotify linkhez hiányzik a **spotDL** dependency. A friss `requirements.txt` telepítése szükséges.")
-
-        temp_dir = tempfile.TemporaryDirectory(prefix="yoru_spotify_")
-        save_path = Path(temp_dir.name) / "metadata.spotdl"
+    async def _run_spotdl(self, *args: str) -> tuple[str, str]:
+        proc = await asyncio.create_subprocess_exec(
+            sys.executable,
+            "-m",
+            "spotdl",
+            *args,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
         try:
-            proc = await asyncio.create_subprocess_exec(
-                sys.executable,
-                "-m",
-                "spotdl",
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(),
+                timeout=musiccfg.MUSIC_SPOTIFY_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            proc.kill()
+            await proc.communicate()
+            raise ValueError("A Spotify feloldása túl sokáig tartott. Próbáld újra.")
+        out_text = (stdout or b"").decode("utf-8", errors="replace").strip()
+        err_text = (stderr or b"").decode("utf-8", errors="replace").strip()
+        if proc.returncode != 0:
+            detail = err_text or out_text or f"spotDL exit code {proc.returncode}"
+            raise ValueError(_truncate(detail, 500))
+        return out_text, err_text
+
+    async def _spotdl_save_items(self, query: str, *, preload: bool) -> list[dict[str, Any]]:
+        with tempfile.TemporaryDirectory(prefix="yoru_spotify_") as temp_name:
+            save_path = Path(temp_name) / "metadata.spotdl"
+            args = [
                 "save",
                 query,
                 "--save-file",
@@ -391,35 +410,84 @@ class MusicCog(commands.GroupCog, group_name="music", group_description="Yoru ze
                 "--no-cache",
                 "--log-level",
                 "ERROR",
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
+            ]
+            if preload:
+                args.append("--preload")
+            await self._run_spotdl(*args)
+            if not save_path.exists():
+                raise ValueError("A spotDL nem hozta létre a metadata fájlt.")
             try:
-                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=musiccfg.MUSIC_SPOTIFY_TIMEOUT_SECONDS)
-            except asyncio.TimeoutError:
-                proc.kill()
-                await proc.communicate()
-                raise ValueError("A Spotify metadata betöltése túl sokáig tartott. Próbáld újra.")
-            if proc.returncode != 0 or not save_path.exists():
-                err = (stderr or stdout or b"").decode("utf-8", errors="replace").strip()
-                raise ValueError(f"Nem sikerült betölteni a Spotify linket. {_truncate(err or 'spotDL hiba', 350)}")
-            raw = json.loads(save_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as exc:
-            raise ValueError("A Spotify metadata válasza hibás volt.") from exc
-        finally:
-            temp_dir.cleanup()
+                raw = json.loads(save_path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError as exc:
+                raise ValueError("A Spotify metadata válasza hibás volt.") from exc
 
         if isinstance(raw, dict):
-            items = raw.get("songs") or raw.get("tracks") or raw.get("items") or []
+            raw_items = raw.get("songs") or raw.get("tracks") or raw.get("items") or []
         elif isinstance(raw, list):
-            items = raw
+            raw_items = raw
         else:
-            items = []
+            raw_items = []
+        return [item for item in raw_items if isinstance(item, dict)]
+
+    async def _spotdl_source_urls(self, query: str) -> list[str]:
+        stdout, _stderr = await self._run_spotdl(
+            "url",
+            query,
+            "--headless",
+            "--no-cache",
+            "--log-level",
+            "ERROR",
+        )
+        urls: list[str] = []
+        for line in stdout.splitlines():
+            candidate = line.strip().strip('"').strip("'")
+            if candidate.startswith(("http://", "https://")) and "open.spotify.com" not in candidate.lower():
+                urls.append(candidate)
+        return urls
+
+    async def _extract_spotify_tracks(self, query: str, requester_id: int, limit: int) -> list[Track]:
+        if not self._spotify_available():
+            raise ValueError("Spotify linkhez hiányzik a **spotDL** dependency. A friss `requirements.txt` telepítése szükséges.")
+
+        errors: list[str] = []
+        items: list[dict[str, Any]] = []
+
+        # 1) First choice: ask spotDL to resolve its preferred audio source up front.
+        try:
+            items = await self._spotdl_save_items(query, preload=True)
+        except ValueError as exc:
+            errors.append(f"preload: {_truncate(str(exc), 180)}")
+
+        # 2) Some managed hosts can fetch Spotify metadata even when source preload fails.
+        if not items:
+            try:
+                items = await self._spotdl_save_items(query, preload=False)
+            except ValueError as exc:
+                errors.append(f"metadata: {_truncate(str(exc), 180)}")
+
+        if not items:
+            detail = " • ".join(errors[-2:])
+            suffix = f" ({detail})" if detail else ""
+            raise ValueError(f"A Spotify linkből nem sikerült zenéket kiolvasni.{suffix}")
+
+        items = items[: max(1, min(limit, musiccfg.MUSIC_MAX_PLAYLIST_ITEMS))]
+
+        # 3) Fill missing preloaded download_url values with spotDL's URL resolver in one batch.
+        resolved_urls: list[str] = []
+        if any(not str(item.get("download_url") or "").startswith("http") for item in items):
+            try:
+                resolved_urls = await self._spotdl_source_urls(query)
+            except ValueError as exc:
+                errors.append(f"url: {_truncate(str(exc), 180)}")
+
+        aligned_urls: list[str | None] = [None] * len(items)
+        if len(resolved_urls) == len(items):
+            aligned_urls = resolved_urls[:]
+        elif len(items) == 1 and resolved_urls:
+            aligned_urls[0] = resolved_urls[0]
 
         tracks: list[Track] = []
-        for item in items:
-            if not isinstance(item, dict):
-                continue
+        for index, item in enumerate(items):
             name = str(item.get("name") or item.get("title") or "").strip()
             artists = _spotify_artists(item)
             if not name:
@@ -431,21 +499,27 @@ class MusicCog(commands.GroupCog, group_name="music", group_description="Yoru ze
             duration_raw = item.get("duration")
             duration = int(float(duration_raw)) if isinstance(duration_raw, (int, float)) else None
             thumbnail = item.get("cover_url") or item.get("cover") or item.get("album_art")
+
+            preload_url = str(item.get("download_url") or "").strip()
+            source_url = preload_url if preload_url.startswith("http") and "open.spotify.com" not in preload_url.lower() else aligned_urls[index]
+            playback_query = source_url or search
+            source_label = "Spotify • spotDL source" if source_url else "Spotify → YouTube search"
+
             tracks.append(
                 Track(
-                    query=search,
+                    query=playback_query,
                     title=display_title,
                     webpage_url=spotify_url,
                     duration=duration,
                     requester_id=requester_id,
-                    source="Spotify → YouTube",
+                    source=source_label,
                     thumbnail=str(thumbnail) if isinstance(thumbnail, str) and thumbnail.startswith("http") else None,
+                    fallback_query=search if source_url else None,
                 )
             )
-            if len(tracks) >= limit:
-                break
+
         if not tracks:
-            raise ValueError("A Spotify linkből nem sikerült zenéket kiolvasni.")
+            raise ValueError("A Spotify linkből nem sikerült érvényes zenéket kiolvasni.")
         return tracks
 
     async def _resolve_input(self, query: str, requester_id: int, limit: int) -> tuple[list[Track], str]:
@@ -471,19 +545,32 @@ class MusicCog(commands.GroupCog, group_name="music", group_description="Yoru ze
                 "noplaylist": True,
                 "default_search": "ytsearch1",
             }
+            candidates: list[str] = []
+            for candidate in (track.query, track.fallback_query):
+                if candidate and candidate not in candidates:
+                    candidates.append(candidate)
+
+            failures: list[str] = []
             with yt_dlp.YoutubeDL(opts) as ydl:  # type: ignore[union-attr]
-                data = ydl.extract_info(track.query, download=False)
-                if data is None:
-                    raise ValueError("Nem sikerült betölteni a zenét.")
-                if "entries" in data:
-                    entries = [entry for entry in (data.get("entries") or []) if entry]
-                    if not entries:
-                        raise ValueError("Nem sikerült betölteni a zenét.")
-                    data = entries[0]
-                url = data.get("url")
-                if not url:
-                    raise ValueError("Nem kaptam lejátszható audio streamet.")
-                return str(url)
+                for candidate in candidates:
+                    try:
+                        data = ydl.extract_info(candidate, download=False)
+                        if data is None:
+                            raise ValueError("üres yt-dlp válasz")
+                        if "entries" in data:
+                            entries = [entry for entry in (data.get("entries") or []) if entry]
+                            if not entries:
+                                raise ValueError("nincs találat")
+                            data = entries[0]
+                        url = data.get("url")
+                        if not url:
+                            raise ValueError("nincs audio stream URL")
+                        return str(url)
+                    except Exception as exc:
+                        failures.append(_truncate(str(exc), 180))
+
+            detail = " • ".join(failures[-2:])
+            raise ValueError(f"Nem sikerült lejátszható audio streamet találni. {detail}".strip())
 
         return await asyncio.to_thread(work)
 

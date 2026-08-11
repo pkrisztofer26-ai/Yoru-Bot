@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
+import io
+from typing import Any
 
 import discord
 from discord import app_commands
@@ -11,6 +14,18 @@ from app.database import Database
 from app.fun_config import FUN_CHANNEL_KEY, FUN_DEFAULT_ENABLED, FUN_ENABLED_KEY
 from app.services.server_settings import ServerSettingsService
 from app.ui import BRAND, base_embed, error_embed
+
+try:  # Pillow is optional at import time so the rest of Yoru can still boot.
+    from PIL import Image, ImageDraw, ImageFont
+except ImportError:  # pragma: no cover - host dependency failure
+    Image = None  # type: ignore[assignment]
+    ImageDraw = None  # type: ignore[assignment]
+    ImageFont = None  # type: ignore[assignment]
+
+
+SHIP_CARD_SIZE = (1100, 480)
+SHIP_AVATAR_SIZE = 238
+SHIP_AVATAR_BORDER = 8
 
 
 def _stable_percent(*parts: object) -> int:
@@ -31,25 +46,119 @@ def _mock_text(text: str) -> str:
     return "".join(output)
 
 
-def _ship_verdict(score: int) -> tuple[str, int]:
-    if score <= 9:
-        return "🚨 Katasztrófa", 0xED4245
-    if score <= 29:
-        return "💔 Nem az igazi", 0xED4245
-    if score <= 49:
-        return "😬 Van mit dolgozni", 0xFEE75C
-    if score <= 69:
-        return "💗 Van benne valami", 0xEB459E
-    if score <= 84:
-        return "💕 Nagyon működik", 0xEB459E
-    if score <= 96:
-        return "💘 Power couple", 0xF47FFF
-    return "💍 Végzet", 0xF7B2FF
+def _ship_score(guild_id: int, first_id: int, second_id: int) -> int:
+    low, high = sorted((first_id, second_id))
+    return 100 if first_id == second_id else _stable_percent(guild_id, low, high, "ship")
 
 
-def _ship_bar(score: int) -> str:
-    filled = max(0, min(10, round(score / 10)))
-    return "▰" * filled + "▱" * (10 - filled)
+def _font(size: int, *, bold: bool = False):
+    if ImageFont is None:
+        raise RuntimeError("Pillow nincs telepítve")
+    candidates = (
+        "DejaVuSans-Bold.ttf" if bold else "DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "arialbd.ttf" if bold else "arial.ttf",
+    )
+    for candidate in candidates:
+        try:
+            return ImageFont.truetype(candidate, size=size)
+        except OSError:
+            continue
+    return ImageFont.load_default()
+
+
+def _centered_text(draw: Any, xy: tuple[int, int], text: str, font: Any, fill: tuple[int, int, int, int]) -> None:
+    box = draw.textbbox((0, 0), text, font=font)
+    width = box[2] - box[0]
+    height = box[3] - box[1]
+    draw.text((xy[0] - width / 2, xy[1] - height / 2 - box[1]), text, font=font, fill=fill)
+
+
+def _fit_text(draw: Any, text: str, max_width: int, start_size: int = 34, min_size: int = 20):
+    clean = text.strip() or "Ismeretlen"
+    for size in range(start_size, min_size - 1, -1):
+        font = _font(size, bold=True)
+        box = draw.textbbox((0, 0), clean, font=font)
+        if box[2] - box[0] <= max_width:
+            return clean, font
+    shortened = clean
+    font = _font(min_size, bold=True)
+    while len(shortened) > 4 and draw.textbbox((0, 0), shortened + "…", font=font)[2] > max_width:
+        shortened = shortened[:-1]
+    return shortened.rstrip() + "…", font
+
+
+def _circular_avatar(raw: bytes, size: int) -> Any:
+    if Image is None:
+        raise RuntimeError("Pillow nincs telepítve")
+    with Image.open(io.BytesIO(raw)) as source:
+        avatar = source.convert("RGBA")
+        width, height = avatar.size
+        edge = min(width, height)
+        left = (width - edge) // 2
+        top = (height - edge) // 2
+        avatar = avatar.crop((left, top, left + edge, top + edge)).resize((size, size), Image.Resampling.LANCZOS)
+
+    mask = Image.new("L", (size, size), 0)
+    mask_draw = ImageDraw.Draw(mask)
+    mask_draw.ellipse((0, 0, size - 1, size - 1), fill=255)
+    output = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    output.paste(avatar, (0, 0), mask)
+    return output
+
+
+def _build_ship_card(first_avatar: bytes, second_avatar: bytes, first_name: str, second_name: str, score: int) -> bytes:
+    if Image is None or ImageDraw is None:
+        raise RuntimeError("Pillow nincs telepítve")
+
+    width, height = SHIP_CARD_SIZE
+    image = Image.new("RGBA", SHIP_CARD_SIZE, (14, 10, 25, 255))
+    pixels = image.load()
+    # Lightweight dark-purple vertical gradient, deterministic and host-safe.
+    for y in range(height):
+        t = y / max(1, height - 1)
+        r = int(18 + 15 * t)
+        g = int(12 + 5 * t)
+        b = int(31 + 30 * t)
+        for x in range(width):
+            pixels[x, y] = (r, g, b, 255)
+
+    draw = ImageDraw.Draw(image, "RGBA")
+    draw.rounded_rectangle((22, 22, width - 22, height - 22), radius=34, fill=(15, 12, 29, 220), outline=(126, 74, 222, 155), width=3)
+    draw.ellipse((-110, -170, 360, 300), fill=(111, 45, 189, 35))
+    draw.ellipse((760, 150, 1240, 630), fill=(183, 76, 240, 28))
+    draw.rounded_rectangle((435, 138, 665, 343), radius=42, fill=(74, 42, 121, 88), outline=(190, 128, 255, 95), width=2)
+
+    avatar_y = 116
+    first_x = 104
+    second_x = width - 104 - SHIP_AVATAR_SIZE
+
+    for avatar_raw, avatar_x in ((first_avatar, first_x), (second_avatar, second_x)):
+        border_box = (
+            avatar_x - SHIP_AVATAR_BORDER,
+            avatar_y - SHIP_AVATAR_BORDER,
+            avatar_x + SHIP_AVATAR_SIZE + SHIP_AVATAR_BORDER,
+            avatar_y + SHIP_AVATAR_SIZE + SHIP_AVATAR_BORDER,
+        )
+        draw.ellipse(border_box, fill=(153, 93, 235, 255))
+        avatar = _circular_avatar(avatar_raw, SHIP_AVATAR_SIZE)
+        image.alpha_composite(avatar, (avatar_x, avatar_y))
+
+    header_font = _font(24, bold=True)
+    score_font = _font(72, bold=True)
+    sub_font = _font(20, bold=False)
+    _centered_text(draw, (width // 2, 70), "YORU  •  SHIP", header_font, (218, 195, 255, 255))
+    _centered_text(draw, (width // 2, 220), f"{score}%", score_font, (255, 255, 255, 255))
+    _centered_text(draw, (width // 2, 292), "COMPATIBILITY", sub_font, (179, 151, 217, 255))
+
+    first_label, first_font = _fit_text(draw, first_name, 330)
+    second_label, second_font = _fit_text(draw, second_name, 330)
+    _centered_text(draw, (first_x + SHIP_AVATAR_SIZE // 2, 405), first_label, first_font, (246, 240, 255, 255))
+    _centered_text(draw, (second_x + SHIP_AVATAR_SIZE // 2, 405), second_label, second_font, (246, 240, 255, 255))
+
+    output = io.BytesIO()
+    image.convert("RGB").save(output, format="PNG", optimize=True)
+    return output.getvalue()
 
 
 class FunCog(commands.GroupCog, group_name="fun", group_description="Yoru közösségi Ship funkciója."):
@@ -74,7 +183,7 @@ class FunCog(commands.GroupCog, group_name="fun", group_description="Yoru közö
         enabled = await self.is_enabled(guild.id)
         channel_id = await self.settings.get_int(guild.id, FUN_CHANNEL_KEY)
         channel = guild.get_channel(channel_id) if channel_id else None
-        embed = base_embed("💞 Yoru • Fun", "A Fun modul letisztítva: jelenleg a **Ship 2.0** maradt benne.")
+        embed = base_embed("💞 Yoru • Fun", "A Fun modulban a **Ship** maradt: stabil páros-százalék egy generált kétavataros képkártyán.")
         embed.add_field(name="Állapot", value="🟢 Bekapcsolva" if enabled else "🔴 Kikapcsolva", inline=True)
         embed.add_field(name="💬 Fun csatorna", value=channel.mention if isinstance(channel, discord.abc.GuildChannel) else "Bármelyik", inline=True)
         embed.add_field(name="🎮 Parancs", value="`/fun ship` • `!ship`", inline=False)
@@ -126,41 +235,46 @@ class FunCog(commands.GroupCog, group_name="fun", group_description="Yoru közö
             return False
         return True
 
-    def _ship_embed(self, guild_id: int, first: discord.Member, second: discord.Member) -> discord.Embed:
-        low, high = sorted((first.id, second.id))
-        score = 100 if first.id == second.id else _stable_percent(guild_id, low, high, "ship")
-        verdict, color = _ship_verdict(score)
-        bar = _ship_bar(score)
-
+    def _fallback_ship_embed(self, guild_id: int, first: discord.Member, second: discord.Member) -> discord.Embed:
+        score = _ship_score(guild_id, first.id, second.id)
         embed = discord.Embed(
-            title="💞 Yoru Ship 2.0",
-            description=f"{first.mention}  **×**  {second.mention}",
-            color=color,
+            title="💞 Yoru Ship",
+            description=f"{first.mention}  **×**  {second.mention}\n\n# **{score}%**",
+            color=BRAND,
         )
         embed.set_author(name=f"{first.display_name}  ×  {second.display_name}", icon_url=first.display_avatar.url)
         embed.set_thumbnail(url=second.display_avatar.url)
-        embed.add_field(name="💘 Kompatibilitás", value=f"# **{score}%**", inline=True)
-        embed.add_field(name="🔮 Ítélet", value=f"**{verdict}**", inline=True)
-        embed.add_field(name="❤️ Ship meter", value=f"`{bar}`\n**{score}/100**", inline=False)
-        if score >= 90:
-            embed.add_field(name="✨ Yoru szerint", value="Ezt már nehéz lenne véletlennek nevezni.", inline=False)
-        elif score >= 70:
-            embed.add_field(name="✨ Yoru szerint", value="Itt azért rendesen megvan a kémia.", inline=False)
-        elif score >= 50:
-            embed.add_field(name="✨ Yoru szerint", value="Van potenciál. A többit intézzétek ti.", inline=False)
-        elif score >= 30:
-            embed.add_field(name="✨ Yoru szerint", value="Nem reménytelen, csak erős fejlesztés kell.", inline=False)
-        else:
-            embed.add_field(name="✨ Yoru szerint", value="Ezt inkább ne erőltessük. 💀", inline=False)
-        embed.set_footer(text="Yoru • Ship eredmény ugyanarra a párosra mindig stabil")
+        embed.set_footer(text="Yoru • ugyanarra a párosra mindig ugyanaz a százalék")
         return embed
 
-    @app_commands.command(name="ship", description="Két tag kompatibilitását méri egy szebb Ship 2.0 kártyán.")
+    async def _ship_card_file(self, guild_id: int, first: discord.Member, second: discord.Member) -> discord.File:
+        if Image is None:
+            raise RuntimeError("Pillow nincs telepítve")
+        first_asset = first.display_avatar.replace(size=256, static_format="png")
+        second_asset = second.display_avatar.replace(size=256, static_format="png")
+        first_bytes, second_bytes = await asyncio.gather(first_asset.read(), second_asset.read())
+        score = _ship_score(guild_id, first.id, second.id)
+        card = await asyncio.to_thread(
+            _build_ship_card,
+            first_bytes,
+            second_bytes,
+            first.display_name,
+            second.display_name,
+            score,
+        )
+        return discord.File(io.BytesIO(card), filename="yoru_ship.png")
+
+    @app_commands.command(name="ship", description="Két tag stabil kompatibilitását mutatja egy generált képkártyán.")
     async def ship_slash(self, interaction: discord.Interaction, elso: discord.Member, masodik: discord.Member | None = None) -> None:
         if not await self._gate_interaction(interaction):
             return
         second = masodik or interaction.user
-        await interaction.response.send_message(embed=self._ship_embed(interaction.guild_id, elso, second))
+        await interaction.response.defer()
+        try:
+            file = await self._ship_card_file(interaction.guild_id, elso, second)
+            await interaction.followup.send(file=file)
+        except Exception:
+            await interaction.followup.send(embed=self._fallback_ship_embed(interaction.guild_id, elso, second))
 
     @commands.command(name="ship")
     @commands.guild_only()
@@ -168,7 +282,11 @@ class FunCog(commands.GroupCog, group_name="fun", group_description="Yoru közö
         if not await self._gate_ctx(ctx):
             return
         second = second or ctx.author
-        await ctx.send(embed=self._ship_embed(ctx.guild.id, first, second))
+        try:
+            file = await self._ship_card_file(ctx.guild.id, first, second)
+            await ctx.send(file=file)
+        except Exception:
+            await ctx.send(embed=self._fallback_ship_embed(ctx.guild.id, first, second))
 
 
 class FunSettingsChannelSelect(PagedGuildChannelSelect):

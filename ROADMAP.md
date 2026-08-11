@@ -44,16 +44,26 @@ This is the agreed long-term development plan for Yoru. Existing stable features
   - both users represented with profile pictures;
   - improved compatibility bar, verdict text and cleaner embed.
 
-## v3.11.2 — Music backend / Spotify reliability
+## ✅ v3.11.2 — Ship Image Card + Music backend / Spotify reliability
 
-Goal: Spotify links should behave like first-class playable links from the user's perspective.
+**Status:** rebuilt from the v3.11.1 golden build; local QA passed on 2026-08-11, awaiting PebbleHost verification.
 
-- reliable Spotify track/album/playlist ingestion;
-- YouTube playlists remain supported;
-- investigate/implement a more robust backend (Lavalink v4 + LavaSrc or equivalent hosted-compatible architecture) instead of relying only on fragile local metadata -> YouTube matching;
-- keep the member-facing persistent Music Panel;
-- preserve queue/loop/shuffle/skip/volume controls;
-- managed-host compatibility is a hard requirement.
+- Ship image-card redesign:
+  - deterministic pair percentage preserved;
+  - two large circular Discord avatars;
+  - dark/purple Yoru card with names + large compatibility percentage;
+  - old verdict / Yoru-opinion / meter clutter removed;
+  - Pillow/avatar failure falls back to a minimal embed.
+- Spotify track/album/playlist resolution:
+  - `spotdl save --preload` first;
+  - metadata-only `spotdl save` retry if preload fails;
+  - `spotdl url` fills missing source URLs;
+  - final per-track `artist + title` ytsearch fallback;
+  - a failed preloaded source automatically retries the track search at playback time.
+- YouTube video/playlist and the persistent member Music Panel stay supported.
+- Queue/loop/shuffle/skip/volume controls stay unchanged.
+- No mandatory Lavalink/Java dependency; managed-host/PebbleHost compatibility remains the priority.
+- This does **not** claim direct Spotify audio streaming: Spotify metadata is resolved to playable external audio sources.
 
 ## v3.12 — Activity System
 

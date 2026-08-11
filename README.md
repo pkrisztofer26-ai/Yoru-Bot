@@ -1,4 +1,4 @@
-# Yoru Bot v3.11.1
+# Yoru Bot v3.11.2
 
 Saját Discord economy + gambling bot Python / discord.py / SQLite alapon.
 
@@ -42,7 +42,7 @@ Lottery: $25 000 / jegy, automatikus sorsolás óránként. A pot 90%-a kerül k
 
 Slash: `/music play`, `/music panel`, `/music queue`, `/music now`, `/music pause`, `/music resume`, `/music skip`, `/music stop`, `/music volume`, `/music loop`, `/music shuffle`, `/music leave`.
 
-Támogatott bemenetek: sima keresés, YouTube videó, **YouTube playlist**, Spotify **track / album / playlist**. Spotify esetén Yoru a Spotify metadata alapján azonosítja a zenéket, majd YouTube-ról keres hozzájuk lejátszható hangforrást.
+Támogatott bemenetek: sima keresés, YouTube videó, **YouTube playlist**, Spotify **track / album / playlist**. Spotify esetén Yoru először spotDL source-preloadot próbál, majd metadata + `spotdl url`, végül trackenkénti YouTube keresés fallbacket használ. A Spotify audio nem közvetlenül a Spotify-ról streamelődik.
 
 A `/music panel` egy persistent, tagoknak is használható interaktív Music Player embedet hoz létre/frissít. Gombok: Zene hozzáadása, Pause/Resume, Skip, Queue, Refresh, Shuffle, Loop, Hangerő, Stop, Leave. Ugyanez a `/settings → Music → Player panel` gombbal is publikálható.
 
@@ -51,7 +51,7 @@ A `/settings → Music` alatt kapcsolható a modul, kijelölhető Music text cha
 ### Fun
 `!ship @tag [@tag]` • `/fun ship`
 
-A Fun modul v3.11.1-ben letisztult: csak a **Ship 2.0** maradt. Stabil páros-százalék, mindkét tag profilképe, compatibility bar és szebb eredmény embed. A `/settings → Fun` oldalon továbbra is ki-/bekapcsolható és opcionálisan egyetlen text csatornára korlátozható.
+A Fun modulban csak a **Ship** maradt. Ugyanarra a párosra stabil százalékot ad, és Pillow-val generált dark/purple képkártyán jeleníti meg a két nagy kör alakú avatart, neveket és a compatibility százalékot. Ha a kép generálása vagy az avatar CDN hibázik, minimalista embed fallback marad. A `/settings → Fun` oldalon továbbra is ki-/bekapcsolható és opcionálisan egyetlen text csatornára korlátozható.
 
 ### Eventek
 `!lada <összeg> <mp>`, `!hh <összeg> <join mp> <kör mp>`, `!bm`, `!bm buy <item> [db]`, `!effects`
@@ -305,3 +305,11 @@ A `/settings` panelben most már az **Economy** és **Events** modul is teljesen
 - **Fun cleanup:** Eight Ball / Choose / Roll / Coin / Rate / Truth / Dare / WYR / Mock / Joke kikerült.
 - **Ship 2.0:** mindkét profilkép, compatibility bar, eredményfüggő Yoru-ítélet és stabil páros-százalék.
 - A hosszú távú fejlesztési terv a projektben lévő `ROADMAP.md` fájlban van rögzítve: Activity Level + automatikus milestone role-ok, Social Economy, **Frakció 2.0**, magyarországi late-game **Biznisz Empire**, **Heist / Nagy Meló**, majd finomhangolás és Web Dashboard.
+
+## v3.11.2 — Ship Image Card + Spotify Reliability
+
+- **Ship redesign:** a verdict/ítélet, Yoru-szöveg és régi meter helyett generált dark/purple képkártya két nagy kör alakú Discord avatarral, nevekkel és stabil compatibility százalékkal. Pillow/CDN hiba esetére minimalista embed fallback marad.
+- **Spotify reliability:** `spotdl save --preload` → metadata-only retry → `spotdl url` → trackenkénti `ytsearch1` fallback. A spotDL által talált source URL sikertelensége esetén a playback automatikusan visszaesik a keresésre.
+- **Managed-host friendly:** nincs Lavalink/Java kötelezettség; a meglévő discord.py voice + yt-dlp + FFmpeg stack marad.
+- **YouTube és Music Panel:** YouTube/playlist, queue, pause/resume, skip, stop, volume, loop, shuffle és persistent panel változatlanul megmarad.
+- **Dependency:** `Pillow==12.3.0` a Ship kártyához.

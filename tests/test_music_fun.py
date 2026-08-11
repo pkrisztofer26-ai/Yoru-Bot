@@ -41,6 +41,7 @@ class MusicFunTests(unittest.TestCase):
         self.assertIn("discord.py[voice]==2.7.1", req)
         self.assertIn("yt-dlp", req)
         self.assertIn("spotdl==4.5.2", req)
+        self.assertIn("pillow==12.3.0", req)
         self.assertIn("davey>=0.1.0", req)
         self.assertIn("pynacl>=1.5.0,<1.6", req)
         self.assertNotIn("pynacl==1.6.2", req)

@@ -8,3 +8,4 @@ aiosqlite==0.21.0
 
 yt-dlp[default]
 spotdl==4.5.2
+Pillow==12.3.0

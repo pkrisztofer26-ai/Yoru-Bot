@@ -65,14 +65,13 @@ class V3111StabilityTests(unittest.TestCase):
         self.assertEqual(slash_names, ["ship"])
         self.assertEqual(prefix_names, ["ship"])
 
-    def test_ship_uses_both_profile_pictures_and_better_display(self) -> None:
+    def test_ship_still_uses_both_profile_pictures_after_redesign(self) -> None:
         text = (ROOT / "app" / "cogs" / "fun.py").read_text(encoding="utf-8")
-        self.assertIn("first.display_avatar.url", text)
-        self.assertIn("second.display_avatar.url", text)
-        self.assertIn("set_thumbnail", text)
-        self.assertIn("Kompatibilitás", text)
-        self.assertIn("Ship meter", text)
-        self.assertIn("_ship_verdict", text)
+        self.assertIn("first.display_avatar", text)
+        self.assertIn("second.display_avatar", text)
+        self.assertIn("_stable_percent", text)
+        self.assertIn("_ship_score", text)
+        self.assertIn("_ship_card_file", text)
 
     def test_roadmap_is_packaged(self) -> None:
         roadmap = (ROOT / "ROADMAP.md").read_text(encoding="utf-8")

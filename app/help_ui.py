@@ -94,10 +94,10 @@ HELP_PAGES: dict[str, dict[str, object]] = {
         ],
     },
     "fun": {
-        "title": "💞 Fun • Ship 2.0",
-        "description": "Letisztított Fun modul: a Ship maradt, szebb kétprofilos megjelenítéssel.",
+        "title": "💞 Fun • Ship",
+        "description": "Letisztított Fun modul: a Ship maradt, generált kétavataros képkártyával.",
         "fields": [
-            ("💞 Ship", "`!ship @tag [@tag]` • `/fun ship`\nStabil százalék ugyanarra a párosra, két profilképpel, compatibility barral és Yoru-ítélettel.", False),
+            ("💞 Ship", "`!ship @tag [@tag]` • `/fun ship`\nStabil százalék ugyanarra a párosra, két nagy kör alakú profilképpel és minimalista képkártyával.", False),
         ],
     },
     "staff": {
