@@ -373,3 +373,49 @@ The Web Dashboard remains planned, but only after the Casino bot-side rework is 
 ## v3.21.0 — Casino PvP + Balance Pass
 
 PvP visual standard + full default Casino RTP/EV audit completed. Next new Casino-game candidate: Mines.
+
+## ✅ v3.21.1–v3.21.2 — Casino PvP visual alignment/rebuild
+
+**Status: implemented and user-verified.**
+
+- Coinflip/Dice/RPS PvP visuals use the shared centered layout grid.
+- Dice score glyphs, VS, winner banner and three equal HUD cards are geometrically centered.
+- v3.21.2 is the stable Casino/PvP visual baseline for future renderers.
+
+## ✅ v3.22.0 — Interactive World
+
+**Status: implemented and regression-tested.**
+
+Games V2 starts by solving the early-game active-play gap without removing Work/Beg/Search/Crime.
+
+- reusable Discord-independent Job Framework: Sequence/Memory/Grid/Performance/RiskCashout;
+- `/jobs` interaction-first lobby + shared prefix/slash backend;
+- Raktáros, Borsodi Lopkodás, Futár and Taxi;
+- persistent per-job Mastery, history, profile/stat/tutorial/help integration;
+- DB-backed one-active-job lock, timeout/restart recovery and atomic settlement;
+- common Yoru Jobs visual/animation design system;
+- `/settings → Jobs` with DB-persistent toggles, reward multiplier and paginated log-channel selector;
+- balance audit in `JOBS_BALANCE_AUDIT.md`;
+- the user-authored Games V2 source roadmap is bundled as `GAMES_V2_ROADMAP.md`.
+
+## Planned v3.23.0 — Casino Expansion
+
+One large release rather than many small feature ZIPs:
+- Mines;
+- Chicken Road;
+- Plinko;
+- Candy Rush;
+- shared grid/cascade/push-your-luck primitives where appropriate;
+- every game follows the current Casino visual standard: off-loop smooth animation → static final state, player branding, mobile-first layout, central settlement/RTP simulation and Jackpot integration.
+
+## Planned v3.24.0 — Live World & Multiplayer
+
+One larger closing Games V2 release:
+- Heist Lite activities (Boltrablás + Bankrablás) built from the Activity Framework;
+- shared betting/live-round engine;
+- MÁV Crash;
+- Kincsem / Lóverseny;
+- virtual Tippmix;
+- Texas Hold'em as the final large subsystem, with lobby/private cards/turns/side pots/reconnect/AFK handling.
+
+Hotfix releases between these milestones are reserved for real runtime, settlement, exploit or severe UI defects rather than cosmetic micro-updates.

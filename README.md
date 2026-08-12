@@ -1,4 +1,4 @@
-# Yoru Bot v3.20.1
+# Yoru Bot v3.22.0
 
 Saját Discord economy + gambling bot Python / discord.py / SQLite alapon.
 
@@ -9,6 +9,27 @@ Saját Discord economy + gambling bot Python / discord.py / SQLite alapon.
 3. Indítás: `python bot.py`
 
 A meglévő `data/vaultbot.db` adatbázist **nem kell törölni**. Induláskor a bot automatikusan hozzáadja az aktuális release új oszlopait/tábláit; a Casino migráció is in-place történik.
+
+
+## Interactive World (v3.22.0)
+
+- Új **Interactive Jobs** pillér a cooldown-only early game mellé: `!jobs` / `/jobs panel`.
+- **Raktáros:** 5 körös memória/sequence műszak combo + performance ratinggel.
+- **Borsodi Lopkodás:** 5×5 aktív loot grid, 7 keresés, rejtett járőr mezők; nincs gambling tét és a meglévő walletet nem bünteti.
+- **Futár / Taxi:** 4 döntéses műszak útvonal-rizikóval, eseményekkel, borravalóval és ratinggel.
+- Közös, újrahasznosítható **Job Framework**: Sequence/Memory/Grid/Performance/RiskCashout alapok a későbbi Activity/Heist rendszerekhez.
+- Minden munkának külön **Job Mastery** XP/Lv, rekord és total earned stat; az income bonus maximum +10%.
+- Egy játékos/szerver egyszerre csak egy Interactive Jobot futtathat; timeout/restart nem hagy beragadt sessiont.
+- A payout atomikus; ugyanaz a lezárt session nem fizethet kétszer.
+- A Jobs vizuális rendszer egységes 960×620 game-first layoutot használ. Az animáció render threaden készül GIF-ként, majd statikus PNG state/final váltja.
+- `/settings → Jobs`: teljes rendszer + munkánkénti toggle, reward multiplier és lapozott audit-log csatornaválasztó. Minden szerverbeállítás DB-ben marad frissítés után.
+- Részletes balance: `JOBS_BALANCE_AUDIT.md`; teljes új Games terv: `GAMES_V2_ROADMAP.md`.
+
+### Jobs prefix shortcutok
+`!jobs`, `!raktaros`, `!lopkodas`, `!futar`, `!taxi`
+
+### Jobs slash
+`/jobs panel`, `/jobs warehouse`, `/jobs borsod`, `/jobs courier`, `/jobs taxi`, `/jobs mastery`, `/jobs history`, `/jobs settings`
 
 ## Fő prefix parancsok
 
@@ -483,3 +504,7 @@ A `/settings` panelben most már az **Economy** és **Events** modul is teljesen
 ## Casino PvP + Balance Pass (v3.21.0)
 
 Coinflip/Dice/RPS PvP duels now use the same large game-first Casino visual standard, with cross-system one-active-game protection and a documented Casino balance audit.
+
+## PvP UI Alignment Hotfix (v3.21.2)
+
+A Casino PvP renderer most közös anchor-alapú igazítást használ. A Dice score-ok, VS feliratok, winner text és a háromoszlopos alsó HUD tényleges geometriai középre kerülnek Coinflip/Dice/RPS képeken. Ez kizárólag vizuális hotfix; payoutot és játékszabályt nem módosít.

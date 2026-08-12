@@ -10,6 +10,7 @@ from app.progression_config import ACHIEVEMENT_DEFINITIONS
 from app.crew_ui import build_crew_embed
 from app.progression_math import progress_for_xp
 from app import activity_config as activitycfg
+from app import jobs_config as jobscfg
 
 RARITY_META = {
     "common": ("⚪", "Common"),
@@ -91,6 +92,8 @@ async def build_overview_embed(bot, guild_id: int, target: discord.abc.User) -> 
     prestige_state = await bot.prestige.state(guild_id, target.id)
     crew_membership = await bot.crew.get_membership(guild_id, target.id)
     activity = await bot.activity_service.profile(guild_id, target.id)
+    job_mastery = await bot.jobs.mastery_summary(guild_id, target.id) if hasattr(bot, "jobs") else []
+    best_job = max(job_mastery, key=lambda row: int(row.get("level", 1))) if job_mastery else None
 
     embed = discord.Embed(color=BRAND)
     embed.set_author(name=f"{target.display_name} • Yoru profil", icon_url=target.display_avatar.url)
@@ -121,6 +124,7 @@ async def build_overview_embed(bot, guild_id: int, target: discord.abc.User) -> 
             f"🌙 Frakció: **{crew_membership.crew.name if crew_membership else '—'}**"
             + (f" • Level **{crew_membership.crew.level}** • **+{crew_membership.crew.income_bonus * 100:g}%**" if crew_membership else "")
             + f"\n📈 Activity: **Level {activity.level}** • **{activity.total_xp:,} XP**".replace(",", " ")
+            + (f"\n🧰 Jobs: **{jobscfg.JOB_BY_KEY[str(best_job['job'])].name} Lv.{int(best_job['level'])}**" if best_job and str(best_job["job"]) in jobscfg.JOB_BY_KEY else "\n🧰 Jobs: **még nincs műszak**")
             + f"\n🔥 Daily streak: **{streak}** • rekord: **{best_streak}**"
         ),
         inline=False,
@@ -183,6 +187,18 @@ async def build_statistics_embed(bot, guild_id: int, target: discord.abc.User) -
         ),
         inline=True,
     )
+
+    if hasattr(bot, "jobs"):
+        job_rows = await bot.jobs.mastery_summary(guild_id, target.id)
+        job_lines = [
+            f"{definition.emoji} {definition.name}: **Lv.{int(row['level'])}** • {int(row['shifts'])} műszak"
+            for definition, row in zip(jobscfg.JOBS, job_rows)
+        ]
+        embed.add_field(
+            name="🧰 Interactive Jobs",
+            value="\n".join(job_lines) + f"\nÖsszes kereset: **{compact_money(s('jobs.earned'))}**",
+            inline=True,
+        )
 
     gamble_plays = s("gambling.plays")
     gamble_wins = s("gambling.wins", int(data.get("game_wins", 0)))

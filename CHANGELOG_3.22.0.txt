@@ -1,0 +1,16 @@
+Yoru v3.22.0 — Interactive World
+
+- Added the reusable Interactive Jobs framework: Sequence/Memory/Grid/Performance/RiskCashout primitives, independent from Discord/database UI code.
+- Added the interaction-first `/jobs` lobby plus prefix shortcuts using one shared JobsService backend.
+- Added four active, no-bet early-game jobs:
+  - Raktáros: 5-round memory/sequence shift with combo + performance.
+  - Borsodi Lopkodás: 5×5 loot grid, 7 searches, hidden patrol hazards, partial run-loot loss instead of wallet punishment.
+  - Futár: 4-delivery route decision shift with events/tips/risk.
+  - Taxi: 4-passenger route decision shift with events/tips/risk.
+- Added persistent per-job Mastery XP/levels, records, total earnings, capped +10% income bonus and profile/stat integration.
+- Added one-active-Interactive-Job-per-player/guild DB lock, timeout cancel and restart recovery.
+- Added atomic payout/history/mastery settlement to prevent duplicate payouts.
+- Added common 960×620 Yoru Jobs visual system; transitions render off-loop as GIFs and settle to static PNG states/results.
+- Added `/settings → Jobs`: master/job toggles, 50–200% server reward multiplier and paginated Jobs audit-log channel selector. Settings are DB-persistent.
+- Added Jobs help/tutorial/profile integration.
+- Added JOBS_BALANCE_AUDIT.md and bundled the agreed GAMES_V2_ROADMAP.md.

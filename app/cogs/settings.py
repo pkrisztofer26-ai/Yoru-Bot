@@ -374,6 +374,13 @@ class HomeView(OwnedView):
             return await interaction.response.send_message("❌ A Casino settings jelenleg nem elérhető.", ephemeral=True)
         await casino_cog.show_settings(interaction, self.owner_id)
 
+    @discord.ui.button(label="Jobs", emoji="🧰", style=discord.ButtonStyle.secondary, row=4)
+    async def jobs(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
+        jobs_cog = self.cog.bot.get_cog("JobsCog")
+        if jobs_cog is None or not hasattr(jobs_cog, "show_settings"):
+            return await interaction.response.send_message("❌ Az Interactive Jobs settings jelenleg nem elérhető.", ephemeral=True)
+        await jobs_cog.show_settings(interaction, self.owner_id)
+
 
 class DiagnosticsView(OwnedView):
     @discord.ui.button(label="Frissítés", emoji="🔄", style=discord.ButtonStyle.primary, row=0)
@@ -2042,6 +2049,12 @@ class SettingsCog(commands.Cog):
             if tutorial_cog is not None and hasattr(tutorial_cog, "home_status")
             else "⚪ Nem elérhető"
         )
+        jobs_cog = self.bot.get_cog("JobsCog")
+        jobs_status = (
+            await jobs_cog.home_status(guild)
+            if jobs_cog is not None and hasattr(jobs_cog, "home_status")
+            else "⚪ Nem elérhető"
+        )
         embed = base_embed(
             "⚙️ Yoru • Szerver beállítások",
             "Innen lehet a Yoru szerverfunkcióit interaktívan konfigurálni. A beállítások szerverenként az adatbázisban maradnak meg.",
@@ -2062,6 +2075,7 @@ class SettingsCog(commands.Cog):
         embed.add_field(name="⚔️ Frakció", value=faction_status, inline=True)
         embed.add_field(name="🏢 Biznisz", value=business_status, inline=True)
         embed.add_field(name="🎯 Nagy Meló", value=heist_status, inline=True)
+        embed.add_field(name="🧰 Interactive Jobs", value=jobs_status, inline=True)
         embed.add_field(name="📚 Tutorial", value=tutorial_status, inline=True)
         embed.add_field(name="🩺 Diagnosztika", value="Jogosultságok • DB • slash budget • runtime", inline=True)
         embed.set_footer(text="Yoru • Settings • Csak Manage Server jogosultsággal")

@@ -1,0 +1,8 @@
+Yoru v3.21.2 - PvP Layout Rebuild
+
+- Rebuilt PvP Dice/Coinflip/RPS final layouts instead of only nudging coordinates.
+- Added glyph-bbox optical centering for scores, VS labels, names and HUD values.
+- Winner result now lives in a dedicated centered banner outside the arena.
+- Footer is now three separate equal-width HUD cards (Bet/Player, Pot, Status).
+- Dice score circles use a shared geometric center and bbox-centered values.
+- Challenge and RPS screens use the same layout grid.

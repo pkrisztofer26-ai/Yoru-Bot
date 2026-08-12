@@ -31,9 +31,9 @@ PLAYER_SECTIONS: tuple[TutorialSection, ...] = (
         (
             ("1️⃣ Nézd meg magad", "`!profile` megnyitja a teljes játékosprofilodat. Itt látod a Yoru Levelt, Activityt, statokat, inventoryt, achievementeket és később a komolyabb rendszereket is."),
             ("2️⃣ Vedd fel az ingyen rewardokat", "`!daily` • `!weekly` / `!wk` • `!monthly` / `!mo`. Ezek időszakos jutalmak, ezért érdemes rendszeresen felvenni őket."),
-            ("3️⃣ Keress pénzt", "Kezdésnek `!work`, `!beg` és `!search`. Ha már érted a kockázatot, jöhet `!crime`, `!rob` és a többi economy activity."),
+            ("3️⃣ Keress pénzt", "Kezdésnek `!work`, `!beg` és `!search`, vagy `!jobs` alatt aktív, tét nélküli műszakok. Ha már érted a kockázatot, jöhet `!crime`, `!rob` és a többi economy activity."),
             ("4️⃣ Tedd biztonságba", "`!bal` mutatja az egyenleged. `!dep all` beteszi a wallet pénzedet a bankba, `!with <összeg>` visszavesz belőle."),
-            ("5️⃣ Fejlődj", "Chatelj, voice-olj, teljesíts questeket, gyűjts XP-t, itemeket és pénzt. A későbbi rendszerek — Prestige, Frakció, Biznisz, Nagy Meló — ezekre épülnek."),
+            ("5️⃣ Fejlődj", "Chatelj, voice-olj, teljesíts questeket, építs Job Masteryt, gyűjts XP-t, itemeket és pénzt. A későbbi rendszerek — Prestige, Frakció, Biznisz, Nagy Meló — ezekre épülnek."),
             ("🧭 Ha elakadsz", "`!help` az interaktív parancssúgó. Ez a tutorial viszont nem csak parancslista: azt magyarázza el, hogy mit miért és mikor érdemes használni."),
         ),
     ),
@@ -59,6 +59,18 @@ PLAYER_SECTIONS: tuple[TutorialSection, ...] = (
             ("💋 Slut", "Kockázatos economy action saját siker/bukás táblával; ugyanúgy cooldownos, mint a többi munka."),
             ("⏱️ Cooldownok", "`!cd` / cooldown panel megmutatja, miből mennyi idő van még hátra. Ha egy parancsot rossz economy helyen használsz, Yoru törli és DM-ben jelzi a helyes csatornát/kategóriát."),
             ("📈 Kamat és Role Income", "`!interest` bankkamat felvétele • `!ri` Role Income lista • `!ci` / claim income a jogosult rangok után."),
+        ),
+    ),
+    TutorialSection(
+        "interactive-jobs", "🧰", "Interactive Jobs • Aktív pénzkeresés",
+        "Ha a sima Work/Beg/Search cooldownon van, a Jobs rendszerben ténylegesen játszható műszakokkal építhetsz bankrollt. Nincs tét, és nincs AFK payout.",
+        (
+            ("🧰 Jobs lobby", "`!jobs` vagy `/jobs panel` nyitja a központi panelt. Innen indul a Raktáros, Borsodi Lopkodás, Futár és Taxi."),
+            ("📦 Raktáros", "5 körös memória/sequence műszak. Jegyezd meg a röviden megjelenő polcsorrendet, majd válaszd ki a helyes kombinációt. Combo + performance alapján nő a jutalom."),
+            ("🔌 Borsodi Lopkodás", "5×5 grid, 7 keresés. A mezőkben scrap/elektronika/pénz/ritkább loot lehet. A járőr korán lezárhatja a runt, de az addigi loot 70%-a megmarad."),
+            ("🚚 Futár / 🚕 Taxi", "Több fuvaros műszak. Rövid-biztos, hosszabb-jobban fizető vagy problémás-magas reward útvonal közül választasz; eventek és döntések alakítják a performance ratinget."),
+            ("🏅 Job Mastery", "Minden munkának külön Mastery Levelje van. A fejlődés főleg progression/content; az income bónusz szándékosan kicsi és plafonozott, hogy ne törje szét az economy-t."),
+            ("🔒 Session safety", "Egy szerveren egyszerre egy aktív Interactive Job műszakod lehet. Timeout/restart után a session felszabadul; payout csak lezárt, aktívan végigjátszott műszak után jár."),
         ),
     ),
     TutorialSection(
@@ -321,6 +333,7 @@ ADMIN_SECTIONS: tuple[TutorialSection, ...] = (
         (
             ("📈 Activity", "ON/OFF, level-up channel, chat/voice tuning, dinamikus milestone manager (hozzáadás/szerkesztés/törlés/meglévő role linkelés), Role Income és reconcile/sync. A Discordon kézzel módosított Activity role kinézete visszaszinkronizálódik a DB-be."),
             ("🏪 Server Shop", "Reward létrehozás/szerkesztés/törlés: ár, stock, user limit, Activity/Yoru Level requirement, existing/custom/temp role, inventory vagy manual reward."),
+            ("🧰 Interactive Jobs", "`/settings → Jobs` alatt a teljes Jobs rendszer és az egyes munkák kapcsolhatók, reward multiplier állítható és külön audit log csatorna választható."),
             ("📊 Analytics", "24h / 7d / 30d supply, source/sink, market/PvP/Biznisz volumen és wealth concentration."),
             ("🧾 Manual claim", "Custom/manual Server Shop reward pending claimjeit admin felületről teljesítsd."),
         ),

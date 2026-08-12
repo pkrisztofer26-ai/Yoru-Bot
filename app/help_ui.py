@@ -13,7 +13,7 @@ HELP_PAGES: dict[str, dict[str, object]] = {
             "Válassz lent egy kategóriát — csak a lényeg, példákkal."
         ),
         "fields": [
-            ("🚀 Gyors kezdés", "`!daily` • `!work` • `!profile` • `!shop` • `!quests`", False),
+            ("🚀 Gyors kezdés", "`!daily` • `!work` • `!jobs` • `!profile` • `!shop` • `!quests`", False),
             ("💸 Összegek", "Használható: `25k`, `2m`, `1b`, `1t`, `1q`, `all`.", False),
             ("⌨️ Prefix / Slash", "A legtöbb rendszer működik `!parancs` és `/parancs` formában is.", False),
         ],
@@ -25,6 +25,17 @@ HELP_PAGES: dict[str, dict[str, object]] = {
             ("💵 Alapok", "`!bal` egyenleg • `!bank` bank\n`!dep 100k` befizetés • `!with all` kivét • `!pay @tag 25k` utalás", False),
             ("🛠️ Pénzkeresés", "`!daily` • `!wk` • `!mo` • `!work` • `!beg` • `!search`\n`!crime` és `!slut` kockázatos: bukásnál tartozásba is kerülhetsz.", False),
             ("🥷 Kockázat / income", "`!rob @tag` rablás • `!int` bankkamat\n`!ri` Role Income lista • `!ci` Role Income felvétele • `!cd` cooldownok", False),
+        ],
+    },
+    "jobs": {
+        "title": "🧰 Interactive Jobs",
+        "description": "Aktív, tét nélküli pénzkeresés. Minden műszak döntéseket kér; timeout/AFK nem fizet.",
+        "fields": [
+            ("🧰 Jobs panel", "`!jobs` / `/jobs panel` • innen indul minden műszak, Mastery és előzmény.", False),
+            ("📦 Raktáros", "`!raktaros` / `/jobs warehouse` • memória + sorrend • 5 kör • combo + performance rating.", False),
+            ("🔌 Borsodi Lopkodás", "`!lopkodas` / `/jobs borsod` • 5×5 grid • 7 keresés • loot és járőr-event • nincs gambling tét.", False),
+            ("🚚 Futár / 🚕 Taxi", "`!futar` / `/jobs courier` • `!taxi` / `/jobs taxi` • 4 fuvar, útvonalválasztás, eventek, borravaló és rating.", False),
+            ("⭐ Job Mastery", "`/jobs mastery` • minden munkának külön Lv/XP-je van. A mastery főleg hosszú távú progression, a payout bonus maximum +10%.", False),
         ],
     },
     "gambling": {
@@ -156,6 +167,7 @@ BUTTONS = (
     ("profile", "Profil", "👤", discord.ButtonStyle.secondary, 1),
     ("staff", "Staff", "🛡️", discord.ButtonStyle.secondary, 1),
     ("home", "Kezdőlap", "🌙", discord.ButtonStyle.secondary, 1),
+    ("jobs", "Jobs", "🧰", discord.ButtonStyle.success, 1),
     ("music", "Music", "🎵", discord.ButtonStyle.secondary, 2),
     ("fun", "Fun", "🎉", discord.ButtonStyle.secondary, 2),
     ("social", "Social", "🤝", discord.ButtonStyle.success, 2),

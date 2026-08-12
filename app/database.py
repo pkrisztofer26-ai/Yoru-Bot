@@ -356,6 +356,60 @@ class Database:
             await db.execute(
                 "CREATE INDEX IF NOT EXISTS idx_activity_message_hash_seen ON activity_message_hashes(guild_id,user_id,last_seen)"
             )
+            # Yoru v3.22 Interactive Jobs. Session lock + mastery + history are
+            # persisted so a restart cannot leave a player permanently busy.
+            await db.execute(
+                """CREATE TABLE IF NOT EXISTS job_sessions (
+                    session_id TEXT PRIMARY KEY,
+                    guild_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    job TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'active',
+                    stage INTEGER NOT NULL DEFAULT 1,
+                    score INTEGER NOT NULL DEFAULT 50,
+                    reward INTEGER NOT NULL DEFAULT 0,
+                    data_json TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    finished_at TEXT
+                )"""
+            )
+            await db.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_job_active_user ON job_sessions(guild_id,user_id) WHERE status='active'"
+            )
+            await db.execute(
+                "CREATE INDEX IF NOT EXISTS idx_job_sessions_history ON job_sessions(guild_id,user_id,created_at DESC)"
+            )
+            await db.execute(
+                """CREATE TABLE IF NOT EXISTS job_mastery (
+                    guild_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    job TEXT NOT NULL,
+                    xp INTEGER NOT NULL DEFAULT 0,
+                    level INTEGER NOT NULL DEFAULT 1,
+                    shifts INTEGER NOT NULL DEFAULT 0,
+                    best_rating TEXT NOT NULL DEFAULT 'D',
+                    total_earned INTEGER NOT NULL DEFAULT 0,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY(guild_id,user_id,job)
+                )"""
+            )
+            await db.execute(
+                """CREATE TABLE IF NOT EXISTS job_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    job TEXT NOT NULL,
+                    score INTEGER NOT NULL,
+                    rating TEXT NOT NULL,
+                    reward INTEGER NOT NULL,
+                    mastery_xp INTEGER NOT NULL,
+                    created_at TEXT NOT NULL
+                )"""
+            )
+            await db.execute(
+                "CREATE INDEX IF NOT EXISTS idx_job_history_user ON job_history(guild_id,user_id,created_at DESC)"
+            )
             # Yoru v3.13 Social Economy: player marketplace, server rewards and PvP escrow.
             social_schema = (
                 """CREATE TABLE IF NOT EXISTS player_market_listings (

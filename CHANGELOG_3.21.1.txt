@@ -1,0 +1,9 @@
+Yoru v3.21.1 — PvP UI Alignment Hotfix
+
+- PvP Dice score values now use anchor-based true center alignment inside both score circles.
+- Center VS labels use the same anchor-based centering helper.
+- PvP winner text is centered on a fixed arena axis across Coinflip, Dice and RPS.
+- PvP footer rebuilt as three equal columns: TÉT / FŐ, POT, ÁLLAPOT.
+- Footer labels and values are independently centered on each column axis.
+- Player name badges use the same centering helper for consistent long-name layout.
+- No gameplay, payout, balance or session behavior changed.

@@ -174,8 +174,9 @@ class Casino3210BalanceAuditTests(unittest.TestCase):
         self.assertLess(cfg.MONTHLY_JACKPOT_CONTRIBUTION_RATE, 0.10)
 
     def test_release_metadata(self):
-        self.assertEqual((ROOT / "VERSION").read_text(encoding="utf-8").strip(), "3.21.0")
+        self.assertGreaterEqual(tuple(map(int, (ROOT / "VERSION").read_text(encoding="utf-8").strip().split("."))), (3, 21, 2))
         self.assertTrue((ROOT / "CHANGELOG_3.21.0.txt").exists())
+        self.assertTrue((ROOT / "CHANGELOG_3.21.2.txt").exists())
         self.assertTrue((ROOT / "CASINO_BALANCE_AUDIT.md").exists())
 
 
