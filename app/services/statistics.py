@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import inspect
+import logging
 import random
 
 from app.database import Database
@@ -19,6 +21,9 @@ GAME_LABELS: dict[str, tuple[str, str]] = {
 }
 
 
+logger = logging.getLogger(__name__)
+
+
 class StatisticsService:
     """Központi, névtér-alapú statisztika API.
 
@@ -28,10 +33,29 @@ class StatisticsService:
 
     def __init__(self, database: Database) -> None:
         self.db = database
+        self._listeners: list = []
         self._quest_stats_by_period = {
             period: {quest.stat for quest in definitions}
             for period, definitions in QUESTS_BY_PERIOD.items()
         }
+
+    def register_listener(self, listener) -> None:
+        """Register a best-effort async/sync listener for positive stat deltas.
+
+        Listener signature: ``(guild_id, user_id, stat_name, amount)``.  A listener
+        failure never blocks the base statistics write.
+        """
+        if listener not in self._listeners:
+            self._listeners.append(listener)
+
+    async def _notify_listeners(self, guild_id: int, user_id: int, stat_name: str, amount: int) -> None:
+        for listener in tuple(self._listeners):
+            try:
+                result = listener(guild_id, user_id, stat_name, amount)
+                if inspect.isawaitable(result):
+                    await result
+            except Exception:
+                logger.exception("Statistics listener failed for %s", stat_name)
 
     @staticmethod
     def _quest_period_key(period: str) -> str:
@@ -80,7 +104,11 @@ class StatisticsService:
     async def add(self, guild_id: int, user_id: int, stat_name: str, amount: int) -> int:
         if amount != 0:
             await self._ensure_quest_assignments_before_stat_change(guild_id, user_id, stat_name)
-        return await self.db.add_user_stat(guild_id, user_id, stat_name, amount)
+        if amount <= 0:
+            return await self.db.add_user_stat(guild_id, user_id, stat_name, amount)
+        value = await self.db.add_user_stat(guild_id, user_id, stat_name, amount)
+        await self._notify_listeners(guild_id, user_id, stat_name, amount)
+        return value
 
     async def set(self, guild_id: int, user_id: int, stat_name: str, value: int) -> int:
         return await self.db.set_user_stat(guild_id, user_id, stat_name, value)

@@ -1,0 +1,33 @@
+Yoru v3.3.0 — Prestige / Endgame Update
+
+ADDED
+- Teljes Prestige rendszer Level + Wealth követelményekkel
+- !prestige / /prestige interaktív, megerősítő gombos panel
+- !prestigetop / /prestigetop szerver ranglista
+- user_prestige adatbázis tábla és biztonságos automatikus migráció
+- Tartós prestige income bónusz: +5% / prestige, maximum +50%
+- Prestige statok: count, wealth_sacrificed, highest, bonus_earned és source bontás
+- Új Prestige oldal a profile interaktív paneljén
+- 4 prestige achievement, 3 prestige badge, 4 prestige title
+
+PRESTIGE RESET
+- Nullázódik: wallet, bank, progression XP/level, normál inventory, aktív boosterek
+- Megmarad: lifetime statok, achievementek, badge-ek, title-ok, quest állapot, cooldownok
+- Discord Nitro / prémium reward kategóriás itemek megmaradnak
+- Economy reset admin parancs a prestige adatokat is törli
+
+BONUS SOURCES
+- daily, weekly, monthly
+- work, crime (siker), search, beg, slut (siker)
+- role income, bank interest
+- Nem boostolt: gambling, investment, lootbox/scratch, community eventek, quest rewardok
+
+BALANCE
+- Prestige 1: Level 50 + $250M vagyon
+- Következő prestige-ek: +10 level és x1.8 wealth scaling
+- Income bonus cap: +50%
+
+COMPATIBILITY
+- Régi adatbázis megmarad, nincs manuális migráció
+- Slash + prefix parity megmaradt
+- Nincs breaking command change

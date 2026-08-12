@@ -1,0 +1,41 @@
+Yoru v3.6.0 — Moderation & AutoMod 2.0
+
+ADDED
+- AutoMod engine with per-guild SQLite configuration.
+- Rules: Discord invite, generic links, spam, duplicate messages, mention spam,
+  CAPS spam, emoji spam, banned words/phrases, Unicode/Zalgo spam.
+- Per-rule actions: delete, warn, timeout.
+- Per-rule channel/category/role exemptions, including an "all" exemption scope.
+- Domain allowlist/blocklist. Explicit blocked domains override normal exemptions.
+- Partner/ticket support through invite exemptions by channel or category.
+- AutoMod raid activity alert (warning only, no automatic bans).
+- !automod / /automod configuration commands.
+- !case / /case lookup.
+- !modstatus / /modstatus moderation permission and logging diagnostics.
+- Optional voice join/leave/move logging with !logvoice / /logvoice.
+
+MODERATION LOGGING
+- Recent deleted attachments are cached in memory and re-uploaded to modlog when possible.
+- Deleted-message logs now include message ID, attachment metadata and the deleting moderator
+  when Discord audit-log attribution is available.
+- Raw delete fallback logs messages even when Discord.py no longer has the Message cached.
+- Manual Discord/profile timeout and untimeout actions are logged and receive case IDs.
+- Manual Discord ban/unban/kick actions are attributed through the audit log and stored as cases.
+- Nickname and role changes are logged with audit moderator attribution when available.
+- Very new accounts are highlighted in join logs.
+- Purge now creates one clean bulk-delete log instead of flooding modlog with every message.
+
+CONFIGURATION
+- New app/moderation_config.py centralizes AutoMod/logging defaults.
+- AutoMod settings, exemptions, domains and words persist in SQLite.
+- AutoMod is OFF by default after upgrade so existing servers are not surprised by deletions.
+- Existing moderation log channel and moderation data are preserved.
+
+IMPORTANT
+- Give Yoru "View Audit Log" if you want manual Discord/profile moderation actions to show
+  the moderator who performed them.
+- Deleted attachment recovery is best-effort and limited to recent files <= 6 MB each,
+  with a 24 MB in-memory cache to stay safe on the 1 GB host.
+- Enable AutoMod with: !automod on
+- Partner channel example: !automod exemptchannel invite #partnereink
+- Ticket category example: !automod exemptcategory invite <ticket-category>

@@ -1,0 +1,9 @@
+Yoru v3.7.1 — Large Server Selector Hotfix
+
+- Replaced native auto-populated channel selectors in /settings and /setup with Yoru-managed paginated selectors.
+- Every text/category channel can now be reached even on servers with many channels.
+- 23 real channels per page, leaving room for Previous/Next navigation inside Discord's 25-option String Select limit.
+- Added pagination to Welcome, Goodbye, Verification, Self-role panel placement, Modlog, AutoMod exemptions and Quick Setup channel/category pickers.
+- Preserves in-progress Verification, Self-role builder and Setup state while changing pages.
+- No new slash commands; slash-command budget remains unchanged.
+- Added regression tests so native ChannelSelect does not silently return to the settings UI.

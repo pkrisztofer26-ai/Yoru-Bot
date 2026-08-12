@@ -1,0 +1,10 @@
+Yoru v3.19.3 — Casino Performance + Multi-bet Hotfix
+
+- Casino visual rendering moved off the asyncio event loop with bounded render concurrency.
+- Slots animation is now a single client-side GIF upload instead of repeated Discord attachment edits.
+- Slots HUD no longer reveals Win/Multiplier before the reel animation finishes.
+- Slots expanded from 10 to 20 paylines; RTP re-simulated and regression-tested.
+- Roulette animation is now a single client-side GIF that decelerates into the final pocket.
+- Roulette is individual multi-bet: add up to 20 bets with separate amounts, then press Spin once.
+- Roulette reservations are atomic per added bet; Cancel/timeout refunds the full reserved total.
+- Existing Casino ledger/Game ID/admin logging remains the source of truth.

@@ -1,0 +1,23 @@
+Yoru v3.8.0 — Community Management
+===================================
+
+NEW
+- Interactive /settings -> Community configuration page.
+- Suggestions: configurable channel, anonymous mode, persistent up/down voting, staff approve/deny.
+- Polls: 2-5 options, one vote per user, vote toggle, configurable duration, restart-safe closure.
+- Giveaways: persistent join/leave, 1-10 winners, restart-safe timers, reroll.
+- Starboard: channel + threshold configuration, create/update/remove, image/file support.
+- AFK: reason, mention notice and automatic return clearing.
+- Sticky: per-channel sticky with configurable repost threshold.
+
+SLASH / STRUCTURE
+- CommunityCog is now one /community slash group. Existing jackpot/lottery/blackmarket/servereffects moved under it.
+- Prefix commands remain compatible.
+- Static release check: 79 top-level slash commands (project safety budget 90, Discord hard limit 100).
+
+REGRESSION / LARGE SERVER FIXES
+- Existing Settings role selectors were proactively migrated from native RoleSelect to Yoru's paginated role picker.
+- Channel and role pickers use 23 real entries per page + Previous/Next navigation.
+- Cross-guild persistent component checks added to Suggestions/Polls/Giveaways.
+- Community DB state, persistent views and timers restore after restart.
+- Update ZIP excludes .env and SQLite database files.

@@ -1,0 +1,31 @@
+Yoru v3.3.1 — Currency & Stability Audit
+
+Changed
+-------
+- A gazdasági currency megjelenítése mindenhol XP-ről $ jelre váltott.
+- A valódi progression XP elnevezés megmaradt a level rendszerben.
+- Auto Kincses Láda / Hirtelen Halál intervallum: 25 perc – 2 óra.
+- Auto Kincses Láda alap jutalom: $5M – $25M.
+- Auto Hirtelen Halál alap belépő: $250k – $1.5M.
+- Auto event nevezési idő: 60 mp; Hirtelen Halál köridő: 15 mp.
+- !yc / /yoruconfig most kiírja az auto event összegeket és időket is.
+- Prefix Kincses Láda / Hirtelen Halál ugyanazokat a minimum/idő limiteket használja, mint a slash verzió.
+- A slash, prefix, auto-event config és a régi SafeCog ugyanazokat a központi event limiteket használja, hogy később se csússzanak szét.
+- AUTO_EVENTS_ENABLED most a másodlagos automata community event loopot (Feketepiac / Dupla Work / Crime Rush / Lucky Hour) is leállítja.
+
+Fixed
+-----
+- Az auto event loop most ténylegesen az AUTO_EVENT_MIN_HOURS / AUTO_EVENT_MAX_HOURS beállításokat használja.
+- A korábbi default 1–4 órás config és a 25 perc–2 órás event loop közti eltérés megszűnt.
+- Jackpot / Hirtelen Halál refund többé nem számít új keresetnek és nem ad progression XP-t.
+- Hirtelen Halál technikai hiba után nem refundolja újra a nevezéseket, ha a győztes kifizetése már megtörtént.
+- Hirtelen Halál nevezés közbeni technikai hiba esetén az addig levont nevezések automatikusan visszajárnak.
+- README elavult Lottery ár és auto-event intervallum javítva.
+- A slash /top level most ugyanúgy progression XP-ként jeleníti meg az értéket, mint a prefix leaderboard.
+- Az auto-event config már az eventek tényleges minimumaival validál, nem külön hardcoded számokkal.
+
+Validation
+----------
+- AUTO_JOIN_SECONDS: 15–600 mp
+- AUTO_BOMB_ROUND_SECONDS: 5–120 mp
+- Auto Hirtelen Halál minimum belépő: $25 000 vagy nagyobb config érték

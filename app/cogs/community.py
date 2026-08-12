@@ -16,6 +16,7 @@ from app.amounts import parse_amount
 from app.database import Database
 from app.services.economy import EconomyService
 from app.services.server_settings import ServerSettingsService
+from app.cogs.access_utils import handle_wrong_economy_channel
 from app.ui import base_embed, money, GOLD, SUCCESS
 from app import economy_config as eco
 from app import community_config as communitycfg
@@ -523,35 +524,22 @@ class CommunityCog(commands.GroupCog, group_name="community", group_description=
                 await channel.send(embed=await self._jackpot_embed(round_, True, winner, payout))
         self.jackpots.pop(round_.guild_id, None)
 
-    @app_commands.command(name="jackpot", description="Beszállsz a közösségi Jackpotba.")
-    @app_commands.describe(osszeg="Tét: pl. 25k, 2m, 1b, 1t vagy all")
-    async def jackpot_slash(self, interaction: discord.Interaction, osszeg: str) -> None:
-        if interaction.guild_id is None or interaction.channel_id is None:
+    @app_commands.command(name="jackpot", description="Megmutatja a Monthly Global Jackpotot.")
+    async def jackpot_slash(self, interaction: discord.Interaction) -> None:
+        if interaction.guild_id is None:
             return
-        wallet, _ = await self.economy.balance(interaction.guild_id, interaction.user.id)
-        try:
-            tet = parse_amount(osszeg, wallet)
-            round_ = await self._join_jackpot(interaction.guild_id, interaction.channel_id, interaction.user.id, tet, getattr(interaction.channel, "category_id", None))
-        except Exception as error:
-            return await interaction.response.send_message(f"❌ {error}", ephemeral=True)
-        await interaction.response.send_message(f"🎰 Beszálltál **{money(tet)}** összeggel.", ephemeral=True)
-        if round_.message_id is None and interaction.channel:
-            msg = await interaction.channel.send(embed=await self._jackpot_embed(round_))
-            round_.message_id = msg.id
+        casino = self.bot.get_cog("CasinoCog")
+        if casino is None:
+            return await interaction.response.send_message("❌ A Casino modul nem elérhető.", ephemeral=True)
+        await interaction.response.send_message(embed=await casino.jackpot_embed(interaction.guild_id, interaction.user))
 
     @commands.command(name="jackpot", aliases=["jp", "pot"])
     @commands.guild_only()
-    async def jackpot_prefix(self, ctx: commands.Context, amount: str) -> None:
-        wallet, _ = await self.economy.balance(ctx.guild.id, ctx.author.id)
-        try:
-            parsed = parse_amount(amount, wallet)
-            round_ = await self._join_jackpot(ctx.guild.id, ctx.channel.id, ctx.author.id, parsed, getattr(ctx.channel, "category_id", None))
-        except Exception as error:
-            return await ctx.send(f"❌ {error}")
-        await ctx.message.add_reaction("✅")
-        if round_.message_id is None:
-            msg = await ctx.send(embed=await self._jackpot_embed(round_))
-            round_.message_id = msg.id
+    async def jackpot_prefix(self, ctx: commands.Context, amount: str | None = None) -> None:
+        casino = self.bot.get_cog("CasinoCog")
+        if casino is None:
+            return await ctx.send("❌ A Casino modul nem elérhető.")
+        await ctx.send(embed=await casino.jackpot_embed(ctx.guild.id, ctx.author))
 
     async def _lottery_loop(self) -> None:
         await self.bot.wait_until_ready()
@@ -576,6 +564,7 @@ class CommunityCog(commands.GroupCog, group_name="community", group_description=
         await self.bot.statistics.increment(guild.id, winner, "community.lottery.wins")
         await self.bot.statistics.add(guild.id, winner, "community.lottery.earned", pot)
         await self.bot.statistics.set_max(guild.id, winner, "community.lottery.biggest_win", pot)
+        await self.db.add_lottery_history(guild.id, winner, total_tickets, pot)
         await self.db.clear_lottery(guild.id)
         channel = force_channel
         if channel is None:
@@ -801,9 +790,17 @@ class CommunityCog(commands.GroupCog, group_name="community", group_description=
     @commands.guild_only()
     async def blackmarket_prefix(self, ctx: commands.Context) -> None:
         try:
-            await self.economy.require_access(ctx.guild.id, "economy", ctx.channel.id, getattr(ctx.channel, "category_id", None))
+            await self.economy.prepare_context(ctx.guild.id)
+            await self.economy.guild_settings.require_feature(ctx.guild.id, "economy")
         except ValueError as error:
             return await ctx.send(f"❌ {error}")
+        try:
+            await self.economy.guild_settings.require_channel(
+                ctx.guild.id, ctx.channel.id, getattr(ctx.channel, "category_id", None)
+            )
+        except ValueError:
+            await handle_wrong_economy_channel(ctx, self.economy)
+            return
         state = self.black_markets.get(ctx.guild.id)
         now = datetime.now(timezone.utc)
         if not state or state.expires_at <= now:
@@ -813,9 +810,17 @@ class CommunityCog(commands.GroupCog, group_name="community", group_description=
     @blackmarket_prefix.command(name="buy", aliases=["b"])
     async def blackmarket_buy(self, ctx: commands.Context, item_id: str, quantity: int = 1) -> None:
         try:
-            await self.economy.require_access(ctx.guild.id, "economy", ctx.channel.id, getattr(ctx.channel, "category_id", None))
+            await self.economy.prepare_context(ctx.guild.id)
+            await self.economy.guild_settings.require_feature(ctx.guild.id, "economy")
         except ValueError as error:
             return await ctx.send(f"❌ {error}")
+        try:
+            await self.economy.guild_settings.require_channel(
+                ctx.guild.id, ctx.channel.id, getattr(ctx.channel, "category_id", None)
+            )
+        except ValueError:
+            await handle_wrong_economy_channel(ctx, self.economy)
+            return
         state = self.black_markets.get(ctx.guild.id)
         if not state or state.expires_at <= datetime.now(timezone.utc):
             return await ctx.send("🌑 A Feketepiac jelenleg zárva van.")
@@ -1297,6 +1302,9 @@ class CommunityCog(commands.GroupCog, group_name="community", group_description=
                 if now - self._afk_notice_times.get(key, 0.0) < communitycfg.AFK_MENTION_NOTICE_COOLDOWN_SECONDS:
                     continue
                 self._afk_notice_times[key] = now
+                if len(self._afk_notice_times) >= 2000:
+                    cutoff = now - max(300.0, float(communitycfg.AFK_MENTION_NOTICE_COOLDOWN_SECONDS) * 4.0)
+                    self._afk_notice_times = {k: stamp for k, stamp in self._afk_notice_times.items() if stamp >= cutoff}
                 since = datetime.fromisoformat(afk["since"])
                 notices.append(f"💤 **{member.display_name}** AFK: {afk['reason']} • <t:{int(since.timestamp())}:R>")
             if notices:

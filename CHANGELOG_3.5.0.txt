@@ -1,0 +1,50 @@
+Yoru v3.5.0 — Economy Rebase
+
+MAJOR BALANCE
+- Milliós vagyon újra valódi mérföldkő.
+- Starter balance: $25k.
+- Work: 5 perc, $6k–$25k.
+- Search: max $15k; Nitro/Nitro Basic eltávolítva a drop poolból.
+- Crime: max alap win $95k, új fine scale.
+- Slut: max alap win $85k, új fine scale.
+- Daily: $60k–$100k + kisebb streak bonus.
+- Weekly: $300k–$450k, minimum 7 napos Yoru account.
+- Monthly: $1M–$1.5M, minimum 30 napos Yoru account.
+- Rob sikeres lopási share továbbra is 60%.
+
+GAMBLING
+- Nincs max bet és nincs all-in tiltás.
+- Minimum tét $5k.
+- Fő játékok kb. 92–95% RTP célon.
+- Slots ~94.44% RTP maradt.
+
+PROGRESSION
+- A pénzjóváírás többé NEM generál automatikus XP-t.
+- Progression XP konkrét aktivitásokért jár.
+- Új központi level curve.
+- Quest claim külön pénzjutalmat + activity XP-t ad.
+
+SHOP / MARKET
+- Teljes shop repricing az új pénzskálára.
+- Crate base EV kb. 86–88%.
+- Sorsjegy $25k, új payout table.
+- Silver ~$75k–150k, Gold ~$500k–1M, Diamond ~$2M–4M.
+- Nitro Basic: $500M, 30 nap + Level 35.
+- Discord Nitro: $750M, 45 nap + Level 45.
+
+EVENTS
+- Auto Kincses Láda total reward: $100k–$500k.
+- Auto Hirtelen Halál entry: $25k–$150k.
+- Kincses Láda ingyenes: negatív walletes játékos is jelentkezhet és jutalmat kaphat.
+- Activity-aware event gate megmaradt.
+
+CREW / PRESTIGE
+- Crew create: $2M.
+- Crew upgrade: $5M / $15M / $40M / $100M.
+- Prestige első wealth cél: $35M + Level 50.
+
+CONFIG
+- A fő balance most az app/economy_config.py-ban van egy helyen.
+- Régi money env override-ok figyelmen kívül maradnak.
+- Új !version / /version parancs.
+- Új egyszeri !rebaseeconomy REBASE / /rebaseeconomy migráció.

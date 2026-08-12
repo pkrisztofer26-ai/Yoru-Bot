@@ -1,0 +1,52 @@
+Yoru v3.4.0 — Crew / Social Economy
+===================================
+
+ADDED
+-----
+- Teljes Crew rendszer szerverenkénti csapatokkal.
+- !crew / /crew interaktív Crew panel: overview, tagok, toplista.
+- Crew alapítás: !crewcreate / /crewcreate.
+- Meghívó + elfogadás: !crewinvite, !crewaccept és slash megfelelőik.
+- Leader / Officer / Member rangok.
+- Promote, demote, kick és leadership transfer.
+- Crew Bank: !crewdeposit / !crewwithdraw, all/k/m/b parserrel.
+- 5 Crew level, növekvő férőhely és kis közös economy income bónusz.
+- Crew upgrade a közös bankból.
+- Crew leírás és disband rendszer.
+- Crew toplista level -> lifetime befizetés -> bank sorrendben.
+- Új Crew statok, achievementek, badge-ek és title-ok.
+- Profil kapott külön Crew oldalt, overview + stats Crew integrációval.
+
+BALANCE
+-------
+- Crew alapítás: $25 000 000.
+- Upgrade költségek: $50M / $150M / $400M / $1B.
+- Taglimit: 5 / 8 / 12 / 18 / 25.
+- Crew income bónusz: 0% / 1% / 2% / 3.5% / 5%.
+- Bónusz források: daily, weekly, monthly, work, crime, search, beg,
+  slut, role income és interest.
+- Crew bónusz Prestige után kerül alkalmazásra és külön statolódik.
+
+DATABASE
+--------
+- Új táblák: crews, crew_members, crew_invites.
+- Safe CREATE TABLE IF NOT EXISTS migráció, régi vaultbot.db törlése nem kell.
+- Full economy reset már a Crew adatokat is törli.
+- Prestige NEM törli a Crew tagságot vagy Crew Bankot.
+
+SAFETY / CONSISTENCY
+--------------------
+- Egy játékos szerverenként maximum egy Crew tagja lehet.
+- Crew név szerverenként case-insensitive egyedi.
+- Meghívó 24 óráig él.
+- Officer csak alacsonyabb rangú Membert kickelhet.
+- Csak Leader kezelhet rangot, bankkivétet, upgrade-et, transfert és disbandot.
+- Crew befizetés/kivét belső pénzmozgatás: nem hamisít economy earned/lost statot.
+- Crew létrehozási díj valódi money sinkként economy.lost statba kerül.
+
+TESTS
+-----
+- Python compileall: PASS.
+- Crew DB/service flow: create -> invite -> accept -> deposit -> upgrade ->
+  bonus -> promote -> invite -> transfer -> withdraw -> leave -> leaderboard ->
+  disband -> reset: PASS.

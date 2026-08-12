@@ -1,0 +1,28 @@
+Yoru v3.6.1 – Interactive Server Settings
+
+ADDED
+- /settings and !settings interactive Manage Server configuration panel.
+- Interactive AutoMod overview with global ON/OFF, per-rule editor and presets.
+- Per-rule action selector (delete/warn/timeout).
+- Interactive threshold and timeout modals.
+- Per-guild spam and duplicate time-window configuration.
+- Interactive channel/category/role AutoMod exemptions.
+- Interactive domain allowlist/blocklist manager.
+- Interactive banned-word manager.
+- Interactive moderation logging panel with individual log-type switches.
+- Interactive modlog channel selector.
+- /setup and !setup quick setup panel with AutoMod presets, modlog, partner channels, ticket categories and staff role exemptions.
+- Central ServerSettingsService designed to be shared by the future web dashboard.
+
+CHANGED
+- Deleted attachment cache respects the per-guild deleted-attachment log switch.
+- Message caching is skipped when deleted-message logging is disabled.
+- AutoMod logs can be independently disabled.
+- Manual and Yoru moderation logs are separated into configurable categories.
+- Spam/duplicate detection now uses per-guild time windows when configured.
+- Help page points admins to the interactive settings panel first.
+
+BACKWARD COMPATIBILITY
+- Existing !automod, /automod, !setlog, !logvoice and moderation commands remain available.
+- Existing guild settings remain valid; missing switches use v3.6.0-compatible defaults.
+- No player/economy data migration is required.

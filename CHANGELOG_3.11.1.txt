@@ -1,0 +1,8 @@
+Yoru v3.11.1 — Stability + Multi Economy Channels + Ship 2.0
+
+- Multi economy channel + category allowlist
+- Chicken Fight consumes one Chicken on loss
+- Quest assignments initialize before the first relevant stat action
+- Fun cleanup: only Ship remains
+- Ship 2.0 visual redesign
+- ROADMAP.md added with the agreed long-term roadmap (Activity, Frakció 2.0, Hungary-based late-game Biznisz + Heist, Dashboard later)

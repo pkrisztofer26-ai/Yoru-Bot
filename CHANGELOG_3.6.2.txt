@@ -1,0 +1,27 @@
+Yoru v3.6.2 - Slash Command Limit Hotfix
+
+FIXED
+-----
+- Javítva az induláskori CommandLimitReached hiba (Discord maximum 100 globális slash command).
+- A teljes slash moderáció egyetlen /mod command group alá került.
+- A 21 moderációs slash parancs így 1 top-level command helyet foglal, subcommandokként.
+- /settings, /setup és /ping újra biztonságosan regisztrálható.
+- Prefix moderációs parancsok változatlanok maradtak (!ban, !mute, !warn stb.).
+- Help UI frissítve az új /mod <parancs> formára.
+
+SLASH EXAMPLES
+--------------
+/mod ban
+/mod kick
+/mod mute
+/mod warn
+/mod purge
+/mod case
+/mod modstatus
+/mod setlogchannel
+/mod userinfo
+/mod serverinfo
+
+NOTES
+-----
+- PyNaCl/davey voice warning nem crash ok; a zene/voice update előtt lesz hozzáadva a voice dependency.

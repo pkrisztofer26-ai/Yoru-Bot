@@ -1,0 +1,48 @@
+Yoru v3.4.2 — Core Polish & Progression Check
+==============================================
+
+REQUESTED
+---------
+- Rob sikeres rablás részesedése visszaállítva / megtartva 60%-on.
+- Automatikus Kincses Láda + Hirtelen Halál időköz: random 15 perc – 1.5 óra.
+- .env.example frissítve: AUTO_EVENT_MIN_HOURS=0.25, AUTO_EVENT_MAX_HOURS=1.5.
+
+BALANCE / PROGRESSION
+---------------------
+- Sorsjegy payout újrabalanszolva (~94% base EV a $500k jegyhez).
+- Luck Booster hatása sorsjegynél tompított: javítja a ritka tier esélyét, de nem teszi spam-mel pénznyomdává.
+- Mystery Box + Common/Rare/Epic/Legendary/Mythic ládák payout görbéje egységesebb (~90% körüli base EV).
+- Luck hatása ládáknál kontrollált tier-eltolás lett, nem közvetlen cash multiplier.
+- Lucky Charm: +25% a következő ládára, de max $5M bónusz; így a drága Mythic crate-tel sem exploitható.
+- Work Booster: +50% / 2 óra / $3M.
+- Crime Booster: +50% / 4 óra / $2M.
+- Booster definíciók központi economy_config-ba kerültek.
+- Interest Booster a kamatlábat ÉS a kamat capet is +50%-kal növeli.
+- Befektetés low/medium/high EV és kockázat újrabalanszolva, a korábbi túl erős pozitív EV megszüntetve.
+- Wealth achievementek javítva: Milliomos $1M, Nagymenő $25M, Milliárdos $1B.
+
+CORE / CONSISTENCY
+------------------
+- Sikertelen rob bírság most atomikus játékos-játékos transzfer; nem generál progression XP-t vagy hamis economy income-ot.
+- Weekly/monthly cooldown kijelzés a központi configot használja.
+- Banklevel UI helyesen 6 órás kamatigénylésként kezeli a rendszert (nem napi kamatként).
+- Gambling eredmény UI-kban egységesen látható a tényleges kifizetés is (slash + prefix).
+- Blackjack eredménynél külön kifizetés sor.
+- Régi chicken/jackpot/lottery stat migration namespace-ek javítva.
+- Nagy számok profil compact formázása Q (quadrillion) egységig bővítve.
+- Help amount példák: k / m / b / t / q / all.
+
+AUTO EVENT DEFAULTS
+-------------------
+- Intervallum: 15–90 perc random.
+- Nevezés: 60 mp.
+- Kincses Láda: $5M–$25M.
+- Hirtelen Halál belépő: $250k–$1.5M.
+- Hirtelen Halál köridő: 15 mp.
+
+IMPORTANT
+---------
+A saját .env fájlt a ZIP nem írja felül. Ha ott még a régi auto-event értékek vannak,
+állítsd ezt:
+AUTO_EVENT_MIN_HOURS=0.25
+AUTO_EVENT_MAX_HOURS=1.5

@@ -1,0 +1,65 @@
+Yoru v3.4.5 — Economy Rebalance
+
+Cél
+- A játék maradjon gyorsan reagáló és élvezetes, de a late/endgame ne legyen 1-2 nap alatt elérhető.
+- A gambling adjon izgalmat, ne legyen garantált progress engine.
+- A valódi Nitro rewardokat egy szerencsés első napi gambling streak se tudja azonnal kiváltani.
+
+Income
+- Daily: $400k-$650k + kisebb streak bonus.
+- Weekly: $2.5M-$4M.
+- Monthly: $8M-$12M.
+- Work és a random job rewardok visszavéve; átlagosan kb. $1.9M/óra folyamatos cooldown-perfect work.
+- Beg/Search mérsékelve.
+- Crime és Slut risk/reward újrahangolva.
+- Interest rate-ek és capek jelentősen visszafogva.
+
+Rob
+- A kért 60% sikeres steal share NEM változott.
+- Base success chance: 25%.
+- Rob Boosterrel a tényleges chance 31.25% (hard ceiling 35%).
+- Bukáskor a bírság a célpont walletjének 15-25%-ához skálázódik, legalább a flat fine.
+- Nagy célpont rablásához legalább a célpont walletjének 5%-át fedezni kell a saját walletből (minimum $250k).
+- Base arányos EV közel semleges, boosterrel enyhén pozitív: high-risk/high-reward marad.
+
+Gambling
+- Coinflip ~96% RTP.
+- Dice ~93.3% RTP.
+- Roulette even/color/high/low ~95.4% RTP; single/green ~94.6%.
+- Slots ~94.4% RTP.
+- Chicken Fight ~94% RTP.
+- High/Low ~96.3% RTP tie refunddal.
+- RPS ~97.3% RTP tie refunddal.
+- Blackjack 2x win payout maradt.
+- Nincs 1B vagy más hard max bet; nagy összegek továbbra is használhatók.
+
+Shop / real rewards
+- Nitro Basic: $1.25B, minimum 7 napos Yoru account + Level 30, 1 db/30 nap/fő, 4 db/hó/szerver.
+- Discord Nitro: $2B, minimum 14 napos Yoru account + Level 45, 1 db/30 nap/fő, 2 db/hó/szerver.
+- A gate-ek miatt pusztán gambling luckkal sem váltható ki az első 1-2 napban.
+- Shop/booster utility árak új skálára kerültek.
+- Crate-ek kb. 90% base EV körül maradtak, ezért továbbra is izgalmasak, de nem pénznyomdák.
+
+Progression / long-term
+- Daily/weekly quest cash rewardok visszavéve.
+- Már kiosztott questek a saját periódusuk végéig a régi rewardot őrzik; új quest assignment már az új balance-ot használja.
+- Prestige 1: Level 50 + $1B wealth.
+- Prestige income bonus: +4% / rank, maximum +40%.
+- Crew upgrade: $100M / $300M / $750M / $2B.
+
+Community / sinks
+- Lottery minimum pot $500k, így kevés ticketnél nem injektál automatikusan több millió ingyenpénzt.
+- Auto Work event x1.5, Crime x1.25, Luck x1.15.
+- Black Market discount 15-30%.
+- Projekt default auto chest: $1M-$5M; HH entry $250k-$1M; a PebbleHost .env továbbra is felülírja ezeket.
+- Auto event választás: 40% Kincses Láda / 60% Hirtelen Halál, így az aktív chat több eventet kap anélkül, hogy minden event új pénzt injektálna.
+- Silver/Gold/Diamond napi piac szűkebb árfolyamsávot, kisebb készletet és 90%-os sell értéket kapott; a garantált többnapos arbitrázs sokkal kevésbé inflál.
+- Investment low közel fair, medium/high enyhén negatív EV.
+
+Admin
+- Role Income továbbra sincs hard caphez kötve. $2M/óra felett a bot figyelmeztet, mert ez a szerver admin balance-döntése.
+- Több income rang alapból NEM stackelődik: a játékos legmagasabb jogosult óradíja számít. Ez megakadályozza, hogy hierarchikus Discord rangok többszörözzék a passzív income-ot. Configból visszakapcsolható.
+
+Compatibility
+- .env és data/vaultbot.db nem része az update ZIP-nek.
+- Meglévő DB megtartható; shop catalog árak/leírások induláskor UPSERT-tel frissülnek.

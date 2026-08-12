@@ -1,0 +1,29 @@
+Yoru v3.4.4 - Activity-Aware Auto Events
+========================================
+
+Added
+-----
+- Activity gate az automatikus Kincses Lada / Hirtelen Halal eventekhez.
+- Alapfeltetel: 20 ervenyes uzenet az event csatornaban, 30 perces rolling ablakban.
+- Legalabb 4 kulonbozo user kell az activity gate teljesitesehez.
+- Egy usertol maximum 1 uzenet szamit 5 masodpercenkent.
+- Bot es webhook uzenetek nem szamitanak.
+- !yc / /yoruconfig elo activity progresszt mutat.
+
+Changed
+-------
+- Az auto event random idozitese tovabbra is megmarad, de mar csak a legkorabbi inditasi ido.
+- Ha a timer lejart, de nincs eleg aktivitetas, Yoru csendben var, nem indit folosleges eventet.
+- Ha a chat activity a rolling ablak miatt elevul, az event nem indul el regi aktivitasra.
+- Sikeresen elindult auto event utan az activity counter nullazodik; a kovetkezo eventhez uj activity kell.
+- Manualis event alatt az auto event var, es inditas elott ujra ellenorzi, hogy a chat meg aktiv-e.
+- A help Community/Event oldal jelzi, hogy az auto eventek activity-alapuak.
+
+Configuration
+-------------
+AUTO_EVENT_ACTIVITY_MESSAGES=20
+AUTO_EVENT_ACTIVITY_WINDOW_MINUTES=30
+AUTO_EVENT_ACTIVITY_MIN_USERS=4
+AUTO_EVENT_ACTIVITY_USER_COOLDOWN_SECONDS=5
+
+A fenti valtozok opcionálisak. Ha a regi .env-ben nincsenek benne, a bot automatikusan a fenti defaultokat hasznalja.

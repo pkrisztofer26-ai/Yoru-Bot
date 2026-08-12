@@ -1,0 +1,21 @@
+Yoru v3.10.1 — Music Sources + Interactive Player
+
+NEW
+- Spotify track / album / playlist links via spotDL metadata -> YouTube audio matching.
+- Full YouTube playlist queue support (up to the configured queue / 100 items per import).
+- Persistent interactive Music Player panel usable by normal server members.
+- Player controls: Add Music, Pause/Resume, Skip, Queue, Refresh, Shuffle, Loop, Volume, Stop, Leave.
+- /music panel and !musicpanel / !mpanel.
+- Settings -> Music -> Player panel publishes/refreshes the server panel.
+- Panel remembers its channel/message ID in existing guild state storage and works again after restart.
+- Now Playing/queue embeds show source and thumbnails when available.
+
+FIXED
+- Correct Discord.py 2.7 voice dependency installation: discord.py[voice] installs both PyNaCl and davey.
+- Removed incompatible standalone PyNaCl==1.6.2 pin from requirements.
+- Music runtime now reports missing PyNaCl, davey, yt-dlp or FFmpeg precisely.
+- Music channel is exempted from both generic link and invite AutoMod rules when configured.
+
+NOTES
+- Spotify audio is not streamed from Spotify. Spotify metadata is matched to a YouTube audio source.
+- spotDL 4.5.2 is used only as a Spotify metadata bridge; Yoru itself still streams through yt-dlp + FFmpeg.

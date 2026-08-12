@@ -1,0 +1,29 @@
+Yoru v3.4.1 — Core Stability & Balance
+
+CORE
+- Nincs mesterséges 1B limit: amount parser támogatja a k/m/b/t/q suffixeket és a tizedes rövidítéseket (pl. 1.5t).
+- A parser Decimal alapú, ezért nagy összegeknél nem veszít pontosságot float miatt.
+- Slash/prefix amount help szövegek frissítve.
+
+GAMBLING BALANCE
+- Gambling fő értékei központilag az app/economy_config.py-ban.
+- Coinflip: fair 50/50 outcome, 1.94x total payout (~97% RTP).
+- Dice: 1/6 találat, 5.70x total payout (~95% RTP).
+- Roulette even-money: 2x total payout (~97.3% RTP).
+- Roulette green / konkrét szám: 35x total payout (~94.6% RTP).
+- Slots teljesen új payout tábla: pair 0.8x refund, triple 8x–80x szimbólumtól függően (~94.4% RTP).
+- Chicken Fight: 48% win, 2x payout (~96% RTP).
+- High/Low: tie refund, 1.95x win payout (~97.7% RTP).
+- RPS: tie refund, 1.95x win payout (~98.3% RTP).
+- Blackjack: 2x total payout, központi configból.
+
+ECONOMY BALANCE
+- Daily/weekly/monthly jutalmak érezhetőbbek lettek.
+- Slut risk/reward újrahúzva, hogy ne legyen gyakorlatilag értelmetlen EV.
+- Rob 70%-os wallet lopás 25%-ra csökkent; kevésbé ragequit-indító, de továbbra is értékes.
+- Interest jelentősen visszafogva a passzív infláció ellen.
+- Bank level kijelzés ugyanazt az interest tier configot használja, mint a tényleges kifizetés.
+- Investment módok központi configba kerültek.
+- Jackpot/Lottery fő payout és időzítés értékek központi configba kerültek.
+
+NINCS ADATBÁZIS-TÖRLÉS VAGY BREAKING MIGRATION.

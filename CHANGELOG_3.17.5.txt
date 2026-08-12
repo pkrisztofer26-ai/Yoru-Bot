@@ -1,0 +1,23 @@
+Yoru v3.17.5 — Activity Roles 2.0
+
+DYNAMIC ACTIVITY MILESTONES
+- `/settings → Activity → Milestone rangok` most teljesen dinamikus.
+- Új milestone hozzáadható tetszőleges Activity Level + név + Role Income értékkel.
+- Meglévő milestone szintje, neve és Role Income-ja szerkeszthető.
+- Milestone törölhető; a korábbi Discord role retiredként kerül takarításra a tagokról.
+- Meglévő Discord role közvetlenül hozzáköthető egy milestone-hoz.
+- A milestone lista 23-as lapozást használ, ezért 25-nél több rang is kezelhető.
+- A beépített 15 fokozatú magyar ranglétra csak első inicializálási template; utána a DB a source of truth.
+- Szándékosan üresre törölt milestone lista sem áll vissza frissítés/restart után.
+
+DISCORD ↔ DB ROLE SYNC
+- Hozzákötött Activity role Discordon történő átnevezése automatikusan frissíti a DB-ben tárolt nevet.
+- Szín, hoist és mentionable állapot szintén Discord → DB irányban szinkronizálódik.
+- Reconcile többé nem nevezi vissza a kézzel módosított Discord role-t.
+- Közvetlen Discord role törlésnél Yoru megőrzi a milestone snapshotot és újraköti/létrehozza a hiányzó role-t.
+- Role ID + milestone szint + income + biztonságos megjelenési snapshot a live DB-ben marad, így teljes ZIP update nem törli.
+
+SAFETY / COMPATIBILITY
+- Activity role permissions nem kerülnek automatikusan klónozásra/reprodukálásra; az auto-created milestone role permission nélküli marad.
+- Meglévő v3.17.4 milestone layout és role mapping automatikusan migrálódik v3 formátumra.
+- Frakció Discord role rendszer és economy balance változatlan.

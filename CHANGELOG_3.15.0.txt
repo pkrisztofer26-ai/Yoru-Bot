@@ -1,0 +1,18 @@
+Yoru v3.15.0 — Biznisz Empire
+
+- Interaction-first late-game business/property system.
+- Permanent Business License gated by configurable Activity + Prestige.
+- 15 unique fictional properties using Hungarian city/district/street labels.
+- Property income, tax, upkeep, offline cap, reputation and Level 1-5 upgrades.
+- Daily rotating worker pool with hire fee, hourly wage and revenue bonuses.
+- Player-to-player property offers with escrow, reject/cancel/expiry refunds and transfer tax.
+- Anti-monopoly property and per-city limits with Prestige scaling.
+- Frakció integration: business claims grant Frakció XP and matching bank dividend.
+- !biznisz / /business panel with interactive pages, selects, buttons and modals.
+- /settings -> Biznisz admin panel for unlock/economy/anti-monopoly configuration.
+- Business License survives Prestige resets; full admin economy reset clears business state.
+- Property transfers preserve Level, Reputation and active worker contracts.
+- Business escrow refunds are mirrored in the transaction ledger, so Economy Analytics stays accurate.
+- Biznisz transactions appear as their own Economy Analytics source/sink bucket.
+- !help now has a dedicated Biznisz Empire page.
+

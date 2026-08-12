@@ -1,0 +1,25 @@
+Yoru v3.17.1 — Music 2.0 + Frakció War DM + Tutorial Forum
+
+MUSIC 2.0
+- Wavelink 3.5.2 client + optional Lavalink v4 primary backend.
+- Spotify track/album/playlist URL is sent directly to Lavalink when connected.
+- LavaSrc resolves Spotify metadata and mirrors to configured playable providers.
+- Legacy spotDL + yt-dlp + FFmpeg remains an automatic fallback when the node/source is unavailable.
+- /settings -> Music shows Lavalink state and includes a reconnect button.
+- /settings -> Diagnosztika includes Wavelink/Lavalink plus legacy fallback health.
+- Included lavalink/application.yml.example and README_SETUP.txt for Lavalink 4.2.2, LavaSrc 4.8.3 and youtube-source 1.18.1.
+
+FRAKCIÓ WAR
+- A challenged Frakció owner receives a best-effort DM when a War challenge is created.
+- DM includes challenger, objective, target, expiry and a jump link to the War panel when available.
+- Closed DMs never cancel or roll back the War challenge.
+
+TUTORIAL
+- New Administrator-only !tutorial / !tutorialsync / !tutsync shortcut.
+- Creates a read-only Yoru tutorial Forum and detailed embedded posts for all current major player/admin systems.
+- Re-running sync updates Yoru-managed posts instead of duplicating them.
+- /settings -> Tutorial: category picker, ON/OFF, sync and category clear.
+- Existing tutorial forums automatically resync after a Yoru version change and managed posts are kept visible if Discord auto-archives them.
+
+BALANCE
+- No economy, Activity, Prestige, Frakció, Biznisz or Heist balance changes in this patch.

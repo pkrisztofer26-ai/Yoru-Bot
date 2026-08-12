@@ -1,0 +1,28 @@
+Yoru v3.2.0 — Progression & Quest Update
+
+ADDED
+- Napi quest rendszer: 3 determinisztikusan kiosztott quest / nap / játékos
+- Heti quest rendszer: 3 determinisztikusan kiosztott quest / hét / játékos
+- !quests / !quest / !q és /quests
+- !questclaim / !qclaim / !qc és /questclaim
+- Interaktív Daily / Weekly / Claim All quest panel
+- Quest jutalmak: pénz ($) és egyes feladatoknál item
+- quest_assignments adatbázis tábla
+- Questek a profil interaktív paneljén
+- 60+ achievement definíció
+- Több új badge és profilcím
+
+CHANGED
+- Achievement rendszer most a v3 StatisticsService statjaira épül
+- Achievement oldal kategóriás, letisztult összegzést és következő célokat mutat
+- Régi achievement ID-k kompatibilitása megmaradt
+- Economy reset a quest kiosztásokat is törli
+- !commands progression sor frissítve
+
+DATABASE
+- Új quest_assignments tábla automatikusan létrejön startupkor
+- Meglévő player/economy adatok nem törlődnek
+
+NOTES
+- A quest progress a quest adott ciklusban történő első megnyitásától indul.
+- Nincs breaking command change.

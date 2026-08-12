@@ -12,6 +12,7 @@ from app.cogs.events import EventCog
 from app.cogs.shop import ShopCog
 from app.cogs.prefix import PrefixCog
 from app.cogs.gambling import GamblingCog
+from app.cogs.casino import CasinoCog
 from app.cogs.extras import ExtrasCog
 from app.cogs.extras_prefix import ExtrasPrefixCog
 from app.config import load_settings
@@ -20,11 +21,16 @@ from app.services.economy import EconomyService
 from app.services.statistics import StatisticsService
 from app.services.shop import ShopService
 from app.services.gambling import GamblingService
+from app.services.casino import CasinoService
 from app.services.extras import ExtrasService
 from app.services.progression import ProgressionService
 from app.services.prestige import PrestigeService
 from app.services.crew import CrewService
+from app.services.faction import FactionService
 from app.services.quests import QuestService
+from app.services.activity import ActivityService
+from app.services.business import BusinessService
+from app.services.heist import HeistService
 from app.cogs.progression import ProgressionCog
 from app.cogs.community import CommunityCog
 from app.cogs.admin import AdminCog
@@ -40,6 +46,11 @@ from app.cogs.welcome_roles import WelcomeRolesCog
 from app.cogs.tickets import TicketCog
 from app.cogs.music import MusicCog
 from app.cogs.fun import FunCog
+from app.cogs.activity import ActivityCog
+from app.cogs.social_economy import SocialEconomyCog
+from app.cogs.business import BusinessCog
+from app.cogs.heist import HeistCog
+from app.cogs.tutorial import TutorialCog
 from app import economy_config as eco
 
 logging.basicConfig(
@@ -60,6 +71,7 @@ ADMIN_PREFIX_COMMANDS = {
     "drawlottery", "drawlot",
     "openblackmarket", "openbm",
     "yoruconfig", "yc", "config",
+    "tutorial", "tutorialsync", "tutsync",
     "starteffect", "seffect",
     "cleareffects", "ceffects",
     "reseteconomy", "reseteco", "economyreset", "ereset",
@@ -102,7 +114,7 @@ RATE_LIMITED_PREFIX_COMMANDS = {
     "buy", "purchase", "sell", "s", "use", "u", "open",
     "scratch", "scr", "sorsjegy", "giveitem", "gi", "giftitem",
     "coinflip", "cf", "dice", "kocka", "roll", "slots", "slot", "sl",
-    "roulette", "rulett", "r", "blackjack", "bj",
+    "roulette", "rulett", "r", "blackjack", "bj", "casino", "kaszino", "kaszinó",
     "chickenfight", "cock", "fight", "chicken", "highlow", "hl", "rps", "kpo",
     "jackpot", "jp", "pot", "lottery", "lotto", "lot", "lottó",
     "blackmarket", "bm", "feketepiac", "invest", "invst", "befektet",
@@ -116,6 +128,10 @@ RATE_LIMITED_PREFIX_COMMANDS = {
     "crewdisband", "cdisband", "clandisband",
     "suggest", "suggestion", "javaslat", "poll", "szavazas", "votecreate", "afk", "away",
     "play", "mplay", "musicplay",
+    "market", "marketplace", "pmarket", "mp", "servershop", "sshop", "customshop",
+    "duel", "pvp",
+    "biznisz", "business", "empire", "biz",
+    "heist", "nagymelo", "nagymeló", "melo", "meló", "heisttop", "melotop", "nagymelotop",
 }
 
 ADMIN_HIDDEN_PREFIX_COMMANDS = {
@@ -136,21 +152,40 @@ class VaultBot(commands.Bot):
         self.statistics = StatisticsService(self.database)
         self.prestige = PrestigeService(self.database, self.statistics)
         self.crew = CrewService(self.database, self.statistics)
+        self.crew.bind_bot(self)
+        self.factions = FactionService(self.database, self.statistics, self.crew)
         self.economy = EconomyService(self.database, self.statistics, self.prestige, self.crew)
         self.shop = ShopService(self.database, self.statistics)
-        self.gambling = GamblingService(self.database)
-        self.extras = ExtrasService(self.database, self.economy)
+        self.casino = CasinoService(self.database)
+        self.gambling = GamblingService(self.database, self.casino)
+        self.extras = ExtrasService(self.database, self.economy, self.casino)
         self.progression = ProgressionService(self.database, self.economy)
         self.quests = QuestService(self.database, self.statistics)
+        self.activity_service = ActivityService(self.database)
+        self.businesses = BusinessService(self.database, self.statistics, self.prestige, self.activity_service, self.crew, self.factions)
+        self.heists = HeistService(self.database, self.statistics, self.prestige, self.activity_service, self.crew, self.factions)
         self._prefix_action_times: dict[tuple[int, int], float] = {}
         self._suppressed_delete_log_ids: set[int] = set()
 
+    def _prune_prefix_runtime_cache(self, now: float) -> None:
+        # Large servers can see thousands of one-off users over a long uptime.
+        # Prefix anti-flood only needs the recent window, so stale keys must not
+        # accumulate forever.
+        if len(self._prefix_action_times) < 2000:
+            return
+        cutoff = now - max(60.0, float(eco.PREFIX_ACTION_MIN_INTERVAL_SECONDS) * 20.0)
+        self._prefix_action_times = {key: stamp for key, stamp in self._prefix_action_times.items() if stamp >= cutoff}
+
     async def setup_hook(self) -> None:
         await self.database.initialize()
+        recovered = await self.casino.recover_after_restart()
+        if recovered:
+            logger.warning("Casino restart recovery: %s nyitott session visszatérítve.", len(recovered))
         await self.add_cog(EconomyCog(self, self.economy))
         await self.add_cog(ShopCog(self, self.shop))
         await self.add_cog(EventCog(self, self.economy))
         await self.add_cog(GamblingCog(self, self.gambling))
+        await self.add_cog(CasinoCog(self, self.casino, self.gambling))
         await self.add_cog(PrefixCog(self, self.economy, self.shop, self.gambling))
         await self.add_cog(ExtrasCog(self, self.extras))
         await self.add_cog(ExtrasPrefixCog(self, self.extras, self.economy))
@@ -169,6 +204,11 @@ class VaultBot(commands.Bot):
         await self.add_cog(TicketCog(self, self.database))
         await self.add_cog(MusicCog(self, self.database))
         await self.add_cog(FunCog(self, self.database))
+        await self.add_cog(ActivityCog(self, self.database, self.activity_service))
+        await self.add_cog(SocialEconomyCog(self, self.database, self.economy))
+        await self.add_cog(BusinessCog(self, self.database, self.economy, self.businesses))
+        await self.add_cog(HeistCog(self, self.database, self.economy, self.heists))
+        await self.add_cog(TutorialCog(self, self.database))
 
         @self.tree.command(name="ping", description="Megmutatja, hogy működik-e a bot.")
         async def ping(interaction: discord.Interaction) -> None:
@@ -202,6 +242,16 @@ class VaultBot(commands.Bot):
                         return
                 except Exception:
                     logger.exception("AutoMod message check failed on guild %s", message.guild.id)
+
+        # Activity tracking runs only after AutoMod accepted the message. Prefix
+        # commands and anti-farm rules are filtered by ActivityService itself.
+        if message.guild is not None:
+            activity_cog = self.get_cog("ActivityCog")
+            if activity_cog is not None and hasattr(activity_cog, "handle_message"):
+                try:
+                    await activity_cog.handle_message(message)
+                except Exception:
+                    logger.exception("Activity message tracking failed on guild %s", message.guild.id)
 
         content = message.content.strip()
         if message.guild is not None and content.startswith("!"):
@@ -242,6 +292,7 @@ class VaultBot(commands.Bot):
             if first_token in RATE_LIMITED_PREFIX_COMMANDS:
                 key = (message.guild.id, message.author.id)
                 now = time.monotonic()
+                self._prune_prefix_runtime_cache(now)
                 last = self._prefix_action_times.get(key)
                 if last is not None and now - last < eco.PREFIX_ACTION_MIN_INTERVAL_SECONDS:
                     # Flood esetén nem küldünk újabb hibaüzenetet, mert azzal a bot

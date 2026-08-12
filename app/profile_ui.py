@@ -9,6 +9,7 @@ from app.services.progression import ACHIEVEMENTS, BADGES, TITLE_REQUIREMENTS
 from app.progression_config import ACHIEVEMENT_DEFINITIONS
 from app.crew_ui import build_crew_embed
 from app.progression_math import progress_for_xp
+from app import activity_config as activitycfg
 
 RARITY_META = {
     "common": ("⚪", "Common"),
@@ -89,6 +90,7 @@ async def build_overview_embed(bot, guild_id: int, target: discord.abc.User) -> 
     favorite = _favorite_game(stats)
     prestige_state = await bot.prestige.state(guild_id, target.id)
     crew_membership = await bot.crew.get_membership(guild_id, target.id)
+    activity = await bot.activity_service.profile(guild_id, target.id)
 
     embed = discord.Embed(color=BRAND)
     embed.set_author(name=f"{target.display_name} • Yoru profil", icon_url=target.display_avatar.url)
@@ -116,8 +118,9 @@ async def build_overview_embed(bot, guild_id: int, target: discord.abc.User) -> 
             f"🏆 Achievement: **{len(unlocked_ach)}/{len(ACHIEVEMENTS)}**\n"
             f"💠 Badge: **{len(unlocked_badges)}/{len(BADGES)}**\n"
             f"🌌 Prestige: **{prestige_state.rank}** • bónusz: **+{round(prestige_state.income_bonus * 100)}%**\n"
-            f"👥 Crew: **{crew_membership.crew.name if crew_membership else '—'}**"
+            f"🌙 Frakció: **{crew_membership.crew.name if crew_membership else '—'}**"
             + (f" • Level **{crew_membership.crew.level}** • **+{crew_membership.crew.income_bonus * 100:g}%**" if crew_membership else "")
+            + f"\n📈 Activity: **Level {activity.level}** • **{activity.total_xp:,} XP**".replace(",", " ")
             + f"\n🔥 Daily streak: **{streak}** • rekord: **{best_streak}**"
         ),
         inline=False,
@@ -217,6 +220,17 @@ async def build_statistics_embed(bot, guild_id: int, target: discord.abc.User) -
         inline=True,
     )
 
+    activity = await bot.activity_service.profile(guild_id, target.id)
+    embed.add_field(
+        name="📈 Discord Activity",
+        value=(
+            f"Level: **{activity.level}** • **{activity.total_xp:,} XP**\n"
+            f"Chat: **{activity.message_count:,}** üzenet • **{activity.chat_xp:,} XP**\n"
+            f"Voice: **{bot.activity_service.voice_time_text(activity.voice_seconds)}** • **{activity.voice_xp:,} XP**"
+        ).replace(",", " "),
+        inline=True,
+    )
+
     prestige_state = await bot.prestige.state(guild_id, target.id)
     embed.add_field(
         name="🌌 Prestige",
@@ -231,17 +245,65 @@ async def build_statistics_embed(bot, guild_id: int, target: discord.abc.User) -
 
     crew_membership = await bot.crew.get_membership(guild_id, target.id)
     embed.add_field(
-        name="👥 Crew",
+        name="🌙 Frakció",
         value=(
-            f"Crew: **{crew_membership.crew.name if crew_membership else '—'}**\n"
+            f"Frakció: **{crew_membership.crew.name if crew_membership else '—'}**\n"
             f"Befizetve: **{compact_money(s('crew.contributed'))}**\n"
-            f"Crew bónusz: **{compact_money(s('crew.bonus_earned'))}**\n"
+            f"Frakció bónusz: **{compact_money(s('crew.bonus_earned'))}**\n"
             f"Csatlakozások: **{s('crew.joined')}**"
         ),
         inline=True,
     )
 
     embed.set_footer(text="Yoru • Részletes statisztika")
+    return embed
+
+
+async def build_activity_embed(bot, guild_id: int, target: discord.abc.User) -> discord.Embed:
+    profile = await bot.activity_service.profile(guild_id, target.id)
+    level, current, needed, percent = activitycfg.level_progress(profile.total_xp)
+    milestones = await bot.activity_service.get_milestones(guild_id)
+    guild = bot.get_guild(guild_id)
+    configured = []
+    for row in milestones:
+        role = guild.get_role(int(row["role_id"])) if guild is not None and row.get("role_id") else None
+        configured.append((int(row["level"]), role, row))
+    next_row = next((row for row in milestones if int(row["level"]) > level), None)
+    current_role = None
+    if guild is not None:
+        eligible = [(lvl, role) for lvl, role, _ in configured if lvl <= level and role is not None]
+        if eligible:
+            current_role = max(eligible, key=lambda item: item[0])[1]
+
+    embed = discord.Embed(title="📈 Activity Level", color=BRAND)
+    embed.set_author(name=target.display_name, icon_url=target.display_avatar.url)
+    embed.set_thumbnail(url=target.display_avatar.url)
+    embed.description = (
+        f"**Activity Level {level}**\n"
+        f"`{progress_bar(current, needed, 16)}` **{percent}%**\n"
+        f"-# {current:,} / {needed:,} XP a következő szintig".replace(",", " ")
+    )
+    embed.add_field(name="✨ Összes Activity XP", value=f"**{profile.total_xp:,} XP**".replace(",", " "), inline=True)
+    embed.add_field(name="💬 Chat XP", value=f"**{profile.chat_xp:,} XP**".replace(",", " "), inline=True)
+    embed.add_field(name="🎙️ Voice XP", value=f"**{profile.voice_xp:,} XP**".replace(",", " "), inline=True)
+    embed.add_field(name="💬 Qualifying üzenetek", value=f"**{profile.message_count:,}**".replace(",", " "), inline=True)
+    embed.add_field(name="🎙️ Qualifying voice", value=f"**{bot.activity_service.voice_time_text(profile.voice_seconds)}**", inline=True)
+    embed.add_field(name="🏅 Aktív milestone rang", value=current_role.mention if current_role else "—", inline=True)
+    if next_row is not None:
+        threshold = activitycfg.xp_for_level(int(next_row["level"]))
+        remaining = max(0, threshold - profile.total_xp)
+        role = guild.get_role(int(next_row["role_id"])) if guild is not None and next_row.get("role_id") else None
+        embed.add_field(
+            name=f"🎯 Következő milestone • Lv. {next_row['level']}",
+            value=f"{role.mention if role else next_row['role_name']}\nMég **{remaining:,} XP**".replace(",", " "),
+            inline=False,
+        )
+    embed.add_field(
+        name="🛡️ Anti-farm",
+        value="Prefix command spam nem ad Activityt; chat XP cooldown + duplicate gate aktív. Voice-hoz legalább 2 qualifying real user kell.",
+        inline=False,
+    )
+    embed.set_footer(text="Yoru • Activity Level külön az economy/progression Leveltől")
     return embed
 
 
@@ -297,7 +359,7 @@ async def build_achievements_embed(bot, guild_id: int, target: discord.abc.User)
         "inventory": "📦 Inventory",
         "market": "📈 Market",
         "prestige": "🌌 Prestige",
-        "social": "👥 Social / Crew",
+        "social": "👥 Social / Frakció",
         "general": "⭐ Egyéb",
     }
     category_counts: dict[str, list[int]] = {}
@@ -399,7 +461,7 @@ async def build_quests_embed(bot, guild_id: int, target: discord.abc.User) -> di
 
 async def build_crew_profile_embed(bot, guild_id: int, target: discord.abc.User) -> discord.Embed:
     embed = await build_crew_embed(bot, guild_id, target)
-    embed.set_footer(text="Yoru • Crew kezelés: !crew vagy /crew")
+    embed.set_footer(text="Yoru • Frakció kezelés: !crew vagy /crew")
     return embed
 
 
@@ -453,6 +515,7 @@ class ProfileView(discord.ui.View):
         page_by_custom = {
             "yoru_profile_overview": "overview",
             "yoru_profile_stats": "stats",
+            "yoru_profile_activity": "activity",
             "yoru_profile_inventory": "inventory",
             "yoru_profile_achievements": "achievements",
             "yoru_profile_titles": "titles",
@@ -469,6 +532,7 @@ class ProfileView(discord.ui.View):
         builders = {
             "overview": build_overview_embed,
             "stats": build_statistics_embed,
+            "activity": build_activity_embed,
             "inventory": build_inventory_embed,
             "achievements": build_achievements_embed,
             "titles": build_titles_embed,
@@ -492,6 +556,10 @@ class ProfileView(discord.ui.View):
     async def stats(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         await self._switch(interaction, "stats")
 
+    @discord.ui.button(label="Activity", emoji="📈", style=discord.ButtonStyle.secondary, custom_id="yoru_profile_activity", row=0)
+    async def activity(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        await self._switch(interaction, "activity")
+
     @discord.ui.button(label="Inventory", emoji="🎒", style=discord.ButtonStyle.secondary, custom_id="yoru_profile_inventory", row=0)
     async def inventory(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         await self._switch(interaction, "inventory")
@@ -512,7 +580,7 @@ class ProfileView(discord.ui.View):
     async def quests(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         await self._switch(interaction, "quests")
 
-    @discord.ui.button(label="Crew", emoji="👥", style=discord.ButtonStyle.secondary, custom_id="yoru_profile_crew", row=2)
+    @discord.ui.button(label="Frakció", emoji="🌙", style=discord.ButtonStyle.secondary, custom_id="yoru_profile_crew", row=2)
     async def crew(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         await self._switch(interaction, "crew")
 

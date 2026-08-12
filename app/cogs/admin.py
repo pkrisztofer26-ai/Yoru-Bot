@@ -168,7 +168,7 @@ class AdminCog(commands.Cog):
             "✅ **YORU v3.5 ECONOMY REBASE KÉSZ**\n"
             "💵 Wallet: új starter balance • Bank/XP/Prestige: reset\n"
             "🎒 Normál inventory/boosterek/piac/questek: reset\n"
-            "👥 Crew tagság megmaradt, Crew bank/level/contribution reset\n"
+            "🌙 Frakció tagság megmaradt, Frakció bank/infrastructure/contribution reset\n"
             "📊 Lifetime aktivitási count statok megmaradtak\n"
             "🎁 Premium reward item + vásárlási history megmaradt\n"
             f"🧹 Régi economy tranzakciók törölve: **{result.get('transactions', 0)}**",
@@ -197,7 +197,7 @@ class AdminCog(commands.Cog):
             await ctx.author.send(
                 "✅ **YORU v3.5 ECONOMY REBASE KÉSZ**\n"
                 "Wallet/starter, bank, XP, prestige és normál inventory újraindítva.\n"
-                "Crew tagság + lifetime activity statok + premium history megmaradt.\n"
+                "Frakció tagság + lifetime activity statok + premium history megmaradt.\n"
                 f"Régi economy tranzakciók törölve: **{result.get('transactions', 0)}**"
             )
         except discord.HTTPException:
@@ -229,7 +229,7 @@ class AdminCog(commands.Cog):
             f"🎒 Inventory sorok: **{result.get('inventory', 0)}**\n"
             f"🏅 Achievementek: **{result.get('achievements', 0)}**\n"
             f"🌌 Prestige profilok: **{result.get('user_prestige', 0)}**\n"
-            f"👥 Crew-k: **{result.get('crews', 0)}** • tagságok: **{result.get('crew_members', 0)}**\n"
+            f"🌙 Frakciók: **{result.get('crews', 0)}** • tagságok: **{result.get('crew_members', 0)}**\n"
             f"📊 v3 stat sorok: **{result.get('user_statistics', 0)}**\n"
             f"🧾 Tranzakciók: **{result.get('transactions', 0)}**\n"
             "\nMindenki a következő economy parancsnál új játékosként indul. "
@@ -265,7 +265,7 @@ class AdminCog(commands.Cog):
                 f"🎒 Inventory sorok: **{result.get('inventory', 0)}**\n"
                 f"🏅 Achievementek: **{result.get('achievements', 0)}**\n"
                 f"🌌 Prestige profilok: **{result.get('user_prestige', 0)}**\n"
-                f"👥 Crew-k: **{result.get('crews', 0)}** • tagságok: **{result.get('crew_members', 0)}**\n"
+                f"🌙 Frakciók: **{result.get('crews', 0)}** • tagságok: **{result.get('crew_members', 0)}**\n"
                 f"🧾 Tranzakciók: **{result.get('transactions', 0)}**\n"
                 "Mindenki a következő economy parancsnál új játékosként indul."
             )

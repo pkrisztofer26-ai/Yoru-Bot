@@ -91,6 +91,107 @@ class Database:
                 """
             )
             await db.execute(
+                "CREATE INDEX IF NOT EXISTS idx_transactions_guild_created ON transactions(guild_id, created_at DESC)"
+            )
+            await db.execute(
+                "CREATE INDEX IF NOT EXISTS idx_transactions_user_created ON transactions(guild_id, user_id, created_at DESC)"
+            )
+
+            # --- Casino V2 core -------------------------------------------------
+            # A casino session/ledger külön táblákban él, így a tétfoglalás,
+            # payout/refund és a restart recovery auditálható és idempotens.
+            await db.execute(
+                """
+                CREATE TABLE IF NOT EXISTS casino_sessions (
+                    game_id TEXT PRIMARY KEY,
+                    guild_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    game TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    bet INTEGER NOT NULL,
+                    payout INTEGER NOT NULL DEFAULT 0,
+                    profit INTEGER NOT NULL DEFAULT 0,
+                    multiplier REAL NOT NULL DEFAULT 0,
+                    result TEXT NOT NULL DEFAULT '',
+                    config_json TEXT NOT NULL DEFAULT '{}',
+                    wallet_after INTEGER,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    settled_at TEXT
+                )
+                """
+            )
+            await db.execute(
+                "CREATE INDEX IF NOT EXISTS idx_casino_sessions_user_created ON casino_sessions(guild_id, user_id, created_at DESC)"
+            )
+            await db.execute(
+                "CREATE INDEX IF NOT EXISTS idx_casino_sessions_status ON casino_sessions(status, updated_at)"
+            )
+            await db.execute(
+                """
+                CREATE TABLE IF NOT EXISTS casino_ledger (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    game_id TEXT NOT NULL,
+                    guild_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    entry_type TEXT NOT NULL,
+                    entry_key TEXT,
+                    amount INTEGER NOT NULL,
+                    balance_after INTEGER,
+                    metadata_json TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (game_id) REFERENCES casino_sessions(game_id) ON DELETE CASCADE,
+                    UNIQUE(game_id, entry_key)
+                )
+                """
+            )
+            await db.execute(
+                "CREATE INDEX IF NOT EXISTS idx_casino_ledger_game ON casino_ledger(game_id, id)"
+            )
+            await db.execute(
+                """
+                CREATE TABLE IF NOT EXISTS casino_monthly_jackpot (
+                    guild_id INTEGER NOT NULL,
+                    month TEXT NOT NULL,
+                    pool INTEGER NOT NULL DEFAULT 0,
+                    total_house_loss INTEGER NOT NULL DEFAULT 0,
+                    total_contributed INTEGER NOT NULL DEFAULT 0,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (guild_id, month)
+                )
+                """
+            )
+            await db.execute(
+                """
+                CREATE TABLE IF NOT EXISTS casino_monthly_user_contrib (
+                    guild_id INTEGER NOT NULL,
+                    month TEXT NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    contributed INTEGER NOT NULL DEFAULT 0,
+                    house_loss INTEGER NOT NULL DEFAULT 0,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (guild_id, month, user_id)
+                )
+                """
+            )
+            await db.execute(
+                """
+                CREATE TABLE IF NOT EXISTS casino_jackpot_history (
+                    guild_id INTEGER NOT NULL,
+                    month TEXT NOT NULL,
+                    pool INTEGER NOT NULL DEFAULT 0,
+                    payout INTEGER NOT NULL DEFAULT 0,
+                    winner_id INTEGER,
+                    eligible_players INTEGER NOT NULL DEFAULT 0,
+                    total_house_loss INTEGER NOT NULL DEFAULT 0,
+                    total_contributed INTEGER NOT NULL DEFAULT 0,
+                    outcome TEXT NOT NULL DEFAULT 'draw',
+                    drawn_at TEXT NOT NULL,
+                    PRIMARY KEY (guild_id, month)
+                )
+                """
+            )
+            await db.execute(
                 """
                 CREATE TABLE IF NOT EXISTS role_income (
                     guild_id INTEGER NOT NULL,
@@ -163,6 +264,17 @@ class Database:
                 )"""
             )
             await db.execute(
+                """CREATE TABLE IF NOT EXISTS lottery_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER NOT NULL,
+                    winner_id INTEGER NOT NULL,
+                    total_tickets INTEGER NOT NULL,
+                    payout INTEGER NOT NULL,
+                    drawn_at TEXT NOT NULL
+                )"""
+            )
+            await db.execute("CREATE INDEX IF NOT EXISTS idx_lottery_history_guild ON lottery_history(guild_id,id DESC)")
+            await db.execute(
                 """CREATE TABLE IF NOT EXISTS lottery_entries (
                     guild_id INTEGER NOT NULL, user_id INTEGER NOT NULL, tickets INTEGER NOT NULL DEFAULT 0,
                     PRIMARY KEY (guild_id, user_id)
@@ -205,6 +317,93 @@ class Database:
             await db.execute(
                 "CREATE INDEX IF NOT EXISTS idx_user_statistics_lookup ON user_statistics(guild_id, stat_name, value DESC)"
             )
+            # Yoru v3.12 Activity System. Kept separate from economy/progression XP.
+            await db.execute(
+                """CREATE TABLE IF NOT EXISTS activity_users (
+                    guild_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    total_xp INTEGER NOT NULL DEFAULT 0,
+                    chat_xp INTEGER NOT NULL DEFAULT 0,
+                    voice_xp INTEGER NOT NULL DEFAULT 0,
+                    message_count INTEGER NOT NULL DEFAULT 0,
+                    voice_seconds INTEGER NOT NULL DEFAULT 0,
+                    level INTEGER NOT NULL DEFAULT 0,
+                    last_chat_xp_at TEXT,
+                    last_message_at TEXT,
+                    last_message_hash TEXT,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (guild_id, user_id)
+                )"""
+            )
+            await db.execute(
+                "CREATE INDEX IF NOT EXISTS idx_activity_level ON activity_users(guild_id, level DESC, total_xp DESC)"
+            )
+            await db.execute(
+                "CREATE INDEX IF NOT EXISTS idx_activity_chat ON activity_users(guild_id, message_count DESC, chat_xp DESC)"
+            )
+            await db.execute(
+                "CREATE INDEX IF NOT EXISTS idx_activity_voice ON activity_users(guild_id, voice_seconds DESC, voice_xp DESC)"
+            )
+            await db.execute(
+                """CREATE TABLE IF NOT EXISTS activity_message_hashes (
+                    guild_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    message_hash TEXT NOT NULL,
+                    last_seen TEXT NOT NULL,
+                    PRIMARY KEY (guild_id, user_id, message_hash)
+                )"""
+            )
+            await db.execute(
+                "CREATE INDEX IF NOT EXISTS idx_activity_message_hash_seen ON activity_message_hashes(guild_id,user_id,last_seen)"
+            )
+            # Yoru v3.13 Social Economy: player marketplace, server rewards and PvP escrow.
+            social_schema = (
+                """CREATE TABLE IF NOT EXISTS player_market_listings (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id INTEGER NOT NULL, seller_id INTEGER NOT NULL,
+                    item_id TEXT NOT NULL, quantity_total INTEGER NOT NULL, quantity_remaining INTEGER NOT NULL,
+                    unit_price INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'active', created_at TEXT NOT NULL, expires_at TEXT NOT NULL
+                )""",
+                "CREATE INDEX IF NOT EXISTS idx_player_market_active ON player_market_listings(guild_id,status,created_at DESC)",
+                "CREATE INDEX IF NOT EXISTS idx_player_market_seller ON player_market_listings(guild_id,seller_id,status)",
+                """CREATE TABLE IF NOT EXISTS player_market_trades (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id INTEGER NOT NULL, listing_id INTEGER NOT NULL,
+                    seller_id INTEGER NOT NULL, buyer_id INTEGER NOT NULL, item_id TEXT NOT NULL, quantity INTEGER NOT NULL,
+                    unit_price INTEGER NOT NULL, gross INTEGER NOT NULL, tax INTEGER NOT NULL, net INTEGER NOT NULL, created_at TEXT NOT NULL
+                )""",
+                "CREATE INDEX IF NOT EXISTS idx_player_market_trades_guild ON player_market_trades(guild_id,created_at DESC)",
+                """CREATE TABLE IF NOT EXISTS server_shop_items (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id INTEGER NOT NULL, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '',
+                    emoji TEXT NOT NULL DEFAULT '🎁', price INTEGER NOT NULL, reward_type TEXT NOT NULL, reward_ref TEXT NOT NULL,
+                    reward_quantity INTEGER NOT NULL DEFAULT 1, stock INTEGER NOT NULL DEFAULT -1, per_user_limit INTEGER NOT NULL DEFAULT 0,
+                    required_activity_level INTEGER NOT NULL DEFAULT 0, required_progression_level INTEGER NOT NULL DEFAULT 0,
+                    duration_minutes INTEGER NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL
+                )""",
+                "CREATE INDEX IF NOT EXISTS idx_server_shop_items_guild ON server_shop_items(guild_id,active,id)",
+                """CREATE TABLE IF NOT EXISTS server_shop_purchases (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id INTEGER NOT NULL, shop_item_id INTEGER NOT NULL, user_id INTEGER NOT NULL,
+                    price INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'paid', created_at TEXT NOT NULL
+                )""",
+                "CREATE INDEX IF NOT EXISTS idx_server_shop_purchase_user ON server_shop_purchases(guild_id,shop_item_id,user_id,status)",
+                """CREATE TABLE IF NOT EXISTS server_shop_claims (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, purchase_id INTEGER NOT NULL UNIQUE, guild_id INTEGER NOT NULL, user_id INTEGER NOT NULL,
+                    reward_text TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', created_at TEXT NOT NULL, fulfilled_at TEXT, fulfilled_by INTEGER
+                )""",
+                "CREATE INDEX IF NOT EXISTS idx_server_shop_claims_pending ON server_shop_claims(guild_id,status,id)",
+                """CREATE TABLE IF NOT EXISTS temporary_role_grants (
+                    guild_id INTEGER NOT NULL, user_id INTEGER NOT NULL, role_id INTEGER NOT NULL, expires_at TEXT NOT NULL, source_purchase_id INTEGER NOT NULL,
+                    delete_on_expire INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY (guild_id,user_id,role_id,source_purchase_id)
+                )""",
+                """CREATE TABLE IF NOT EXISTS pvp_duels (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id INTEGER NOT NULL, challenger_id INTEGER NOT NULL, target_id INTEGER NOT NULL,
+                    game TEXT NOT NULL, stake INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'pending', challenger_choice TEXT, target_choice TEXT,
+                    winner_id INTEGER, created_at TEXT NOT NULL, expires_at TEXT NOT NULL, resolved_at TEXT, channel_id INTEGER, message_id INTEGER
+                )""",
+                "CREATE INDEX IF NOT EXISTS idx_pvp_duels_active ON pvp_duels(guild_id,status,expires_at)",
+                "CREATE INDEX IF NOT EXISTS idx_pvp_duels_resolved ON pvp_duels(guild_id,status,resolved_at)",
+            )
+            for statement in social_schema:
+                await db.execute(statement)
             # Yoru v3.2 quest assignments. A start_value miatt a quest progress
             # a kiosztás pillanatától mérhető, külön event-hookok nélkül.
             await db.execute(
@@ -258,6 +457,7 @@ class Database:
                     level INTEGER NOT NULL DEFAULT 1,
                     total_contributed INTEGER NOT NULL DEFAULT 0,
                     description TEXT NOT NULL DEFAULT '',
+                    discord_role_id INTEGER,
                     created_at TEXT NOT NULL,
                     UNIQUE (guild_id, normalized_name)
                 )"""
@@ -288,8 +488,147 @@ class Database:
                 )"""
             )
             await db.execute(
+                "CREATE INDEX IF NOT EXISTS idx_crew_invites_crew ON crew_invites(guild_id, crew_id, expires_at)"
+            )
+            await db.execute(
                 "CREATE INDEX IF NOT EXISTS idx_crews_leaderboard ON crews(guild_id, level DESC, total_contributed DESC, bank DESC)"
             )
+            # v3.17.4 Discord Frakció role persistence. Existing live DBs get
+            # the nullable role id without losing any Crew/Frakció data.
+            cursor = await db.execute("PRAGMA table_info(crews)")
+            crew_cols = {str(row[1]) for row in await cursor.fetchall()}
+            if "discord_role_id" not in crew_cols:
+                await db.execute("ALTER TABLE crews ADD COLUMN discord_role_id INTEGER")
+
+            # Yoru v3.14 Frakció 2.0.  These tables deliberately reference the
+            # existing Crew ids without renaming the legacy schema, so old live
+            # databases keep every faction identity and membership.
+            faction_schema = (
+                """CREATE TABLE IF NOT EXISTS crew_faction_progress (
+                    guild_id INTEGER NOT NULL, crew_id INTEGER NOT NULL, xp INTEGER NOT NULL DEFAULT 0,
+                    level INTEGER NOT NULL DEFAULT 1, lifetime_xp INTEGER NOT NULL DEFAULT 0,
+                    war_wins INTEGER NOT NULL DEFAULT 0, war_losses INTEGER NOT NULL DEFAULT 0,
+                    war_draws INTEGER NOT NULL DEFAULT 0, war_points INTEGER NOT NULL DEFAULT 0,
+                    updated_at TEXT NOT NULL, PRIMARY KEY (guild_id,crew_id)
+                )""",
+                "CREATE INDEX IF NOT EXISTS idx_crew_faction_level ON crew_faction_progress(guild_id,level DESC,xp DESC)",
+                """CREATE TABLE IF NOT EXISTS crew_member_faction (
+                    guild_id INTEGER NOT NULL, crew_id INTEGER NOT NULL, user_id INTEGER NOT NULL,
+                    contribution_xp INTEGER NOT NULL DEFAULT 0, events INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL,
+                    PRIMARY KEY (guild_id,crew_id,user_id)
+                )""",
+                "CREATE INDEX IF NOT EXISTS idx_crew_member_faction_contrib ON crew_member_faction(guild_id,crew_id,contribution_xp DESC)",
+                """CREATE TABLE IF NOT EXISTS crew_objectives (
+                    guild_id INTEGER NOT NULL, crew_id INTEGER NOT NULL, period TEXT NOT NULL, period_key TEXT NOT NULL,
+                    slot INTEGER NOT NULL, objective_id TEXT NOT NULL, progress INTEGER NOT NULL DEFAULT 0, target INTEGER NOT NULL,
+                    reward_xp INTEGER NOT NULL, reward_bank INTEGER NOT NULL, completed INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL, completed_at TEXT,
+                    PRIMARY KEY (guild_id,crew_id,period,period_key,slot)
+                )""",
+                "CREATE INDEX IF NOT EXISTS idx_crew_objectives_current ON crew_objectives(guild_id,crew_id,period,period_key)",
+                """CREATE TABLE IF NOT EXISTS crew_perks (
+                    guild_id INTEGER NOT NULL, crew_id INTEGER NOT NULL, perk_key TEXT NOT NULL, rank INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY (guild_id,crew_id,perk_key)
+                )""",
+                """CREATE TABLE IF NOT EXISTS crew_custom_ranks (
+                    rank_id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id INTEGER NOT NULL, crew_id INTEGER NOT NULL,
+                    name TEXT NOT NULL, position INTEGER NOT NULL DEFAULT 0, permissions_json TEXT NOT NULL DEFAULT '[]', created_at TEXT NOT NULL,
+                    UNIQUE (guild_id,crew_id,name)
+                )""",
+                """CREATE TABLE IF NOT EXISTS crew_member_custom_ranks (
+                    guild_id INTEGER NOT NULL, crew_id INTEGER NOT NULL, user_id INTEGER NOT NULL, rank_id INTEGER NOT NULL,
+                    PRIMARY KEY (guild_id,crew_id,user_id)
+                )""",
+                """CREATE TABLE IF NOT EXISTS crew_wars (
+                    war_id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id INTEGER NOT NULL, challenger_crew_id INTEGER NOT NULL,
+                    target_crew_id INTEGER NOT NULL, objective_id TEXT NOT NULL, stat TEXT NOT NULL, target INTEGER NOT NULL,
+                    challenger_score INTEGER NOT NULL DEFAULT 0, target_score INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'pending',
+                    winner_crew_id INTEGER, created_by INTEGER NOT NULL, created_at TEXT NOT NULL, accepted_at TEXT, expires_at TEXT NOT NULL, resolved_at TEXT
+                )""",
+                "CREATE INDEX IF NOT EXISTS idx_crew_wars_active ON crew_wars(guild_id,status,expires_at)",
+            )
+            for statement in faction_schema:
+                await db.execute(statement)
+            # Defensive v3.14 pre-release migration: safe if a host started an
+            # earlier Frakció 2.0 package before the war-record columns existed.
+            cursor = await db.execute("PRAGMA table_info(crew_faction_progress)")
+            faction_progress_cols = {str(row[1]) for row in await cursor.fetchall()}
+            for column in ("war_wins", "war_losses", "war_draws", "war_points"):
+                if column not in faction_progress_cols:
+                    await db.execute(f"ALTER TABLE crew_faction_progress ADD COLUMN {column} INTEGER NOT NULL DEFAULT 0")
+
+            # Yoru v3.15 Biznisz Empire: permanent license, unique server properties,
+            # rotating workers and player-to-player property offer escrow.
+            business_schema = (
+                """CREATE TABLE IF NOT EXISTS business_licenses (
+                    guild_id INTEGER NOT NULL, user_id INTEGER NOT NULL, purchased_at TEXT NOT NULL,
+                    PRIMARY KEY (guild_id,user_id)
+                )""",
+                """CREATE TABLE IF NOT EXISTS business_properties (
+                    property_id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id INTEGER NOT NULL, template_key TEXT NOT NULL,
+                    name TEXT NOT NULL, emoji TEXT NOT NULL DEFAULT '🏢', category TEXT NOT NULL, city TEXT NOT NULL, district TEXT NOT NULL, street TEXT NOT NULL,
+                    base_price INTEGER NOT NULL, base_hourly_revenue INTEGER NOT NULL, hourly_upkeep INTEGER NOT NULL, max_workers INTEGER NOT NULL DEFAULT 2,
+                    owner_id INTEGER, level INTEGER NOT NULL DEFAULT 1, reputation INTEGER NOT NULL DEFAULT 0, last_claim_at TEXT, acquired_at TEXT, created_at TEXT NOT NULL,
+                    UNIQUE (guild_id,template_key)
+                )""",
+                "CREATE INDEX IF NOT EXISTS idx_business_properties_owner ON business_properties(guild_id,owner_id,base_price)",
+                """CREATE TABLE IF NOT EXISTS business_workers (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id INTEGER NOT NULL, property_id INTEGER NOT NULL, owner_id INTEGER NOT NULL,
+                    worker_key TEXT NOT NULL, name TEXT NOT NULL, tier TEXT NOT NULL, revenue_bonus_percent INTEGER NOT NULL, wage_per_hour INTEGER NOT NULL,
+                    hired_at TEXT NOT NULL, expires_at TEXT NOT NULL
+                )""",
+                "CREATE INDEX IF NOT EXISTS idx_business_workers_property ON business_workers(guild_id,property_id,expires_at)",
+                """CREATE TABLE IF NOT EXISTS business_offers (
+                    offer_id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id INTEGER NOT NULL, property_id INTEGER NOT NULL, seller_id INTEGER NOT NULL, buyer_id INTEGER NOT NULL,
+                    amount INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'pending', created_at TEXT NOT NULL, expires_at TEXT NOT NULL, resolved_at TEXT
+                )""",
+                "CREATE INDEX IF NOT EXISTS idx_business_offers_active ON business_offers(guild_id,status,expires_at)",
+                "CREATE INDEX IF NOT EXISTS idx_business_offers_property ON business_offers(guild_id,property_id,status,offer_id)",
+                "CREATE INDEX IF NOT EXISTS idx_business_offers_buyer ON business_offers(guild_id,buyer_id,status,expires_at)",
+                """CREATE TABLE IF NOT EXISTS business_transactions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id INTEGER NOT NULL, property_id INTEGER NOT NULL, user_id INTEGER NOT NULL,
+                    amount INTEGER NOT NULL, kind TEXT NOT NULL, created_at TEXT NOT NULL
+                )""",
+                "CREATE INDEX IF NOT EXISTS idx_business_transactions_guild ON business_transactions(guild_id,created_at DESC)",
+            )
+            for statement in business_schema:
+                await db.execute(statement)
+
+            # Yoru v3.16 Nagy Meló: restart-safe lobby/run state, abstract gear
+            # inventory and participant cooldowns. Targets and mechanics are fictional.
+            heist_schema = (
+                """CREATE TABLE IF NOT EXISTS heist_lobbies (
+                    lobby_id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id INTEGER NOT NULL, leader_id INTEGER NOT NULL,
+                    target_key TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'forming', phase INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL, expires_at TEXT NOT NULL, started_at TEXT, resolved_at TEXT
+                )""",
+                "CREATE INDEX IF NOT EXISTS idx_heist_lobbies_active ON heist_lobbies(guild_id,status,expires_at)",
+                "CREATE INDEX IF NOT EXISTS idx_heist_lobbies_leader ON heist_lobbies(guild_id,leader_id,status,expires_at)",
+                """CREATE TABLE IF NOT EXISTS heist_lobby_members (
+                    guild_id INTEGER NOT NULL, lobby_id INTEGER NOT NULL, user_id INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'pending',
+                    role_key TEXT NOT NULL DEFAULT 'support', cut_percent INTEGER NOT NULL DEFAULT 0, cut_accepted INTEGER NOT NULL DEFAULT 0,
+                    gear_key TEXT, joined_at TEXT NOT NULL, PRIMARY KEY (guild_id,lobby_id,user_id)
+                )""",
+                "CREATE INDEX IF NOT EXISTS idx_heist_members_user ON heist_lobby_members(guild_id,user_id,status,lobby_id)",
+                """CREATE TABLE IF NOT EXISTS heist_runs (
+                    run_id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id INTEGER NOT NULL, lobby_id INTEGER NOT NULL, target_key TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'running', phase INTEGER NOT NULL DEFAULT 0, reward_pool INTEGER NOT NULL DEFAULT 0,
+                    phase_results TEXT NOT NULL DEFAULT '[]', member_snapshot TEXT NOT NULL DEFAULT '{}', success INTEGER, total_reward INTEGER NOT NULL DEFAULT 0,
+                    started_at TEXT NOT NULL, resolved_at TEXT
+                )""",
+                "CREATE INDEX IF NOT EXISTS idx_heist_runs_history ON heist_runs(guild_id,status,resolved_at)",
+                "CREATE INDEX IF NOT EXISTS idx_heist_runs_lobby ON heist_runs(guild_id,lobby_id,status)",
+                """CREATE TABLE IF NOT EXISTS heist_gear (
+                    guild_id INTEGER NOT NULL, user_id INTEGER NOT NULL, gear_key TEXT NOT NULL, quantity INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY (guild_id,user_id,gear_key)
+                )""",
+                """CREATE TABLE IF NOT EXISTS heist_cooldowns (
+                    guild_id INTEGER NOT NULL, user_id INTEGER NOT NULL, last_heist_at TEXT NOT NULL,
+                    PRIMARY KEY (guild_id,user_id)
+                )""",
+            )
+            for statement in heist_schema:
+                await db.execute(statement)
 
             # A régi, oszlop-alapú statokat egyszer áttöltjük az új rendszerbe.
             # INSERT OR IGNORE: a már v3 alatt frissített értékeket soha nem írjuk felül.
@@ -624,6 +963,7 @@ class Database:
                      emoji=excluded.emoji, active=1, rarity=excluded.rarity, category=excluded.category""",
                 shop_catalog,
             )
+            await db.execute("PRAGMA optimize")
             await db.commit()
 
     async def ensure_user(self, guild_id: int, user_id: int) -> None:
@@ -788,19 +1128,31 @@ class Database:
         )
 
     async def _record_gamble_stats_tx(
-        self, db: aiosqlite.Connection, guild_id: int, user_id: int, game: str, bet: int, profit: int, won: bool, now: str
+        self, db: aiosqlite.Connection, guild_id: int, user_id: int, game: str, bet: int, profit: int, won: bool, now: str,
+        payout: int | None = None, multiplier: float | None = None,
     ) -> None:
         base = game.removesuffix("_tie")
         tied = game.endswith("_tie") or profit == 0
+        if payout is None:
+            payout = max(0, bet + profit)
+        if multiplier is None:
+            multiplier = (float(payout) / float(bet)) if bet > 0 else 0.0
         for key, amount in (
             ("gambling.plays", 1),
             (f"gambling.{base}.plays", 1),
             ("gambling.wagered", bet),
             (f"gambling.{base}.wagered", bet),
+            ("gambling.payout", payout),
+            (f"gambling.{base}.payout", payout),
             ("gambling.profit", profit),
             (f"gambling.{base}.profit", profit),
         ):
             await self._add_stat_tx(db, guild_id, user_id, key, amount, now)
+        await self._set_stat_max_tx(db, guild_id, user_id, "gambling.biggest_bet", bet, now)
+        await self._set_stat_max_tx(db, guild_id, user_id, f"gambling.{base}.biggest_bet", bet, now)
+        multiplier_x1000 = max(0, int(round(float(multiplier) * 1000)))
+        await self._set_stat_max_tx(db, guild_id, user_id, "gambling.highest_multiplier_x1000", multiplier_x1000, now)
+        await self._set_stat_max_tx(db, guild_id, user_id, f"gambling.{base}.highest_multiplier_x1000", multiplier_x1000, now)
         if tied:
             await self._add_stat_tx(db, guild_id, user_id, "gambling.ties", 1, now)
             await self._add_stat_tx(db, guild_id, user_id, f"gambling.{base}.ties", 1, now)
@@ -892,6 +1244,140 @@ class Database:
                 )
             rows = await cursor.fetchall()
         return {str(row[0]): int(row[1]) for row in rows}
+
+    async def ensure_activity_user(self, guild_id: int, user_id: int) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        async with aiosqlite.connect(self.path) as db:
+            await db.execute(
+                """INSERT OR IGNORE INTO activity_users
+                   (guild_id,user_id,total_xp,chat_xp,voice_xp,message_count,voice_seconds,level,updated_at)
+                   VALUES (?,?,0,0,0,0,0,0,?)""",
+                (guild_id, user_id, now),
+            )
+            await db.commit()
+
+    async def get_activity_profile(self, guild_id: int, user_id: int) -> dict[str, int | str | None]:
+        await self.ensure_activity_user(guild_id, user_id)
+        async with aiosqlite.connect(self.path) as db:
+            cursor = await db.execute(
+                """SELECT total_xp,chat_xp,voice_xp,message_count,voice_seconds,level,
+                          last_chat_xp_at,last_message_at,last_message_hash
+                   FROM activity_users WHERE guild_id=? AND user_id=?""",
+                (guild_id, user_id),
+            )
+            row = await cursor.fetchone()
+        if row is None:
+            raise RuntimeError("Az Activity profil létrehozása sikertelen volt.")
+        keys = [
+            "total_xp", "chat_xp", "voice_xp", "message_count", "voice_seconds", "level",
+            "last_chat_xp_at", "last_message_at", "last_message_hash",
+        ]
+        return dict(zip(keys, row, strict=True))
+
+    async def activity_message_hash_seen_since(self, guild_id: int, user_id: int, message_hash: str, since: str) -> bool:
+        async with aiosqlite.connect(self.path) as db:
+            # Keep only the active duplicate-protection window so this table does
+            # not grow forever on busy servers.
+            await db.execute(
+                "DELETE FROM activity_message_hashes WHERE guild_id=? AND user_id=? AND last_seen<?",
+                (guild_id, user_id, since),
+            )
+            cursor = await db.execute(
+                """SELECT 1 FROM activity_message_hashes
+                   WHERE guild_id=? AND user_id=? AND message_hash=? AND last_seen>=? LIMIT 1""",
+                (guild_id, user_id, message_hash, since),
+            )
+            row = await cursor.fetchone()
+            await db.commit()
+        return row is not None
+
+    async def record_activity_message(
+        self,
+        guild_id: int,
+        user_id: int,
+        *,
+        xp_award: int,
+        new_level: int,
+        message_hash: str,
+        now: str,
+    ) -> dict[str, int | str | None]:
+        await self.ensure_activity_user(guild_id, user_id)
+        xp_award = max(0, int(xp_award))
+        async with aiosqlite.connect(self.path) as db:
+            await db.execute("BEGIN IMMEDIATE")
+            if xp_award > 0:
+                await db.execute(
+                    """UPDATE activity_users SET
+                           total_xp=total_xp+?, chat_xp=chat_xp+?, message_count=message_count+1,
+                           level=?, last_chat_xp_at=?, last_message_at=?, last_message_hash=?, updated_at=?
+                       WHERE guild_id=? AND user_id=?""",
+                    (xp_award, xp_award, new_level, now, now, message_hash, now, guild_id, user_id),
+                )
+            else:
+                await db.execute(
+                    """UPDATE activity_users SET
+                           message_count=message_count+1, level=?, last_message_at=?, last_message_hash=?, updated_at=?
+                       WHERE guild_id=? AND user_id=?""",
+                    (new_level, now, message_hash, now, guild_id, user_id),
+                )
+            await db.execute(
+                """INSERT INTO activity_message_hashes(guild_id,user_id,message_hash,last_seen) VALUES (?,?,?,?)
+                   ON CONFLICT(guild_id,user_id,message_hash) DO UPDATE SET last_seen=excluded.last_seen""",
+                (guild_id, user_id, message_hash, now),
+            )
+            await db.commit()
+        return await self.get_activity_profile(guild_id, user_id)
+
+    async def record_activity_voice(
+        self,
+        guild_id: int,
+        user_id: int,
+        *,
+        seconds: int,
+        xp_award: int,
+        new_level: int,
+        now: str,
+    ) -> dict[str, int | str | None]:
+        await self.ensure_activity_user(guild_id, user_id)
+        seconds = max(0, int(seconds))
+        xp_award = max(0, int(xp_award))
+        async with aiosqlite.connect(self.path) as db:
+            await db.execute(
+                """UPDATE activity_users SET
+                       total_xp=total_xp+?, voice_xp=voice_xp+?, voice_seconds=voice_seconds+?,
+                       level=?, updated_at=?
+                   WHERE guild_id=? AND user_id=?""",
+                (xp_award, xp_award, seconds, new_level, now, guild_id, user_id),
+            )
+            await db.commit()
+        return await self.get_activity_profile(guild_id, user_id)
+
+    async def list_activity_user_ids(self, guild_id: int) -> list[int]:
+        async with aiosqlite.connect(self.path) as db:
+            cursor = await db.execute(
+                "SELECT user_id FROM activity_users WHERE guild_id=? AND (total_xp>0 OR message_count>0 OR voice_seconds>0)",
+                (guild_id,),
+            )
+            rows = await cursor.fetchall()
+        return [int(row[0]) for row in rows]
+
+    async def activity_leaderboard(self, guild_id: int, category: str, limit: int = 10) -> list[tuple[int, int, int, int]]:
+        columns = {
+            "activity": ("level", "total_xp", "message_count"),
+            "activity_xp": ("total_xp", "level", "message_count"),
+            "chat": ("message_count", "chat_xp", "level"),
+            "chatxp": ("chat_xp", "message_count", "level"),
+            "voice": ("voice_seconds", "voice_xp", "level"),
+        }
+        primary, secondary, tertiary = columns.get(category, columns["activity"])
+        async with aiosqlite.connect(self.path) as db:
+            cursor = await db.execute(
+                f"SELECT user_id,{secondary},{tertiary},{primary} AS score FROM activity_users "
+                "WHERE guild_id=? ORDER BY score DESC,total_xp DESC LIMIT ?",
+                (guild_id, max(1, int(limit))),
+            )
+            rows = await cursor.fetchall()
+        return [(int(r[0]), int(r[1]), int(r[2]), int(r[3])) for r in rows]
 
     async def add_user_stat(self, guild_id: int, user_id: int, stat_name: str, amount: int) -> int:
         await self.ensure_user(guild_id, user_id)
@@ -1236,6 +1722,8 @@ class Database:
         return sender_wallet, receiver_wallet
 
     async def leaderboard(self, guild_id: int, category: str = "money", limit: int = 10) -> list[tuple[int, int, int, int]]:
+        if category in {"activity", "activity_xp", "chat", "chatxp", "voice"}:
+            return await self.activity_leaderboard(guild_id, category, limit)
         columns = {
             "money": ("wallet + bank", "wallet", "bank"),
             "rob": ("rob_profit", "rob_success", "rob_failed"),
@@ -1288,6 +1776,552 @@ class Database:
             )
             await db.commit()
         return amount
+
+    async def reserve_casino_session(
+        self,
+        game_id: str,
+        guild_id: int,
+        user_id: int,
+        game: str,
+        bet: int,
+        config_snapshot: dict | None = None,
+    ) -> dict:
+        """Create a Casino V2 session and atomically reserve its base stake."""
+        if bet <= 0:
+            raise ValueError("A tétnek pozitívnak kell lennie.")
+        await self.ensure_user(guild_id, user_id)
+        now = datetime.now(timezone.utc).isoformat()
+        config_json = json.dumps(config_snapshot or {}, ensure_ascii=False, sort_keys=True)
+        async with aiosqlite.connect(self.path) as db:
+            await db.execute("PRAGMA foreign_keys=ON;")
+            await db.execute("BEGIN IMMEDIATE")
+            existing = await db.execute("SELECT game_id FROM casino_sessions WHERE game_id = ?", (game_id,))
+            if await existing.fetchone() is not None:
+                await db.rollback()
+                raise ValueError("Casino Game ID ütközés. Próbáld újra.")
+            # Transaction-level second guard: even if two command callbacks hit
+            # the service at the same instant, one player cannot reserve two
+            # unfinished Casino sessions with the same wallet.
+            active = await db.execute(
+                """SELECT game_id FROM casino_sessions
+                   WHERE guild_id=? AND user_id=? AND status IN ('ACTIVE','WAITING_INPUT','SETTLING')
+                   LIMIT 1""",
+                (guild_id, user_id),
+            )
+            if await active.fetchone() is not None:
+                await db.rollback()
+                raise ValueError("Már fut egy Casino játékod. Várd meg, amíg befejeződik.")
+            # PvP duel is part of the same one-active-Casino-game rule once
+            # accepted. Pending invitations intentionally do not lock the target.
+            pvp = await db.execute(
+                """SELECT id FROM pvp_duels
+                   WHERE guild_id=? AND status='accepted' AND (challenger_id=? OR target_id=?)
+                   LIMIT 1""",
+                (guild_id, user_id, user_id),
+            )
+            if await pvp.fetchone() is not None:
+                await db.rollback()
+                raise ValueError("Már fut egy Casino játékod. Várd meg, amíg befejeződik.")
+            cursor = await db.execute(
+                "SELECT wallet FROM users WHERE guild_id = ? AND user_id = ?",
+                (guild_id, user_id),
+            )
+            row = await cursor.fetchone()
+            wallet = int(row[0]) if row else 0
+            if wallet < bet:
+                await db.rollback()
+                raise ValueError("Nincs elég pénz a tárcádban ehhez a téthez.")
+            wallet_after = wallet - bet
+            await db.execute(
+                "UPDATE users SET wallet = ? WHERE guild_id = ? AND user_id = ?",
+                (wallet_after, guild_id, user_id),
+            )
+            await db.execute(
+                """INSERT INTO casino_sessions
+                   (game_id,guild_id,user_id,game,status,bet,payout,profit,multiplier,result,config_json,wallet_after,created_at,updated_at,settled_at)
+                   VALUES (?,?,?,?, 'ACTIVE', ?,0,0,0,'',?,?,?, ?,NULL)""",
+                (game_id, guild_id, user_id, game, bet, config_json, wallet_after, now, now),
+            )
+            await db.execute(
+                """INSERT INTO casino_ledger
+                   (game_id,guild_id,user_id,entry_type,entry_key,amount,balance_after,metadata_json,created_at)
+                   VALUES (?,?,?,?,?,?,?,?,?)""",
+                (game_id, guild_id, user_id, "BET_RESERVED", "reserve:base", -bet, wallet_after, "{}", now),
+            )
+            await db.execute(
+                "INSERT INTO transactions (guild_id,user_id,amount,reason,created_at) VALUES (?,?,?,?,?)",
+                (guild_id, user_id, -bet, f"casino_reserve:{game}:{game_id}", now),
+            )
+            await db.commit()
+        return {
+            "game_id": game_id, "guild_id": guild_id, "user_id": user_id, "game": game,
+            "status": "ACTIVE", "bet": bet, "payout": 0, "profit": 0, "multiplier": 0.0,
+            "result": "", "config": config_snapshot or {}, "wallet_after": wallet_after,
+            "created_at": now, "updated_at": now, "settled_at": None,
+        }
+
+    async def add_casino_reservation(
+        self,
+        game_id: str,
+        amount: int,
+        *,
+        entry_type: str = "BET_EXTRA",
+        entry_key: str | None = None,
+        metadata: dict | None = None,
+    ) -> dict:
+        """Atomically reserve extra stake for Double/Split/future multi-bet flows."""
+        if amount <= 0:
+            raise ValueError("A plusz tétnek pozitívnak kell lennie.")
+        now = datetime.now(timezone.utc).isoformat()
+        async with aiosqlite.connect(self.path) as db:
+            await db.execute("PRAGMA foreign_keys=ON;")
+            await db.execute("BEGIN IMMEDIATE")
+            cursor = await db.execute(
+                "SELECT guild_id,user_id,game,status,bet FROM casino_sessions WHERE game_id = ?",
+                (game_id,),
+            )
+            row = await cursor.fetchone()
+            if row is None:
+                await db.rollback()
+                raise ValueError("A Casino session nem található.")
+            guild_id, user_id, game, status, current_bet = int(row[0]), int(row[1]), str(row[2]), str(row[3]), int(row[4])
+            if status not in {"ACTIVE", "WAITING_INPUT"}:
+                await db.rollback()
+                raise ValueError("Ez a Casino session már lezárult.")
+            if entry_key:
+                duplicate = await db.execute(
+                    "SELECT id FROM casino_ledger WHERE game_id = ? AND entry_key = ?",
+                    (game_id, entry_key),
+                )
+                if await duplicate.fetchone() is not None:
+                    await db.rollback()
+                    raise ValueError("Ez a plusz tét már le lett foglalva.")
+            wallet_cursor = await db.execute(
+                "SELECT wallet FROM users WHERE guild_id = ? AND user_id = ?",
+                (guild_id, user_id),
+            )
+            wallet_row = await wallet_cursor.fetchone()
+            wallet = int(wallet_row[0]) if wallet_row else 0
+            if wallet < amount:
+                await db.rollback()
+                raise ValueError("Nincs elég pénz a tárcádban ehhez a plusz téthez.")
+            wallet_after = wallet - amount
+            new_bet = current_bet + amount
+            await db.execute(
+                "UPDATE users SET wallet = ? WHERE guild_id = ? AND user_id = ?",
+                (wallet_after, guild_id, user_id),
+            )
+            await db.execute(
+                "UPDATE casino_sessions SET bet = ?, wallet_after = ?, updated_at = ? WHERE game_id = ?",
+                (new_bet, wallet_after, now, game_id),
+            )
+            await db.execute(
+                """INSERT INTO casino_ledger
+                   (game_id,guild_id,user_id,entry_type,entry_key,amount,balance_after,metadata_json,created_at)
+                   VALUES (?,?,?,?,?,?,?,?,?)""",
+                (game_id, guild_id, user_id, entry_type, entry_key, -amount, wallet_after,
+                 json.dumps(metadata or {}, ensure_ascii=False, sort_keys=True), now),
+            )
+            await db.execute(
+                "INSERT INTO transactions (guild_id,user_id,amount,reason,created_at) VALUES (?,?,?,?,?)",
+                (guild_id, user_id, -amount, f"casino_extra:{game}:{game_id}", now),
+            )
+            await db.commit()
+        return {"game_id": game_id, "bet": new_bet, "wallet_after": wallet_after}
+
+    async def set_casino_session_status(self, game_id: str, status: str) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        async with aiosqlite.connect(self.path) as db:
+            await db.execute(
+                "UPDATE casino_sessions SET status = ?, updated_at = ? WHERE game_id = ? AND status IN ('ACTIVE','WAITING_INPUT')",
+                (status, now, game_id),
+            )
+            await db.commit()
+
+    async def settle_casino_session(
+        self,
+        game_id: str,
+        payout: int,
+        *,
+        result: str,
+        multiplier: float,
+        jackpot_rate: float = 0.0,
+        house_loss_eligible: bool = True,
+    ) -> dict:
+        """Settle a reserved session exactly once.
+
+        Repeating the same settlement call is safe: a SETTLED row is returned
+        unchanged and no second payout can occur.
+        """
+        if payout < 0:
+            raise ValueError("A payout nem lehet negatív.")
+        if multiplier < 0:
+            raise ValueError("A multiplier nem lehet negatív.")
+        now = datetime.now(timezone.utc).isoformat()
+        async with aiosqlite.connect(self.path) as db:
+            await db.execute("PRAGMA foreign_keys=ON;")
+            await db.execute("BEGIN IMMEDIATE")
+            cursor = await db.execute(
+                """SELECT guild_id,user_id,game,status,bet,payout,profit,multiplier,result,config_json,wallet_after,
+                          created_at,updated_at,settled_at
+                   FROM casino_sessions WHERE game_id = ?""",
+                (game_id,),
+            )
+            row = await cursor.fetchone()
+            if row is None:
+                await db.rollback()
+                raise ValueError("A Casino session nem található.")
+            guild_id, user_id, game, status, bet = int(row[0]), int(row[1]), str(row[2]), str(row[3]), int(row[4])
+            if status == "SETTLED":
+                await db.rollback()
+                return {
+                    "game_id": game_id, "guild_id": guild_id, "user_id": user_id, "game": game,
+                    "status": status, "bet": bet, "payout": int(row[5]), "profit": int(row[6]),
+                    "multiplier": float(row[7]), "result": str(row[8]),
+                    "config": json.loads(str(row[9]) or "{}"), "wallet_after": int(row[10] or 0),
+                    "created_at": str(row[11]), "updated_at": str(row[12]), "settled_at": row[13],
+                    "idempotent": True,
+                }
+            if status in {"REFUNDED", "CANCELLED"}:
+                await db.rollback()
+                raise ValueError("Ez a Casino session már vissza lett térítve.")
+            if status not in {"ACTIVE", "WAITING_INPUT", "SETTLING"}:
+                await db.rollback()
+                raise ValueError("Ez a Casino session nem elszámolható állapotban van.")
+
+            wallet_cursor = await db.execute(
+                "SELECT wallet FROM users WHERE guild_id = ? AND user_id = ?",
+                (guild_id, user_id),
+            )
+            wallet_row = await wallet_cursor.fetchone()
+            wallet = int(wallet_row[0]) if wallet_row else 0
+            wallet_after = wallet + payout
+            profit = payout - bet
+            won = profit > 0
+
+            await db.execute(
+                """UPDATE users
+                   SET wallet = ?, gambling_profit = gambling_profit + ?, game_wins = game_wins + ?
+                   WHERE guild_id = ? AND user_id = ?""",
+                (wallet_after, profit, 1 if won else 0, guild_id, user_id),
+            )
+            await self._record_gamble_stats_tx(
+                db, guild_id, user_id, game, bet, profit, won, now,
+                payout=payout, multiplier=multiplier,
+            )
+            await db.execute(
+                """INSERT INTO casino_ledger
+                   (game_id,guild_id,user_id,entry_type,entry_key,amount,balance_after,metadata_json,created_at)
+                   VALUES (?,?,?,?,?,?,?,?,?)""",
+                (game_id, guild_id, user_id, "PAYOUT", "settlement", payout, wallet_after,
+                 json.dumps({"result": result, "multiplier": multiplier}, ensure_ascii=False, sort_keys=True), now),
+            )
+            await db.execute(
+                "INSERT INTO transactions (guild_id,user_id,amount,reason,created_at) VALUES (?,?,?,?,?)",
+                (guild_id, user_id, payout, f"casino_payout:{game}:{game_id}", now),
+            )
+
+            contribution = 0
+            house_loss = max(0, -profit)
+            if house_loss_eligible and house_loss > 0 and jackpot_rate > 0:
+                contribution = max(0, int(house_loss * jackpot_rate))
+                month = datetime.now(timezone.utc).strftime("%Y-%m")
+                await db.execute(
+                    """INSERT INTO casino_monthly_jackpot
+                       (guild_id,month,pool,total_house_loss,total_contributed,updated_at)
+                       VALUES (?,?,?,?,?,?)
+                       ON CONFLICT(guild_id,month) DO UPDATE SET
+                           pool = pool + excluded.pool,
+                           total_house_loss = total_house_loss + excluded.total_house_loss,
+                           total_contributed = total_contributed + excluded.total_contributed,
+                           updated_at = excluded.updated_at""",
+                    (guild_id, month, contribution, house_loss, contribution, now),
+                )
+                await db.execute(
+                    """INSERT INTO casino_monthly_user_contrib
+                       (guild_id,month,user_id,contributed,house_loss,updated_at)
+                       VALUES (?,?,?,?,?,?)
+                       ON CONFLICT(guild_id,month,user_id) DO UPDATE SET
+                           contributed = contributed + excluded.contributed,
+                           house_loss = house_loss + excluded.house_loss,
+                           updated_at = excluded.updated_at""",
+                    (guild_id, month, user_id, contribution, house_loss, now),
+                )
+                await db.execute(
+                    """INSERT INTO casino_ledger
+                       (game_id,guild_id,user_id,entry_type,entry_key,amount,balance_after,metadata_json,created_at)
+                       VALUES (?,?,?,?,?,?,?,?,?)""",
+                    (game_id, guild_id, user_id, "JACKPOT_CONTRIBUTION", "jackpot", contribution, wallet_after,
+                     json.dumps({"house_loss": house_loss, "rate": jackpot_rate}, sort_keys=True), now),
+                )
+
+            await db.execute(
+                """UPDATE casino_sessions
+                   SET status='SETTLED', payout=?, profit=?, multiplier=?, result=?, wallet_after=?, updated_at=?, settled_at=?
+                   WHERE game_id=?""",
+                (payout, profit, multiplier, result, wallet_after, now, now, game_id),
+            )
+            await db.commit()
+
+        return {
+            "game_id": game_id, "guild_id": guild_id, "user_id": user_id, "game": game,
+            "status": "SETTLED", "bet": bet, "payout": payout, "profit": profit,
+            "multiplier": float(multiplier), "result": result, "wallet_after": wallet_after,
+            "jackpot_contribution": contribution, "house_loss": house_loss, "settled_at": now,
+            "idempotent": False,
+        }
+
+    async def refund_casino_session(self, game_id: str, reason: str = "cancelled") -> dict:
+        """Refund an unfinished session exactly once."""
+        now = datetime.now(timezone.utc).isoformat()
+        async with aiosqlite.connect(self.path) as db:
+            await db.execute("PRAGMA foreign_keys=ON;")
+            await db.execute("BEGIN IMMEDIATE")
+            cursor = await db.execute(
+                "SELECT guild_id,user_id,game,status,bet,wallet_after FROM casino_sessions WHERE game_id = ?",
+                (game_id,),
+            )
+            row = await cursor.fetchone()
+            if row is None:
+                await db.rollback()
+                raise ValueError("A Casino session nem található.")
+            guild_id, user_id, game, status, bet = int(row[0]), int(row[1]), str(row[2]), str(row[3]), int(row[4])
+            if status == "REFUNDED":
+                await db.rollback()
+                return {"game_id": game_id, "status": status, "bet": bet, "wallet_after": int(row[5] or 0), "idempotent": True}
+            if status == "SETTLED":
+                await db.rollback()
+                raise ValueError("A már elszámolt Casino session nem téríthető vissza.")
+            wallet_cursor = await db.execute(
+                "SELECT wallet FROM users WHERE guild_id = ? AND user_id = ?",
+                (guild_id, user_id),
+            )
+            wallet_row = await wallet_cursor.fetchone()
+            wallet = int(wallet_row[0]) if wallet_row else 0
+            wallet_after = wallet + bet
+            await db.execute(
+                "UPDATE users SET wallet = ? WHERE guild_id = ? AND user_id = ?",
+                (wallet_after, guild_id, user_id),
+            )
+            await db.execute(
+                """INSERT OR IGNORE INTO casino_ledger
+                   (game_id,guild_id,user_id,entry_type,entry_key,amount,balance_after,metadata_json,created_at)
+                   VALUES (?,?,?,?,?,?,?,?,?)""",
+                (game_id, guild_id, user_id, "REFUND", "refund", bet, wallet_after,
+                 json.dumps({"reason": reason}, ensure_ascii=False, sort_keys=True), now),
+            )
+            await db.execute(
+                "INSERT INTO transactions (guild_id,user_id,amount,reason,created_at) VALUES (?,?,?,?,?)",
+                (guild_id, user_id, bet, f"casino_refund:{game}:{game_id}:{reason}", now),
+            )
+            await db.execute(
+                """UPDATE casino_sessions SET status='REFUNDED', payout=?, profit=0, multiplier=1.0,
+                   result=?, wallet_after=?, updated_at=?, settled_at=? WHERE game_id=?""",
+                (bet, reason, wallet_after, now, now, game_id),
+            )
+            await db.commit()
+        return {"game_id": game_id, "status": "REFUNDED", "bet": bet, "wallet_after": wallet_after, "idempotent": False}
+
+    async def recover_open_casino_sessions(self) -> list[dict]:
+        """Refund sessions left open by a previous process/restart."""
+        async with aiosqlite.connect(self.path) as db:
+            cursor = await db.execute(
+                "SELECT game_id FROM casino_sessions WHERE status IN ('ACTIVE','WAITING_INPUT','SETTLING') ORDER BY created_at"
+            )
+            game_ids = [str(row[0]) for row in await cursor.fetchall()]
+        recovered: list[dict] = []
+        for game_id in game_ids:
+            try:
+                recovered.append(await self.refund_casino_session(game_id, "restart_recovery"))
+            except ValueError:
+                continue
+        return recovered
+
+    async def get_casino_session(self, game_id: str) -> dict | None:
+        async with aiosqlite.connect(self.path) as db:
+            cursor = await db.execute(
+                """SELECT game_id,guild_id,user_id,game,status,bet,payout,profit,multiplier,result,config_json,wallet_after,
+                          created_at,updated_at,settled_at
+                   FROM casino_sessions WHERE game_id = ?""",
+                (game_id,),
+            )
+            row = await cursor.fetchone()
+        if row is None:
+            return None
+        return {
+            "game_id": str(row[0]), "guild_id": int(row[1]), "user_id": int(row[2]), "game": str(row[3]),
+            "status": str(row[4]), "bet": int(row[5]), "payout": int(row[6]), "profit": int(row[7]),
+            "multiplier": float(row[8]), "result": str(row[9]), "config": json.loads(str(row[10]) or "{}"),
+            "wallet_after": None if row[11] is None else int(row[11]), "created_at": str(row[12]),
+            "updated_at": str(row[13]), "settled_at": row[14],
+        }
+
+    async def get_casino_history(self, guild_id: int, user_id: int, limit: int = 8, offset: int = 0) -> list[dict]:
+        async with aiosqlite.connect(self.path) as db:
+            cursor = await db.execute(
+                """SELECT game_id,game,status,bet,payout,profit,multiplier,result,created_at,settled_at
+                   FROM casino_sessions WHERE guild_id=? AND user_id=?
+                   ORDER BY created_at DESC LIMIT ? OFFSET ?""",
+                (guild_id, user_id, max(1, min(50, int(limit))), max(0, int(offset))),
+            )
+            rows = await cursor.fetchall()
+        return [
+            {"game_id": str(r[0]), "game": str(r[1]), "status": str(r[2]), "bet": int(r[3]),
+             "payout": int(r[4]), "profit": int(r[5]), "multiplier": float(r[6]), "result": str(r[7]),
+             "created_at": str(r[8]), "settled_at": r[9]}
+            for r in rows
+        ]
+
+    async def get_casino_summary(self, guild_id: int, user_id: int, *, month: str | None = None) -> dict:
+        month = month or datetime.now(timezone.utc).strftime("%Y-%m")
+        async with aiosqlite.connect(self.path) as db:
+            cursor = await db.execute(
+                """SELECT COUNT(*), COALESCE(SUM(bet),0), COALESCE(SUM(payout),0), COALESCE(SUM(profit),0),
+                          COALESCE(MAX(bet),0), COALESCE(MAX(CASE WHEN profit > 0 THEN profit ELSE 0 END),0),
+                          COALESCE(MAX(multiplier),0)
+                   FROM casino_sessions
+                   WHERE guild_id=? AND user_id=? AND status='SETTLED'""",
+                (guild_id, user_id),
+            )
+            total = await cursor.fetchone()
+            month_cursor = await db.execute(
+                """SELECT COUNT(*), COALESCE(SUM(bet),0), COALESCE(SUM(profit),0)
+                   FROM casino_sessions
+                   WHERE guild_id=? AND user_id=? AND status='SETTLED' AND substr(created_at,1,7)=?""",
+                (guild_id, user_id, month),
+            )
+            monthly = await month_cursor.fetchone()
+            outcome_cursor = await db.execute(
+                """SELECT
+                       SUM(CASE WHEN profit > 0 THEN 1 ELSE 0 END),
+                       SUM(CASE WHEN profit < 0 THEN 1 ELSE 0 END),
+                       SUM(CASE WHEN profit = 0 THEN 1 ELSE 0 END)
+                   FROM casino_sessions WHERE guild_id=? AND user_id=? AND status='SETTLED'""",
+                (guild_id, user_id),
+            )
+            outcome = await outcome_cursor.fetchone()
+        return {
+            "games": int(total[0] or 0), "wagered": int(total[1] or 0), "payout": int(total[2] or 0),
+            "profit": int(total[3] or 0), "biggest_bet": int(total[4] or 0), "biggest_win": int(total[5] or 0),
+            "highest_multiplier": float(total[6] or 0.0), "wins": int(outcome[0] or 0),
+            "losses": int(outcome[1] or 0), "pushes": int(outcome[2] or 0),
+            "month": month, "month_games": int(monthly[0] or 0), "month_wagered": int(monthly[1] or 0),
+            "month_profit": int(monthly[2] or 0),
+        }
+
+    async def get_monthly_casino_jackpot(self, guild_id: int, user_id: int | None = None, month: str | None = None) -> dict:
+        month = month or datetime.now(timezone.utc).strftime("%Y-%m")
+        async with aiosqlite.connect(self.path) as db:
+            cursor = await db.execute(
+                "SELECT pool,total_house_loss,total_contributed,updated_at FROM casino_monthly_jackpot WHERE guild_id=? AND month=?",
+                (guild_id, month),
+            )
+            row = await cursor.fetchone()
+            own = None
+            if user_id is not None:
+                own_cursor = await db.execute(
+                    "SELECT contributed,house_loss FROM casino_monthly_user_contrib WHERE guild_id=? AND month=? AND user_id=?",
+                    (guild_id, month, user_id),
+                )
+                own = await own_cursor.fetchone()
+        return {
+            "guild_id": guild_id, "month": month, "pool": int(row[0] if row else 0),
+            "total_house_loss": int(row[1] if row else 0), "total_contributed": int(row[2] if row else 0),
+            "updated_at": row[3] if row else None, "user_contributed": int(own[0] if own else 0),
+            "user_house_loss": int(own[1] if own else 0),
+        }
+
+    async def get_pending_casino_jackpot_months(self, guild_id: int, before_month: str) -> list[str]:
+        async with aiosqlite.connect(self.path) as db:
+            cursor = await db.execute(
+                """SELECT j.month FROM casino_monthly_jackpot j
+                   LEFT JOIN casino_jackpot_history h ON h.guild_id=j.guild_id AND h.month=j.month
+                   WHERE j.guild_id=? AND j.month < ? AND j.pool > 0 AND h.month IS NULL
+                   ORDER BY j.month ASC""",
+                (guild_id, before_month),
+            )
+            rows = await cursor.fetchall()
+        return [str(r[0]) for r in rows]
+
+    async def get_casino_jackpot_eligible(self, guild_id: int, month: str, *, min_games: int, min_wager: int) -> list[dict]:
+        async with aiosqlite.connect(self.path) as db:
+            cursor = await db.execute(
+                """SELECT user_id, COUNT(*), COALESCE(SUM(bet),0)
+                   FROM casino_sessions
+                   WHERE guild_id=? AND status='SETTLED' AND substr(created_at,1,7)=?
+                   GROUP BY user_id
+                   HAVING COUNT(*) >= ? OR COALESCE(SUM(bet),0) >= ?
+                   ORDER BY user_id""",
+                (guild_id, month, int(min_games), int(min_wager)),
+            )
+            rows = await cursor.fetchall()
+        return [{"user_id": int(r[0]), "games": int(r[1]), "wagered": int(r[2])} for r in rows]
+
+    async def get_casino_jackpot_history(self, guild_id: int, limit: int = 5) -> list[dict]:
+        async with aiosqlite.connect(self.path) as db:
+            cursor = await db.execute(
+                """SELECT month,pool,payout,winner_id,eligible_players,total_house_loss,total_contributed,outcome,drawn_at
+                   FROM casino_jackpot_history WHERE guild_id=? ORDER BY month DESC LIMIT ?""",
+                (guild_id, max(1, min(24, int(limit)))),
+            )
+            rows = await cursor.fetchall()
+        return [
+            {"month": str(r[0]), "pool": int(r[1]), "payout": int(r[2]),
+             "winner_id": None if r[3] is None else int(r[3]), "eligible_players": int(r[4]),
+             "total_house_loss": int(r[5]), "total_contributed": int(r[6]),
+             "outcome": str(r[7]), "drawn_at": str(r[8])}
+            for r in rows
+        ]
+
+    async def finalize_monthly_casino_jackpot(
+        self, guild_id: int, month: str, *, winner_id: int | None, eligible_players: int,
+        payout_share: float = 1.0, rollover_month: str | None = None,
+    ) -> dict:
+        now = datetime.now(timezone.utc).isoformat()
+        async with aiosqlite.connect(self.path) as db:
+            await db.execute("BEGIN IMMEDIATE")
+            exists = await db.execute("SELECT month,payout,winner_id,outcome FROM casino_jackpot_history WHERE guild_id=? AND month=?", (guild_id, month))
+            prior = await exists.fetchone()
+            if prior is not None:
+                await db.rollback()
+                return {"month": month, "payout": int(prior[1]), "winner_id": prior[2], "outcome": str(prior[3]), "idempotent": True}
+            cur = await db.execute("SELECT pool,total_house_loss,total_contributed FROM casino_monthly_jackpot WHERE guild_id=? AND month=?", (guild_id, month))
+            row = await cur.fetchone()
+            pool = int(row[0]) if row else 0
+            house_loss = int(row[1]) if row else 0
+            contributed = int(row[2]) if row else 0
+            payout = 0
+            outcome = "empty"
+            if pool > 0 and winner_id is not None:
+                payout = max(0, min(pool, int(pool * max(0.0, min(1.0, float(payout_share))))))
+                if payout > 0:
+                    await db.execute("INSERT OR IGNORE INTO users (guild_id,user_id,wallet,bank,created_at) VALUES (?,?,?,?,?)", (guild_id, winner_id, 0, 0, now))
+                    await db.execute("UPDATE users SET wallet=wallet+?, jackpot_wins=jackpot_wins+1 WHERE guild_id=? AND user_id=?", (payout, guild_id, winner_id))
+                    await db.execute("INSERT INTO transactions (guild_id,user_id,amount,reason,created_at) VALUES (?,?,?,?,?)", (guild_id, winner_id, payout, f"casino_monthly_jackpot:{month}", now))
+                remainder = pool - payout
+                if remainder > 0 and rollover_month:
+                    await db.execute(
+                        """INSERT INTO casino_monthly_jackpot (guild_id,month,pool,total_house_loss,total_contributed,updated_at)
+                           VALUES (?,?,?,?,?,?) ON CONFLICT(guild_id,month) DO UPDATE SET pool=pool+excluded.pool,updated_at=excluded.updated_at""",
+                        (guild_id, rollover_month, remainder, 0, remainder, now),
+                    )
+                outcome = "draw"
+            elif pool > 0 and rollover_month:
+                await db.execute(
+                    """INSERT INTO casino_monthly_jackpot (guild_id,month,pool,total_house_loss,total_contributed,updated_at)
+                       VALUES (?,?,?,?,?,?) ON CONFLICT(guild_id,month) DO UPDATE SET pool=pool+excluded.pool,updated_at=excluded.updated_at""",
+                    (guild_id, rollover_month, pool, 0, pool, now),
+                )
+                outcome = "rollover"
+            await db.execute("UPDATE casino_monthly_jackpot SET pool=0,updated_at=? WHERE guild_id=? AND month=?", (now, guild_id, month))
+            await db.execute(
+                """INSERT INTO casino_jackpot_history
+                   (guild_id,month,pool,payout,winner_id,eligible_players,total_house_loss,total_contributed,outcome,drawn_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                (guild_id, month, pool, payout, winner_id, int(eligible_players), house_loss, contributed, outcome, now),
+            )
+            await db.commit()
+        return {"month": month, "pool": pool, "payout": payout, "winner_id": winner_id, "eligible_players": int(eligible_players), "outcome": outcome, "idempotent": False}
 
     async def reserve_gamble(self, guild_id: int, user_id: int, bet: int, game: str) -> int:
         """Levonja és lefoglalja a tétet egy több lépéses játékhoz."""
@@ -1820,7 +2854,7 @@ class Database:
         return [(int(r[0]), int(r[1]), int(r[2])) for r in rows]
 
     @staticmethod
-    def _crew_dict(row) -> dict[str, int | str]:
+    def _crew_dict(row) -> dict[str, object]:
         return {
             "crew_id": int(row[0]),
             "guild_id": int(row[1]),
@@ -1831,14 +2865,15 @@ class Database:
             "total_contributed": int(row[6]),
             "description": str(row[7] or ""),
             "created_at": str(row[8]),
-            "member_count": int(row[9]),
+            "discord_role_id": int(row[9]) if row[9] is not None else None,
+            "member_count": int(row[10]),
         }
 
     async def get_crew(self, guild_id: int, crew_id: int) -> dict[str, int | str] | None:
         async with aiosqlite.connect(self.path) as db:
             cursor = await db.execute(
                 """SELECT c.crew_id,c.guild_id,c.name,c.owner_id,c.bank,c.level,c.total_contributed,
-                          c.description,c.created_at,
+                          c.description,c.created_at,c.discord_role_id,
                           (SELECT COUNT(*) FROM crew_members m WHERE m.guild_id=c.guild_id AND m.crew_id=c.crew_id)
                    FROM crews c WHERE c.guild_id=? AND c.crew_id=?""",
                 (guild_id, crew_id),
@@ -1852,7 +2887,7 @@ class Database:
         async with aiosqlite.connect(self.path) as db:
             cursor = await db.execute(
                 """SELECT c.crew_id,c.guild_id,c.name,c.owner_id,c.bank,c.level,c.total_contributed,
-                          c.description,c.created_at,
+                          c.description,c.created_at,c.discord_role_id,
                           (SELECT COUNT(*) FROM crew_members mm WHERE mm.guild_id=c.guild_id AND mm.crew_id=c.crew_id),
                           m.user_id,m.role,m.contributed,m.joined_at
                    FROM crew_members m
@@ -1863,12 +2898,12 @@ class Database:
             row = await cursor.fetchone()
         if row is None:
             return None
-        crew = self._crew_dict(row[:10])
+        crew = self._crew_dict(row[:11])
         member = {
-            "user_id": int(row[10]),
-            "role": str(row[11]),
-            "contributed": int(row[12]),
-            "joined_at": str(row[13]),
+            "user_id": int(row[11]),
+            "role": str(row[12]),
+            "contributed": int(row[13]),
+            "joined_at": str(row[14]),
         }
         return crew, member
 
@@ -1905,7 +2940,7 @@ class Database:
                     (guild_id, user_id),
                 )
                 if await cursor.fetchone():
-                    raise ValueError("Már egy Crew tagja vagy.")
+                    raise ValueError("Már egy Frakció tagja vagy.")
                 cursor = await db.execute(
                     "SELECT 1 FROM crews WHERE guild_id=? AND normalized_name=?",
                     (guild_id, normalized_name),
@@ -1919,7 +2954,7 @@ class Database:
                 row = await cursor.fetchone()
                 wallet = int(row[0]) if row else 0
                 if wallet < int(cost):
-                    raise ValueError(f"A Crew alapítása ${int(cost):,}, de nincs elég pénz a tárcádban.".replace(",", " "))
+                    raise ValueError(f"A Frakció alapítása ${int(cost):,}, de nincs elég pénz a tárcádban.".replace(",", " "))
 
                 await db.execute(
                     "UPDATE users SET wallet=wallet-?, money_lost=money_lost+? WHERE guild_id=? AND user_id=?",
@@ -1946,8 +2981,16 @@ class Database:
                 raise
         crew = await self.get_crew(guild_id, crew_id)
         if crew is None:
-            raise RuntimeError("A Crew létrehozása sikertelen volt.")
+            raise RuntimeError("A Frakció létrehozása sikertelen volt.")
         return crew
+
+    async def set_crew_discord_role_id(self, guild_id: int, crew_id: int, role_id: int | None) -> None:
+        async with aiosqlite.connect(self.path) as db:
+            await db.execute(
+                "UPDATE crews SET discord_role_id=? WHERE guild_id=? AND crew_id=?",
+                (int(role_id) if role_id else None, guild_id, crew_id),
+            )
+            await db.commit()
 
     async def set_crew_invite(
         self,
@@ -2002,7 +3045,7 @@ class Database:
                     (guild_id, user_id),
                 )
                 if await cursor.fetchone():
-                    raise ValueError("Már egy Crew tagja vagy.")
+                    raise ValueError("Már egy Frakció tagja vagy.")
                 cursor = await db.execute(
                     "SELECT crew_id,expires_at FROM crew_invites WHERE guild_id=? AND user_id=?",
                     (guild_id, user_id),
@@ -2014,7 +3057,7 @@ class Database:
                 expires = expires if expires.tzinfo else expires.replace(tzinfo=timezone.utc)
                 if expires <= now:
                     await db.execute("DELETE FROM crew_invites WHERE guild_id=? AND user_id=?", (guild_id, user_id))
-                    raise ValueError("A Crew meghívód lejárt.")
+                    raise ValueError("A Frakció meghívód lejárt.")
                 crew_id = int(invite[0])
                 cursor = await db.execute(
                     "SELECT COUNT(*) FROM crew_members WHERE guild_id=? AND crew_id=?",
@@ -2022,7 +3065,7 @@ class Database:
                 )
                 count = int((await cursor.fetchone())[0])
                 if count >= int(member_cap):
-                    raise ValueError("A Crew időközben megtelt.")
+                    raise ValueError("A Frakció időközben megtelt.")
                 await db.execute(
                     "INSERT INTO crew_members (guild_id,crew_id,user_id,role,contributed,joined_at) VALUES (?,?,?,'member',0,?)",
                     (guild_id, crew_id, user_id, now.isoformat()),
@@ -2040,10 +3083,13 @@ class Database:
                 "DELETE FROM crew_members WHERE guild_id=? AND crew_id=? AND user_id=? AND role!='leader'",
                 (guild_id, crew_id, user_id),
             )
+            if cursor.rowcount > 0:
+                await db.execute("DELETE FROM crew_member_custom_ranks WHERE guild_id=? AND crew_id=? AND user_id=?", (guild_id, crew_id, user_id))
+                await db.execute("DELETE FROM crew_member_faction WHERE guild_id=? AND crew_id=? AND user_id=?", (guild_id, crew_id, user_id))
             await db.execute("DELETE FROM crew_invites WHERE guild_id=? AND user_id=?", (guild_id, user_id))
             await db.commit()
         if cursor.rowcount <= 0:
-            raise ValueError("A Crew tag nem távolítható el.")
+            raise ValueError("A Frakció tag nem távolítható el.")
 
     async def set_crew_member_role(self, guild_id: int, crew_id: int, user_id: int, role: str) -> None:
         async with aiosqlite.connect(self.path) as db:
@@ -2053,7 +3099,7 @@ class Database:
             )
             await db.commit()
         if cursor.rowcount <= 0:
-            raise ValueError("A Crew rang nem módosítható.")
+            raise ValueError("A Frakció rang nem módosítható.")
 
     async def transfer_crew_ownership(
         self, guild_id: int, crew_id: int, old_owner_id: int, new_owner_id: int
@@ -2145,12 +3191,12 @@ class Database:
             await db.execute("BEGIN IMMEDIATE")
             try:
                 cursor = await db.execute(
-                    "SELECT role FROM crew_members WHERE guild_id=? AND crew_id=? AND user_id=?",
+                    "SELECT 1 FROM crew_members WHERE guild_id=? AND crew_id=? AND user_id=?",
                     (guild_id, crew_id, user_id),
                 )
                 member = await cursor.fetchone()
-                if member is None or str(member[0]) != "leader":
-                    raise ValueError("Csak a Crew Leader vehet ki pénzt.")
+                if member is None:
+                    raise ValueError("Nem vagy ennek a Frakciónak a tagja.")
                 cursor = await db.execute("SELECT bank FROM crews WHERE guild_id=? AND crew_id=?", (guild_id, crew_id))
                 row = await cursor.fetchone()
                 crew_bank = int(row[0]) if row else 0
@@ -2182,10 +3228,10 @@ class Database:
                 )
                 row = await cursor.fetchone()
                 if row is None:
-                    raise ValueError("A Crew nem található.")
+                    raise ValueError("A Frakció nem található.")
                 level, bank = int(row[0]), int(row[1])
                 if level != int(expected_level):
-                    raise ValueError("A Crew szintje időközben megváltozott. Nyisd meg újra a panelt.")
+                    raise ValueError("A Frakció Infrastructure szintje időközben megváltozott. Nyisd meg újra a panelt.")
                 if bank < int(cost):
                     raise ValueError(f"A fejlesztéshez ${int(cost):,} kell a Crew Bankban.".replace(",", " "))
                 await db.execute(
@@ -2217,7 +3263,7 @@ class Database:
                 )
                 row = await cursor.fetchone()
                 if row is None or int(row[1]) != owner_id:
-                    raise ValueError("Csak a Crew Leader oszlathatja fel a Crew-t.")
+                    raise ValueError("Csak a Frakció Leader oszlathatja fel a Frakciót.")
                 name, bank = str(row[0]), int(row[2])
                 if bank:
                     await db.execute("UPDATE users SET wallet=wallet+? WHERE guild_id=? AND user_id=?", (bank, guild_id, owner_id))
@@ -2226,6 +3272,13 @@ class Database:
                         (guild_id, owner_id, bank, f"crew_disband_refund:{crew_id}", now),
                     )
                 await db.execute("DELETE FROM crew_invites WHERE guild_id=? AND crew_id=?", (guild_id, crew_id))
+                await db.execute("DELETE FROM crew_member_custom_ranks WHERE guild_id=? AND crew_id=?", (guild_id, crew_id))
+                await db.execute("DELETE FROM crew_custom_ranks WHERE guild_id=? AND crew_id=?", (guild_id, crew_id))
+                await db.execute("DELETE FROM crew_member_faction WHERE guild_id=? AND crew_id=?", (guild_id, crew_id))
+                await db.execute("DELETE FROM crew_objectives WHERE guild_id=? AND crew_id=?", (guild_id, crew_id))
+                await db.execute("DELETE FROM crew_perks WHERE guild_id=? AND crew_id=?", (guild_id, crew_id))
+                await db.execute("DELETE FROM crew_faction_progress WHERE guild_id=? AND crew_id=?", (guild_id, crew_id))
+                await db.execute("DELETE FROM crew_wars WHERE guild_id=? AND (challenger_crew_id=? OR target_crew_id=?)", (guild_id, crew_id, crew_id))
                 await db.execute("DELETE FROM crew_members WHERE guild_id=? AND crew_id=?", (guild_id, crew_id))
                 await db.execute("DELETE FROM crews WHERE guild_id=? AND crew_id=?", (guild_id, crew_id))
                 await db.commit()
@@ -2238,7 +3291,7 @@ class Database:
         async with aiosqlite.connect(self.path) as db:
             cursor = await db.execute(
                 """SELECT c.crew_id,c.guild_id,c.name,c.owner_id,c.bank,c.level,c.total_contributed,
-                          c.description,c.created_at,
+                          c.description,c.created_at,c.discord_role_id,
                           (SELECT COUNT(*) FROM crew_members m WHERE m.guild_id=c.guild_id AND m.crew_id=c.crew_id)
                    FROM crews c WHERE c.guild_id=?
                    ORDER BY c.level DESC,c.total_contributed DESC,c.bank DESC,c.created_at ASC LIMIT ?""",
@@ -2284,6 +3337,18 @@ class Database:
         async with aiosqlite.connect(self.path) as db:
             await db.execute("UPDATE users SET selected_title=? WHERE guild_id=? AND user_id=?",(title,guild_id,user_id))
             await db.commit()
+
+    async def add_lottery_history(self, guild_id: int, winner_id: int, total_tickets: int, payout: int) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        async with aiosqlite.connect(self.path) as db:
+            await db.execute("INSERT INTO lottery_history (guild_id,winner_id,total_tickets,payout,drawn_at) VALUES (?,?,?,?,?)", (guild_id,winner_id,total_tickets,payout,now))
+            await db.commit()
+
+    async def get_lottery_history(self, guild_id: int, limit: int = 5) -> list[dict]:
+        async with aiosqlite.connect(self.path) as db:
+            cursor = await db.execute("SELECT winner_id,total_tickets,payout,drawn_at FROM lottery_history WHERE guild_id=? ORDER BY id DESC LIMIT ?", (guild_id,max(1,min(20,int(limit)))))
+            rows = await cursor.fetchall()
+        return [{"winner_id":int(r[0]),"total_tickets":int(r[1]),"payout":int(r[2]),"drawn_at":str(r[3])} for r in rows]
 
     async def add_lottery_tickets(self, guild_id: int, user_id: int, tickets: int) -> None:
         async with aiosqlite.connect(self.path) as db:
@@ -3157,7 +4222,9 @@ class Database:
                 )
                 deleted["inventory"] = max(0, int(cur.rowcount or 0))
 
-                for table in ("active_boosters", "lottery_entries", "guild_effects", "market_daily", "quest_assignments", "user_prestige", "crew_invites"):
+                for table in ("active_boosters", "lottery_entries", "lottery_history", "casino_ledger", "casino_sessions", "casino_monthly_user_contrib", "casino_monthly_jackpot", "casino_jackpot_history", "guild_effects", "market_daily", "quest_assignments", "user_prestige", "crew_invites",
+                              "player_market_listings", "player_market_trades", "pvp_duels", "crew_objectives", "crew_wars",
+                              "heist_lobbies", "heist_lobby_members", "heist_runs", "heist_gear", "heist_cooldowns"):
                     cur = await db.execute(f"DELETE FROM {table} WHERE guild_id=?", (guild_id,))
                     deleted[table] = max(0, int(cur.rowcount or 0))
 
@@ -3200,6 +4267,9 @@ class Database:
                     "investment.profit", "investment.wagered", "investment.biggest_%",
                     "interest.earned", "role_income.earned", "crew.contributed", "prestige.%",
                     "quests.daily.earned", "quests.weekly.earned", "quests.%.progression_xp",
+                    "social.market.spent", "social.market.earned", "social.server_shop.spent",
+                    "social.pvp.wagered", "social.pvp.profit",
+                    "business.%", "heist.%",
                 )
                 clauses = " OR ".join("stat_name LIKE ?" for _ in money_stat_patterns)
                 cur = await db.execute(
@@ -3213,6 +4283,32 @@ class Database:
                 await db.rollback()
                 raise
         return deleted
+
+    async def health_report(self) -> dict[str, int | str]:
+        """Lightweight operator diagnostics used by /settings → Diagnosztika.
+
+        PRAGMA quick_check is read-only. The report deliberately avoids returning
+        secrets or environment values.
+        """
+        path = Path(self.path)
+        async with aiosqlite.connect(self.path) as db:
+            quick = await (await db.execute("PRAGMA quick_check")).fetchone()
+            journal = await (await db.execute("PRAGMA journal_mode")).fetchone()
+            page_count = await (await db.execute("PRAGMA page_count")).fetchone()
+            page_size = await (await db.execute("PRAGMA page_size")).fetchone()
+            freelist = await (await db.execute("PRAGMA freelist_count")).fetchone()
+        pages = int(page_count[0]) if page_count else 0
+        size = int(page_size[0]) if page_size else 0
+        free = int(freelist[0]) if freelist else 0
+        return {
+            "quick_check": str(quick[0]) if quick else "unknown",
+            "journal_mode": str(journal[0]) if journal else "unknown",
+            "file_bytes": path.stat().st_size if path.exists() else 0,
+            "page_count": pages,
+            "page_size": size,
+            "free_pages": free,
+            "estimated_bytes": pages * size,
+        }
 
     async def reset_guild_economy(self, guild_id: int) -> dict[str, int]:
         """Teljesen törli egy szerver játékos-economy állapotát.
@@ -3231,12 +4327,38 @@ class Database:
                 "achievements",
                 "user_badges",
                 "active_boosters",
+                "lottery_history",
                 "lottery_entries",
+                "casino_ledger",
+                "casino_sessions",
+                "casino_monthly_user_contrib",
+                "casino_monthly_jackpot",
+                "casino_jackpot_history",
                 "guild_effects",
                 "market_daily",
+                "player_market_listings",
+                "player_market_trades",
+                "pvp_duels",
                 "user_statistics",
                 "quest_assignments",
                 "user_prestige",
+                "business_transactions",
+                "business_offers",
+                "business_workers",
+                "business_properties",
+                "business_licenses",
+                "heist_runs",
+                "heist_lobby_members",
+                "heist_lobbies",
+                "heist_gear",
+                "heist_cooldowns",
+                "crew_wars",
+                "crew_member_custom_ranks",
+                "crew_custom_ranks",
+                "crew_objectives",
+                "crew_perks",
+                "crew_member_faction",
+                "crew_faction_progress",
                 "crew_invites",
                 "crew_members",
                 "crews",

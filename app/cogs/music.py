@@ -3,12 +3,14 @@ from __future__ import annotations
 import asyncio
 import importlib.util
 import json
+import logging
 import os
 import random
 import re
 import shutil
 import sys
 import tempfile
+import time
 from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -29,6 +31,13 @@ try:  # Optional at import time: missing deps must not stop the whole bot.
 except ImportError:  # pragma: no cover - host environment
     yt_dlp = None
 
+try:  # Optional at import time so a dependency issue never blocks the whole bot.
+    import wavelink  # type: ignore
+except ImportError:  # pragma: no cover - host environment
+    wavelink = None
+
+logger = logging.getLogger("yoru.music")
+
 
 FFMPEG_EXECUTABLE = os.getenv("FFMPEG_EXECUTABLE", "ffmpeg").strip() or "ffmpeg"
 FFMPEG_BEFORE_OPTIONS = "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5"
@@ -39,7 +48,7 @@ YOUTUBE_PLAYLIST_RE = re.compile(r"(?:youtube\.com|youtu\.be).*(?:[?&]list=)", r
 
 @dataclass(slots=True)
 class Track:
-    # query is always the actual playback lookup. For Spotify this is a YouTube search.
+    # query is the fallback lookup. When Lavalink is active, raw Lavalink track data is cached below.
     query: str
     title: str
     webpage_url: str
@@ -48,6 +57,8 @@ class Track:
     source: str = "YouTube"
     thumbnail: str | None = None
     fallback_query: str | None = None
+    lavalink_data: dict[str, Any] | None = None
+    isrc: str | None = None
 
 
 @dataclass
@@ -112,10 +123,21 @@ class MusicCog(commands.GroupCog, group_name="music", group_description="Yoru ze
         self.bot = bot
         self.settings = ServerSettingsService(db)
         self.players: dict[int, GuildPlayer] = {}
+        self._lavalink_node = None
+        self._lavalink_error: str | None = None
+        self._lavalink_connect_lock = asyncio.Lock()
+        # v3.17.2: Python-only Spotify fast path. Metadata is cached and audio
+        # source resolution happens only when a track is about to play. This
+        # prevents a 50-100 song playlist from resolving 50-100 audio sources
+        # before the command can return.
+        self._spotify_metadata_cache: dict[str, tuple[float, list[dict[str, Any]]]] = {}
+        self._stream_url_cache: dict[str, tuple[float, str]] = {}
+        self._spotify_source_semaphore = asyncio.Semaphore(musiccfg.MUSIC_SPOTIFY_SOURCE_CONCURRENCY)
 
     async def cog_load(self) -> None:
         # One global persistent view handles all published music panels after restarts.
         self.bot.add_view(MusicPanelView(self))
+        await self.connect_lavalink()
 
     async def cog_unload(self) -> None:
         for player in self.players.values():
@@ -123,9 +145,117 @@ class MusicCog(commands.GroupCog, group_name="music", group_description="Yoru ze
                 player.idle_task.cancel()
         for voice in list(self.bot.voice_clients):
             try:
-                await voice.disconnect(force=True)
+                await self._disconnect_voice(voice, force=True)
             except Exception:
                 pass
+        if self._lavalink_node is not None:
+            try:
+                await self._lavalink_node.close(eject=True)
+            except Exception:
+                pass
+            self._lavalink_node = None
+
+    def _lavalink_env(self) -> tuple[str, str, str]:
+        uri = os.getenv("LAVALINK_URI", "").strip()
+        password = os.getenv("LAVALINK_PASSWORD", "").strip()
+        identifier = os.getenv("LAVALINK_IDENTIFIER", "yoru-main").strip() or "yoru-main"
+        return uri, password, identifier
+
+    def _lavalink_ready(self) -> bool:
+        return wavelink is not None and self._lavalink_node is not None
+
+    async def connect_lavalink(self, *, force: bool = False) -> bool:
+        """Connect the optional Lavalink v4 node. Failure degrades to the legacy backend."""
+        async with self._lavalink_connect_lock:
+            if self._lavalink_ready() and not force:
+                return True
+            uri, password, identifier = self._lavalink_env()
+            if wavelink is None:
+                self._lavalink_error = "A wavelink dependency nincs telepítve."
+                return False
+            if not uri or not password:
+                self._lavalink_error = "LAVALINK_URI / LAVALINK_PASSWORD nincs beállítva."
+                return False
+            if force and self._lavalink_node is not None:
+                try:
+                    await self._lavalink_node.close(eject=True)
+                except Exception:
+                    pass
+                self._lavalink_node = None
+            try:
+                node = wavelink.Node(
+                    identifier=identifier,
+                    uri=uri,
+                    password=password,
+                    retries=1,
+                    resume_timeout=120,
+                    inactive_player_timeout=None,
+                )
+                await asyncio.wait_for(
+                    wavelink.Pool.connect(nodes=[node], client=self.bot, cache_capacity=100),
+                    timeout=15.0,
+                )
+            except Exception as exc:
+                self._lavalink_node = None
+                self._lavalink_error = _truncate(str(exc), 300) or exc.__class__.__name__
+                logger.warning("Lavalink connection unavailable: %s", self._lavalink_error)
+                return False
+            self._lavalink_node = node
+            self._lavalink_error = None
+            logger.info("Lavalink connected: %s", uri)
+            return True
+
+    def lavalink_status_text(self) -> str:
+        uri, password, _identifier = self._lavalink_env()
+        if self._lavalink_ready():
+            return f"✅ Lavalink + LavaSrc • `{uri}`"
+        if not uri or not password:
+            return "⚪ Nincs konfigurálva • legacy fallback aktív"
+        return f"⚠️ Node offline • {_truncate(self._lavalink_error or 'kapcsolódási hiba', 160)}"
+
+    def _is_lavalink_voice(self, voice: Any) -> bool:
+        return wavelink is not None and isinstance(voice, wavelink.Player)
+
+    def _voice_playing(self, voice: Any) -> bool:
+        if voice is None:
+            return False
+        return bool(voice.playing) if self._is_lavalink_voice(voice) else bool(voice.is_playing())
+
+    def _voice_paused(self, voice: Any) -> bool:
+        if voice is None:
+            return False
+        return bool(voice.paused) if self._is_lavalink_voice(voice) else bool(voice.is_paused())
+
+    def _voice_connected(self, voice: Any) -> bool:
+        if voice is None:
+            return False
+        return bool(voice.connected) if self._is_lavalink_voice(voice) else bool(voice.is_connected())
+
+    async def _pause_voice(self, voice: Any, paused: bool) -> None:
+        if self._is_lavalink_voice(voice):
+            await voice.pause(paused)
+        elif paused:
+            voice.pause()
+        else:
+            voice.resume()
+
+    async def _skip_voice(self, voice: Any) -> None:
+        if self._is_lavalink_voice(voice):
+            await voice.skip(force=True)
+        else:
+            voice.stop()
+
+    async def _disconnect_voice(self, voice: Any, *, force: bool = False) -> None:
+        if self._is_lavalink_voice(voice):
+            await voice.disconnect()
+        else:
+            await voice.disconnect(force=force)
+
+    async def _set_voice_volume(self, voice: Any, percent: int) -> None:
+        if self._is_lavalink_voice(voice):
+            await voice.set_volume(percent)
+        elif isinstance(getattr(voice, "source", None), discord.PCMVolumeTransformer):
+            voice.source.volume = percent / 100
 
     async def is_enabled(self, guild_id: int) -> bool:
         return await self.settings.get_bool(guild_id, musiccfg.MUSIC_ENABLED_KEY, musiccfg.MUSIC_DEFAULT_ENABLED)
@@ -147,6 +277,8 @@ class MusicCog(commands.GroupCog, group_name="music", group_description="Yoru ze
         return f"🟢 {channel.mention}" if isinstance(channel, discord.abc.GuildChannel) else "🟢 Aktív"
 
     def _voice_runtime_problem(self) -> str | None:
+        if self._lavalink_ready():
+            return None
         if importlib.util.find_spec("nacl") is None:
             return "A hoston hiányzik a **PyNaCl** voice dependency. A friss `discord.py[voice]` requirements szükséges."
         if importlib.util.find_spec("davey") is None:
@@ -158,7 +290,7 @@ class MusicCog(commands.GroupCog, group_name="music", group_description="Yoru ze
         return None
 
     def _spotify_available(self) -> bool:
-        return importlib.util.find_spec("spotdl") is not None
+        return self._lavalink_ready() or importlib.util.find_spec("spotdl") is not None
 
     def _runtime_problem(self) -> str | None:
         return self._voice_runtime_problem()
@@ -174,7 +306,7 @@ class MusicCog(commands.GroupCog, group_name="music", group_description="Yoru ze
         runtime = self._runtime_problem()
         embed = base_embed(
             "🎵 Yoru • Music",
-            "YouTube, YouTube playlist és Spotify track/album/playlist támogatás. Spotify esetén Yoru spotDL source-preloadot használ, majd biztonságos fallbackekkel keres lejátszható forrást.",
+            "YouTube, YouTube playlist és Spotify track/album/playlist támogatás. Spotifyhoz a Python-only Fast Resolver metadata-cache + just-in-time audio feloldást használ.",
         )
         embed.add_field(name="Állapot", value="🟢 Bekapcsolva" if enabled else "🔴 Kikapcsolva", inline=True)
         embed.add_field(name="🔊 Alap hangerő", value=f"**{volume}%**", inline=True)
@@ -182,7 +314,12 @@ class MusicCog(commands.GroupCog, group_name="music", group_description="Yoru ze
         embed.add_field(name="💬 Music csatorna", value=channel.mention if isinstance(channel, discord.abc.GuildChannel) else "Bármelyik", inline=True)
         embed.add_field(name="🎧 DJ rang", value=role.mention if role else "Nincs • bárki vezérelhet", inline=True)
         embed.add_field(name="🧰 Voice runtime", value=(f"⚠️ {runtime}" if runtime else "✅ discord voice + yt-dlp + FFmpeg"), inline=False)
-        embed.add_field(name="🟢 Spotify", value="✅ spotDL preload → URL → ytsearch fallback" if self._spotify_available() else "⚠️ spotDL nincs telepítve • YouTube ettől még működik", inline=False)
+        embed.add_field(name="⚡ Spotify backend", value=("✅ Python Fast Resolver • metadata cache • JIT source lookup" if importlib.util.find_spec("spotdl") else "❌ spotDL nincs telepítve"), inline=False)
+        embed.add_field(
+            name="🧠 Resolver cache",
+            value=f"Spotify metadata: **{len(self._spotify_metadata_cache)}** • Stream URL: **{len(self._stream_url_cache)}**\nTimeout: track **{musiccfg.MUSIC_SPOTIFY_METADATA_TIMEOUT_SECONDS}s** • playlist **{musiccfg.MUSIC_SPOTIFY_PLAYLIST_TIMEOUT_SECONDS}s**",
+            inline=False,
+        )
         embed.set_footer(text="Yoru • Settings • Music")
         return embed
 
@@ -208,9 +345,8 @@ class MusicCog(commands.GroupCog, group_name="music", group_description="Yoru ze
             self.players[guild_id] = player
         return player
 
-    def _voice_client(self, guild: discord.Guild) -> discord.VoiceClient | None:
-        voice = guild.voice_client
-        return voice if isinstance(voice, discord.VoiceClient) else None
+    def _voice_client(self, guild: discord.Guild) -> Any | None:
+        return guild.voice_client
 
     async def _channel_allowed(self, guild: discord.Guild, channel_id: int) -> tuple[bool, str | None]:
         configured = await self.settings.get_int(guild.id, musiccfg.MUSIC_CHANNEL_KEY)
@@ -275,13 +411,31 @@ class MusicCog(commands.GroupCog, group_name="music", group_description="Yoru ze
             return False
         return True
 
-    async def _connect_for_member(self, guild: discord.Guild, member: discord.Member) -> discord.VoiceClient:
-        runtime = self._voice_runtime_problem()
-        if runtime:
-            raise ValueError(runtime)
+    async def _connect_for_member(self, guild: discord.Guild, member: discord.Member) -> Any:
         if member.voice is None or member.voice.channel is None:
             raise ValueError("Előbb lépj be egy voice csatornába.")
         voice = self._voice_client(guild)
+
+        if self._lavalink_ready():
+            if voice is not None and not self._is_lavalink_voice(voice):
+                await self._disconnect_voice(voice, force=True)
+                voice = None
+            if voice is None:
+                try:
+                    voice = await member.voice.channel.connect(cls=wavelink.Player, self_deaf=True)
+                except Exception as exc:
+                    raise ValueError(f"Lavalink voice csatlakozási hiba: {_truncate(str(exc), 300)}") from exc
+                await self._set_voice_volume(voice, await self.get_default_volume(guild.id))
+            elif getattr(getattr(voice, "channel", None), "id", None) != member.voice.channel.id:
+                await voice.move_to(member.voice.channel)
+            return voice
+
+        runtime = self._voice_runtime_problem()
+        if runtime:
+            raise ValueError(runtime)
+        if voice is not None and self._is_lavalink_voice(voice):
+            await self._disconnect_voice(voice, force=True)
+            voice = None
         if voice is None:
             try:
                 voice = await member.voice.channel.connect(self_deaf=True)
@@ -373,7 +527,13 @@ class MusicCog(commands.GroupCog, group_name="music", group_description="Yoru ze
             raise ValueError("A YouTube playlistben nem találtam betölthető videót.")
         return tracks
 
-    async def _run_spotdl(self, *args: str) -> tuple[str, str]:
+    async def _run_spotdl(self, *args: str, timeout: float | None = None) -> tuple[str, str]:
+        """Run spotDL in an isolated subprocess with a hard timeout.
+
+        A hung provider can therefore never block the Discord event loop for
+        minutes. The subprocess is killed on timeout instead of leaving a
+        resolver running indefinitely.
+        """
         proc = await asyncio.create_subprocess_exec(
             sys.executable,
             "-m",
@@ -382,15 +542,13 @@ class MusicCog(commands.GroupCog, group_name="music", group_description="Yoru ze
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
+        deadline = float(timeout or musiccfg.MUSIC_SPOTIFY_METADATA_TIMEOUT_SECONDS)
         try:
-            stdout, stderr = await asyncio.wait_for(
-                proc.communicate(),
-                timeout=musiccfg.MUSIC_SPOTIFY_TIMEOUT_SECONDS,
-            )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=deadline)
         except asyncio.TimeoutError:
             proc.kill()
             await proc.communicate()
-            raise ValueError("A Spotify feloldása túl sokáig tartott. Próbáld újra.")
+            raise ValueError(f"A Spotify feloldása túllépte a {round(deadline)} mp-es időkorlátot.")
         out_text = (stdout or b"").decode("utf-8", errors="replace").strip()
         err_text = (stderr or b"").decode("utf-8", errors="replace").strip()
         if proc.returncode != 0:
@@ -398,7 +556,34 @@ class MusicCog(commands.GroupCog, group_name="music", group_description="Yoru ze
             raise ValueError(_truncate(detail, 500))
         return out_text, err_text
 
-    async def _spotdl_save_items(self, query: str, *, preload: bool) -> list[dict[str, Any]]:
+    def _cache_get(self, cache: dict[str, tuple[float, Any]], key: str, ttl: int) -> Any | None:
+        cached = cache.get(key)
+        if cached is None:
+            return None
+        created, value = cached
+        if time.monotonic() - created > ttl:
+            cache.pop(key, None)
+            return None
+        return value
+
+    def _cache_put(self, cache: dict[str, tuple[float, Any]], key: str, value: Any) -> None:
+        cache[key] = (time.monotonic(), value)
+        # Avoid unbounded growth on long-running large servers.
+        if len(cache) > musiccfg.MUSIC_RESOLVER_CACHE_MAX_ITEMS:
+            oldest = min(cache, key=lambda item: cache[item][0])
+            cache.pop(oldest, None)
+
+    async def _spotdl_save_items(self, query: str, *, preload: bool = False) -> list[dict[str, Any]]:
+        """Fetch Spotify metadata only.
+
+        v3.17.2 deliberately does NOT preload playlist audio sources. Preload
+        was the main cause of huge playlists taking tens of minutes because it
+        searched an audio provider for every track before returning.
+        """
+        cached = self._cache_get(self._spotify_metadata_cache, query, musiccfg.MUSIC_SPOTIFY_METADATA_CACHE_SECONDS)
+        if cached is not None:
+            return [dict(item) for item in cached]
+
         with tempfile.TemporaryDirectory(prefix="yoru_spotify_") as temp_name:
             save_path = Path(temp_name) / "metadata.spotdl"
             args = [
@@ -407,13 +592,20 @@ class MusicCog(commands.GroupCog, group_name="music", group_description="Yoru ze
                 "--save-file",
                 str(save_path),
                 "--headless",
-                "--no-cache",
+                "--max-retries",
+                "1",
+                "--threads",
+                str(musiccfg.MUSIC_SPOTIFY_METADATA_THREADS),
                 "--log-level",
                 "ERROR",
             ]
+            # Kept only for backwards compatibility with older internal calls;
+            # the fast resolver never requests preload=True.
             if preload:
                 args.append("--preload")
-            await self._run_spotdl(*args)
+            is_list = "/playlist/" in query.lower() or "/album/" in query.lower() or query.lower().startswith(("spotify:playlist:", "spotify:album:"))
+            timeout = musiccfg.MUSIC_SPOTIFY_PLAYLIST_TIMEOUT_SECONDS if is_list else musiccfg.MUSIC_SPOTIFY_METADATA_TIMEOUT_SECONDS
+            await self._run_spotdl(*args, timeout=timeout)
             if not save_path.exists():
                 raise ValueError("A spotDL nem hozta létre a metadata fájlt.")
             try:
@@ -427,16 +619,27 @@ class MusicCog(commands.GroupCog, group_name="music", group_description="Yoru ze
             raw_items = raw
         else:
             raw_items = []
-        return [item for item in raw_items if isinstance(item, dict)]
+        items = [item for item in raw_items if isinstance(item, dict)]
+        if items:
+            self._cache_put(self._spotify_metadata_cache, query, [dict(item) for item in items])
+        return items
 
-    async def _spotdl_source_urls(self, query: str) -> list[str]:
+    async def _spotdl_source_urls(self, query: str, *, timeout: float | None = None) -> list[str]:
+        """Resolve a single Spotify track's preferred audio provider just-in-time."""
         stdout, _stderr = await self._run_spotdl(
             "url",
             query,
             "--headless",
-            "--no-cache",
+            "--max-retries",
+            "1",
+            "--threads",
+            "1",
+            "--audio",
+            "youtube-music",
+            "youtube",
             "--log-level",
             "ERROR",
+            timeout=timeout or musiccfg.MUSIC_SPOTIFY_SOURCE_TIMEOUT_SECONDS,
         )
         urls: list[str] = []
         for line in stdout.splitlines():
@@ -445,76 +648,87 @@ class MusicCog(commands.GroupCog, group_name="music", group_description="Yoru ze
                 urls.append(candidate)
         return urls
 
+    def _track_from_lavalink(self, playable: Any, requester_id: int, *, source_label: str, fallback_url: str) -> Track:
+        title = str(getattr(playable, "title", None) or "Ismeretlen zene")
+        uri = str(getattr(playable, "uri", None) or fallback_url)
+        length = getattr(playable, "length", None)
+        duration = int(length // 1000) if isinstance(length, (int, float)) and length > 0 else None
+        artwork = getattr(playable, "artwork", None)
+        raw = getattr(playable, "raw_data", None)
+        return Track(
+            query=uri or fallback_url,
+            title=title,
+            webpage_url=uri if uri.startswith("http") else fallback_url,
+            duration=duration,
+            requester_id=requester_id,
+            source=source_label,
+            thumbnail=str(artwork) if isinstance(artwork, str) and artwork.startswith("http") else None,
+            lavalink_data=dict(raw) if isinstance(raw, dict) else None,
+        )
+
+    async def _extract_lavalink_tracks(self, query: str, requester_id: int, limit: int) -> tuple[list[Track], str]:
+        if not self._lavalink_ready() or wavelink is None:
+            raise ValueError("A Lavalink node nem elérhető.")
+        is_url = query.startswith(("http://", "https://"))
+        try:
+            if is_url:
+                result = await wavelink.Playable.search(query, node=self._lavalink_node)
+            else:
+                result = await wavelink.Playable.search(query, source="ytsearch", node=self._lavalink_node)
+        except Exception as exc:
+            raise ValueError(f"Lavalink keresési hiba: {_truncate(str(exc), 500)}") from exc
+        if not result:
+            raise ValueError("A Lavalink nem talált lejátszható zenét.")
+        if isinstance(result, wavelink.Playlist):
+            items = list(result.tracks)[: max(1, min(limit, musiccfg.MUSIC_MAX_PLAYLIST_ITEMS))]
+        else:
+            items = list(result)[: max(1, min(limit, musiccfg.MUSIC_MAX_PLAYLIST_ITEMS))]
+        spotify = bool(SPOTIFY_RE.search(query))
+        source_label = "Spotify • LavaSrc" if spotify else "Lavalink"
+        tracks = [self._track_from_lavalink(item, requester_id, source_label=source_label, fallback_url=query) for item in items]
+        kind = "Spotify • LavaSrc" if spotify else ("Lavalink playlist" if isinstance(result, wavelink.Playlist) else "Lavalink / keresés")
+        return tracks, kind
+
     async def _extract_spotify_tracks(self, query: str, requester_id: int, limit: int) -> list[Track]:
-        if not self._spotify_available():
+        if importlib.util.find_spec("spotdl") is None:
             raise ValueError("Spotify linkhez hiányzik a **spotDL** dependency. A friss `requirements.txt` telepítése szükséges.")
 
-        errors: list[str] = []
-        items: list[dict[str, Any]] = []
-
-        # 1) First choice: ask spotDL to resolve its preferred audio source up front.
-        try:
-            items = await self._spotdl_save_items(query, preload=True)
-        except ValueError as exc:
-            errors.append(f"preload: {_truncate(str(exc), 180)}")
-
-        # 2) Some managed hosts can fetch Spotify metadata even when source preload fails.
+        # FAST PATH: exactly one metadata pass. No --preload and no playlist-wide
+        # `spotdl url` call. Audio is resolved only for the current track.
+        items = await self._spotdl_save_items(query, preload=False)
         if not items:
-            try:
-                items = await self._spotdl_save_items(query, preload=False)
-            except ValueError as exc:
-                errors.append(f"metadata: {_truncate(str(exc), 180)}")
-
-        if not items:
-            detail = " • ".join(errors[-2:])
-            suffix = f" ({detail})" if detail else ""
-            raise ValueError(f"A Spotify linkből nem sikerült zenéket kiolvasni.{suffix}")
+            raise ValueError("A Spotify linkből nem sikerült zenéket kiolvasni.")
 
         items = items[: max(1, min(limit, musiccfg.MUSIC_MAX_PLAYLIST_ITEMS))]
-
-        # 3) Fill missing preloaded download_url values with spotDL's URL resolver in one batch.
-        resolved_urls: list[str] = []
-        if any(not str(item.get("download_url") or "").startswith("http") for item in items):
-            try:
-                resolved_urls = await self._spotdl_source_urls(query)
-            except ValueError as exc:
-                errors.append(f"url: {_truncate(str(exc), 180)}")
-
-        aligned_urls: list[str | None] = [None] * len(items)
-        if len(resolved_urls) == len(items):
-            aligned_urls = resolved_urls[:]
-        elif len(items) == 1 and resolved_urls:
-            aligned_urls[0] = resolved_urls[0]
-
         tracks: list[Track] = []
-        for index, item in enumerate(items):
+        for item in items:
             name = str(item.get("name") or item.get("title") or "").strip()
             artists = _spotify_artists(item)
             if not name:
                 continue
             artist_text = ", ".join(artists)
-            search = f"ytsearch1:{artist_text + ' - ' if artist_text else ''}{name} audio"
             display_title = f"{artist_text} — {name}" if artist_text else name
             spotify_url = str(item.get("url") or item.get("spotify_url") or query)
             duration_raw = item.get("duration")
             duration = int(float(duration_raw)) if isinstance(duration_raw, (int, float)) else None
             thumbnail = item.get("cover_url") or item.get("cover") or item.get("album_art")
+            isrc = str(item.get("isrc") or "").strip() or None
 
-            preload_url = str(item.get("download_url") or "").strip()
-            source_url = preload_url if preload_url.startswith("http") and "open.spotify.com" not in preload_url.lower() else aligned_urls[index]
-            playback_query = source_url or search
-            source_label = "Spotify • spotDL source" if source_url else "Spotify → YouTube search"
-
+            # ISRC is the first lightweight audio lookup. Title/artist remains
+            # only a fallback for sources where ISRC is not indexed.
+            fallback_search = f"ytsearch1:{artist_text + ' - ' if artist_text else ''}{name} audio"
+            primary_search = f"ytsearch1:{isrc}" if isrc else fallback_search
             tracks.append(
                 Track(
-                    query=playback_query,
+                    query=primary_search,
                     title=display_title,
                     webpage_url=spotify_url,
                     duration=duration,
                     requester_id=requester_id,
-                    source=source_label,
+                    source="Spotify • Fast Resolver",
                     thumbnail=str(thumbnail) if isinstance(thumbnail, str) and thumbnail.startswith("http") else None,
-                    fallback_query=search if source_url else None,
+                    fallback_query=fallback_search if primary_search != fallback_search else None,
+                    isrc=isrc,
                 )
             )
 
@@ -526,8 +740,16 @@ class MusicCog(commands.GroupCog, group_name="music", group_description="Yoru ze
         query = query.strip()
         if not query:
             raise ValueError("Adj meg egy zenét, YouTube/Spotify linket vagy playlistet.")
+        # v3.17.2: Spotify is intentionally Python-first. It no longer waits
+        # for an external Lavalink node and never resolves a whole playlist's
+        # audio sources up front.
         if SPOTIFY_RE.search(query):
-            return await self._extract_spotify_tracks(query, requester_id, limit), "Spotify"
+            return await self._extract_spotify_tracks(query, requester_id, limit), "Spotify • Fast Resolver"
+        if self._lavalink_ready():
+            try:
+                return await self._extract_lavalink_tracks(query, requester_id, limit)
+            except ValueError as exc:
+                logger.warning("Lavalink resolve failed, legacy fallback: %s", exc)
         if YOUTUBE_PLAYLIST_RE.search(query):
             return await self._extract_youtube_playlist(query, requester_id, limit), "YouTube playlist"
         return [await self._extract_metadata(query, requester_id)], "YouTube / keresés"
@@ -535,6 +757,27 @@ class MusicCog(commands.GroupCog, group_name="music", group_description="Yoru ze
     async def _extract_stream_url(self, track: Track) -> str:
         if yt_dlp is None:
             raise RuntimeError("yt-dlp nincs telepítve")
+
+        cache_key = track.webpage_url or track.query
+        cached = self._cache_get(self._stream_url_cache, cache_key, musiccfg.MUSIC_STREAM_CACHE_SECONDS)
+        if isinstance(cached, str) and cached.startswith("http"):
+            return cached
+
+        # For Spotify tracks source matching is JIT: only the track that is
+        # actually about to play gets a spotDL provider lookup. If that lookup
+        # is slow/unavailable, a hard timeout drops immediately to ISRC/title.
+        provider_url: str | None = None
+        if track.source.startswith("Spotify") and SPOTIFY_RE.search(track.webpage_url):
+            try:
+                async with self._spotify_source_semaphore:
+                    urls = await self._spotdl_source_urls(
+                        track.webpage_url,
+                        timeout=musiccfg.MUSIC_SPOTIFY_SOURCE_TIMEOUT_SECONDS,
+                    )
+                if urls:
+                    provider_url = urls[0]
+            except Exception as exc:
+                logger.info("Spotify JIT provider lookup fallback for %s: %s", track.title, _truncate(str(exc), 180))
 
         def work() -> str:
             opts = {
@@ -544,9 +787,13 @@ class MusicCog(commands.GroupCog, group_name="music", group_description="Yoru ze
                 "skip_download": True,
                 "noplaylist": True,
                 "default_search": "ytsearch1",
+                "socket_timeout": musiccfg.MUSIC_YTDLP_SOCKET_TIMEOUT_SECONDS,
+                "retries": 1,
+                "extractor_retries": 1,
+                "fragment_retries": 1,
             }
             candidates: list[str] = []
-            for candidate in (track.query, track.fallback_query):
+            for candidate in (provider_url, track.query, track.fallback_query):
                 if candidate and candidate not in candidates:
                     candidates.append(candidate)
 
@@ -569,10 +816,18 @@ class MusicCog(commands.GroupCog, group_name="music", group_description="Yoru ze
                     except Exception as exc:
                         failures.append(_truncate(str(exc), 180))
 
-            detail = " • ".join(failures[-2:])
+            detail = " • ".join(failures[-3:])
             raise ValueError(f"Nem sikerült lejátszható audio streamet találni. {detail}".strip())
 
-        return await asyncio.to_thread(work)
+        try:
+            url = await asyncio.wait_for(
+                asyncio.to_thread(work),
+                timeout=musiccfg.MUSIC_YTDLP_RESOLVE_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError as exc:
+            raise ValueError(f"A zene audioforrásának feloldása túllépte a {musiccfg.MUSIC_YTDLP_RESOLVE_TIMEOUT_SECONDS} mp-es limitet; Yoru átugorja.") from exc
+        self._cache_put(self._stream_url_cache, cache_key, url)
+        return url
 
     async def _send_channel(self, guild_id: int, embed: discord.Embed) -> None:
         player = self.players.get(guild_id)
@@ -604,8 +859,8 @@ class MusicCog(commands.GroupCog, group_name="music", group_description="Yoru ze
                     return
                 state = self.players.get(guild_id)
                 voice = self._voice_client(guild)
-                if state and voice and state.current is None and not state.queue and not voice.is_playing() and not voice.is_paused():
-                    await voice.disconnect(force=False)
+                if state and voice and state.current is None and not state.queue and not self._voice_playing(voice) and not self._voice_paused(voice):
+                    await self._disconnect_voice(voice)
                     self.players.pop(guild_id, None)
                     await self._refresh_panel(guild)
             except asyncio.CancelledError:
@@ -615,28 +870,10 @@ class MusicCog(commands.GroupCog, group_name="music", group_description="Yoru ze
 
     async def _start_track(self, guild: discord.Guild, player: GuildPlayer, track: Track) -> None:
         voice = self._voice_client(guild)
-        if voice is None or not voice.is_connected():
+        if voice is None or not self._voice_connected(voice):
             player.current = None
             await self._schedule_idle_disconnect(guild.id)
             await self._refresh_panel(guild)
-            return
-        try:
-            stream_url = await self._extract_stream_url(track)
-            source = discord.PCMVolumeTransformer(
-                discord.FFmpegPCMAudio(
-                    stream_url,
-                    executable=FFMPEG_EXECUTABLE,
-                    before_options=FFMPEG_BEFORE_OPTIONS,
-                    options=FFMPEG_OPTIONS,
-                ),
-                volume=player.volume,
-            )
-        except Exception as exc:
-            player.current = None
-            embed = base_embed("❌ Music hiba", f"**{_truncate(track.title, 100)}** nem indult el.\n`{_truncate(str(exc), 700)}`")
-            embed.set_footer(text="Yoru • Music")
-            await self._send_channel(guild.id, embed)
-            await self._advance(guild.id, playback_error=True)
             return
 
         player.current = track
@@ -644,18 +881,58 @@ class MusicCog(commands.GroupCog, group_name="music", group_description="Yoru ze
         player.skip_current = False
         await self._cancel_idle(player)
 
-        def after(error: Exception | None) -> None:
-            self.bot.loop.call_soon_threadsafe(asyncio.create_task, self._advance(guild.id, playback_error=error is not None))
+        if self._is_lavalink_voice(voice):
+            try:
+                playable = wavelink.Playable(track.lavalink_data) if track.lavalink_data else None
+                if playable is None:
+                    result = await wavelink.Playable.search(track.query, node=self._lavalink_node)
+                    if not result:
+                        raise ValueError("A Lavalink nem találta újra a tracket.")
+                    playable = result.tracks[0] if isinstance(result, wavelink.Playlist) else result[0]
+                try:
+                    playable.extras = {"requester_id": track.requester_id, "yoru_title": track.title}
+                except Exception:
+                    pass
+                await voice.play(playable, volume=max(0, min(1000, round(player.volume * 100))))
+            except Exception as exc:
+                player.current = None
+                embed = base_embed("❌ Music hiba", f"**{_truncate(track.title, 100)}** nem indult el Lavalinken.\n`{_truncate(str(exc), 700)}`")
+                embed.set_footer(text="Yoru • Music • Lavalink")
+                await self._send_channel(guild.id, embed)
+                await self._advance(guild.id, playback_error=True)
+                return
+        else:
+            try:
+                stream_url = await self._extract_stream_url(track)
+                source = discord.PCMVolumeTransformer(
+                    discord.FFmpegPCMAudio(
+                        stream_url,
+                        executable=FFMPEG_EXECUTABLE,
+                        before_options=FFMPEG_BEFORE_OPTIONS,
+                        options=FFMPEG_OPTIONS,
+                    ),
+                    volume=player.volume,
+                )
+            except Exception as exc:
+                player.current = None
+                embed = base_embed("❌ Music hiba", f"**{_truncate(track.title, 100)}** nem indult el.\n`{_truncate(str(exc), 700)}`")
+                embed.set_footer(text="Yoru • Music • Legacy")
+                await self._send_channel(guild.id, embed)
+                await self._advance(guild.id, playback_error=True)
+                return
 
-        try:
-            voice.play(source, after=after)
-        except Exception as exc:
-            player.current = None
-            embed = base_embed("❌ Music hiba", f"Nem sikerült elindítani a lejátszást.\n`{_truncate(str(exc), 700)}`")
-            embed.set_footer(text="Yoru • Music")
-            await self._send_channel(guild.id, embed)
-            await self._advance(guild.id, playback_error=True)
-            return
+            def after(error: Exception | None) -> None:
+                self.bot.loop.call_soon_threadsafe(asyncio.create_task, self._advance(guild.id, playback_error=error is not None))
+
+            try:
+                voice.play(source, after=after)
+            except Exception as exc:
+                player.current = None
+                embed = base_embed("❌ Music hiba", f"Nem sikerült elindítani a lejátszást.\n`{_truncate(str(exc), 700)}`")
+                embed.set_footer(text="Yoru • Music • Legacy")
+                await self._send_channel(guild.id, embed)
+                await self._advance(guild.id, playback_error=True)
+                return
 
         embed = base_embed("🎵 Most szól", f"**[{_truncate(track.title, 180)}]({track.webpage_url})**")
         embed.add_field(name="⏱️ Hossz", value=_format_duration(track.duration), inline=True)
@@ -664,9 +941,19 @@ class MusicCog(commands.GroupCog, group_name="music", group_description="Yoru ze
         embed.add_field(name="Forrás", value=track.source, inline=True)
         if track.thumbnail:
             embed.set_thumbnail(url=track.thumbnail)
-        embed.set_footer(text="Yoru • Music")
+        embed.set_footer(text="Yoru • Music • " + ("Lavalink" if self._is_lavalink_voice(voice) else "Fast Resolver"))
         await self._send_channel(guild.id, embed)
         await self._refresh_panel(guild)
+
+    @commands.Cog.listener()
+    async def on_wavelink_track_end(self, payload: Any) -> None:
+        if wavelink is None:
+            return
+        voice = getattr(payload, "player", None)
+        guild = getattr(voice, "guild", None)
+        if guild is None or guild.id not in self.players:
+            return
+        await self._advance(guild.id, playback_error=False)
 
     async def _advance(self, guild_id: int, *, playback_error: bool = False) -> None:
         guild = self.bot.get_guild(guild_id)
@@ -713,7 +1000,7 @@ class MusicCog(commands.GroupCog, group_name="music", group_description="Yoru ze
             raise ValueError("Nem sikerült voice csatornához csatlakozni.")
 
         async with player.lock:
-            idle = player.current is None and not voice.is_playing() and not voice.is_paused()
+            idle = player.current is None and not self._voice_playing(voice) and not self._voice_paused(voice)
             capacity = max_queue - len(player.queue) + (1 if idle else 0)
         if capacity <= 0:
             raise ValueError(f"A queue tele van (**{max_queue}** zene).")
@@ -727,7 +1014,7 @@ class MusicCog(commands.GroupCog, group_name="music", group_description="Yoru ze
         start_track: Track | None = None
         added: list[Track] = []
         async with player.lock:
-            idle = player.current is None and not voice.is_playing() and not voice.is_paused()
+            idle = player.current is None and not self._voice_playing(voice) and not self._voice_paused(voice)
             room = max_queue - len(player.queue)
             if idle and tracks:
                 start_track = tracks[0]
@@ -743,7 +1030,10 @@ class MusicCog(commands.GroupCog, group_name="music", group_description="Yoru ze
         await self._cancel_idle(player)
 
         if start_track is not None:
-            await self._start_track(guild, player, start_track)
+            # Do not keep /play or !play waiting while yt-dlp/spotDL resolves the
+            # first audio source. The slot is already reserved above, so a
+            # second /play cannot race it. _start_track handles its own errors.
+            asyncio.create_task(self._start_track(guild, player, start_track))
         else:
             await self._refresh_panel(guild)
         return added, started, source_kind, len(player.queue)
@@ -837,11 +1127,11 @@ class MusicCog(commands.GroupCog, group_name="music", group_description="Yoru ze
         embed.add_field(name="🔊 Hangerő", value=f"**{round(player.volume * 100)}%**", inline=True)
         embed.add_field(name="🔁 Loop", value="**BE**" if player.loop_current else "KI", inline=True)
         if voice:
-            state = "⏸️ Szünet" if voice.is_paused() else ("▶️ Lejátszás" if voice.is_playing() else "🟡 Várakozik")
+            state = "⏸️ Szünet" if self._voice_paused(voice) else ("▶️ Lejátszás" if self._voice_playing(voice) else "🟡 Várakozik")
             embed.add_field(name="🎧 Voice", value=f"{voice.channel.mention}\n{state}", inline=True)
         else:
             embed.add_field(name="🎧 Voice", value="Nincs csatlakozva", inline=True)
-        embed.set_footer(text="Yoru • Music • Spotify hangforrás: YouTube matching")
+        embed.set_footer(text="Yoru • Music • Fast Resolver")
         return embed
 
     async def _get_saved_panel_message(self, guild: discord.Guild) -> discord.Message | None:
@@ -884,8 +1174,8 @@ class MusicCog(commands.GroupCog, group_name="music", group_description="Yoru ze
         player = await self._player(guild.id)
         player.volume = percent / 100
         voice = self._voice_client(guild)
-        if voice and isinstance(voice.source, discord.PCMVolumeTransformer):
-            voice.source.volume = player.volume
+        if voice:
+            await self._set_voice_volume(voice, percent)
         await self._refresh_panel(guild)
 
     @app_commands.command(name="play", description="Keresés, YouTube/Spotify link vagy playlist hozzáadása.")
@@ -923,8 +1213,8 @@ class MusicCog(commands.GroupCog, group_name="music", group_description="Yoru ze
     async def pause_slash(self, interaction: discord.Interaction) -> None:
         if not await self._gate_interaction(interaction, control=True): return
         voice = self._voice_client(interaction.guild)
-        if voice is None or not voice.is_playing(): return await interaction.response.send_message("❌ Most nem szól zene.", ephemeral=True)
-        voice.pause(); await self._refresh_panel(interaction.guild)
+        if voice is None or not self._voice_playing(voice): return await interaction.response.send_message("❌ Most nem szól zene.", ephemeral=True)
+        await self._pause_voice(voice, True); await self._refresh_panel(interaction.guild)
         await interaction.response.send_message("⏸️ **Szüneteltetve.**")
 
     @commands.command(name="pause", aliases=["mpause"])
@@ -932,45 +1222,45 @@ class MusicCog(commands.GroupCog, group_name="music", group_description="Yoru ze
     async def pause_prefix(self, ctx: commands.Context) -> None:
         if not await self._gate_ctx(ctx, control=True): return
         voice = self._voice_client(ctx.guild)
-        if voice is None or not voice.is_playing(): return await ctx.send(embed=error_embed(ctx.author, "Most nem szól zene."))
-        voice.pause(); await self._refresh_panel(ctx.guild); await ctx.send("⏸️ **Szüneteltetve.**")
+        if voice is None or not self._voice_playing(voice): return await ctx.send(embed=error_embed(ctx.author, "Most nem szól zene."))
+        await self._pause_voice(voice, True); await self._refresh_panel(ctx.guild); await ctx.send("⏸️ **Szüneteltetve.**")
 
     @app_commands.command(name="resume", description="Folytatja a szüneteltetett zenét.")
     async def resume_slash(self, interaction: discord.Interaction) -> None:
         if not await self._gate_interaction(interaction, control=True): return
         voice = self._voice_client(interaction.guild)
-        if voice is None or not voice.is_paused(): return await interaction.response.send_message("❌ Nincs szüneteltetett zene.", ephemeral=True)
-        voice.resume(); await self._refresh_panel(interaction.guild); await interaction.response.send_message("▶️ **Folytatva.**")
+        if voice is None or not self._voice_paused(voice): return await interaction.response.send_message("❌ Nincs szüneteltetett zene.", ephemeral=True)
+        await self._pause_voice(voice, False); await self._refresh_panel(interaction.guild); await interaction.response.send_message("▶️ **Folytatva.**")
 
     @commands.command(name="resume", aliases=["mresume"])
     @commands.guild_only()
     async def resume_prefix(self, ctx: commands.Context) -> None:
         if not await self._gate_ctx(ctx, control=True): return
         voice = self._voice_client(ctx.guild)
-        if voice is None or not voice.is_paused(): return await ctx.send(embed=error_embed(ctx.author, "Nincs szüneteltetett zene."))
-        voice.resume(); await self._refresh_panel(ctx.guild); await ctx.send("▶️ **Folytatva.**")
+        if voice is None or not self._voice_paused(voice): return await ctx.send(embed=error_embed(ctx.author, "Nincs szüneteltetett zene."))
+        await self._pause_voice(voice, False); await self._refresh_panel(ctx.guild); await ctx.send("▶️ **Folytatva.**")
 
     @app_commands.command(name="skip", description="Átugorja az aktuális zenét.")
     async def skip_slash(self, interaction: discord.Interaction) -> None:
         if not await self._gate_interaction(interaction, control=True): return
         voice = self._voice_client(interaction.guild); player = await self._player(interaction.guild.id)
-        if voice is None or (not voice.is_playing() and not voice.is_paused()): return await interaction.response.send_message("❌ Most nem szól zene.", ephemeral=True)
-        player.skip_current = True; voice.stop(); await interaction.response.send_message("⏭️ **Átugorva.**")
+        if voice is None or (not self._voice_playing(voice) and not self._voice_paused(voice)): return await interaction.response.send_message("❌ Most nem szól zene.", ephemeral=True)
+        player.skip_current = True; await self._skip_voice(voice); await interaction.response.send_message("⏭️ **Átugorva.**")
 
     @commands.command(name="skip", aliases=["mskip", "next"])
     @commands.guild_only()
     async def skip_prefix(self, ctx: commands.Context) -> None:
         if not await self._gate_ctx(ctx, control=True): return
         voice = self._voice_client(ctx.guild); player = await self._player(ctx.guild.id)
-        if voice is None or (not voice.is_playing() and not voice.is_paused()): return await ctx.send(embed=error_embed(ctx.author, "Most nem szól zene."))
-        player.skip_current = True; voice.stop(); await ctx.send("⏭️ **Átugorva.**")
+        if voice is None or (not self._voice_playing(voice) and not self._voice_paused(voice)): return await ctx.send(embed=error_embed(ctx.author, "Most nem szól zene."))
+        player.skip_current = True; await self._skip_voice(voice); await ctx.send("⏭️ **Átugorva.**")
 
     @app_commands.command(name="stop", description="Leállítja a zenét és üríti a queue-t.")
     async def stop_slash(self, interaction: discord.Interaction) -> None:
         if not await self._gate_interaction(interaction, control=True): return
         player = await self._player(interaction.guild.id); voice = self._voice_client(interaction.guild)
         player.queue.clear(); player.loop_current = False; player.stop_requested = True
-        if voice and (voice.is_playing() or voice.is_paused()): voice.stop()
+        if voice and (self._voice_playing(voice) or self._voice_paused(voice)): await self._skip_voice(voice)
         else: player.current = None; player.stop_requested = False; await self._schedule_idle_disconnect(interaction.guild.id); await self._refresh_panel(interaction.guild)
         await interaction.response.send_message("⏹️ **Leállítva, queue ürítve.**")
 
@@ -980,7 +1270,7 @@ class MusicCog(commands.GroupCog, group_name="music", group_description="Yoru ze
         if not await self._gate_ctx(ctx, control=True): return
         player = await self._player(ctx.guild.id); voice = self._voice_client(ctx.guild)
         player.queue.clear(); player.loop_current = False; player.stop_requested = True
-        if voice and (voice.is_playing() or voice.is_paused()): voice.stop()
+        if voice and (self._voice_playing(voice) or self._voice_paused(voice)): await self._skip_voice(voice)
         else: player.current = None; player.stop_requested = False; await self._schedule_idle_disconnect(ctx.guild.id); await self._refresh_panel(ctx.guild)
         await ctx.send("⏹️ **Leállítva, queue ürítve.**")
 
@@ -1060,7 +1350,7 @@ class MusicCog(commands.GroupCog, group_name="music", group_description="Yoru ze
         voice = self._voice_client(interaction.guild)
         if voice is None: return await interaction.response.send_message("❌ Yoru nincs voice csatornában.", ephemeral=True)
         player = await self._player(interaction.guild.id); player.queue.clear(); player.current = None; player.stop_requested = True
-        await self._cancel_idle(player); await voice.disconnect(force=False); self.players.pop(interaction.guild.id, None)
+        await self._cancel_idle(player); await self._disconnect_voice(voice); self.players.pop(interaction.guild.id, None)
         await self._refresh_panel(interaction.guild); await interaction.response.send_message("👋 **Kiléptem a voice csatornából.**")
 
     @commands.command(name="leave", aliases=["musicdc", "mleave"])
@@ -1070,7 +1360,7 @@ class MusicCog(commands.GroupCog, group_name="music", group_description="Yoru ze
         voice = self._voice_client(ctx.guild)
         if voice is None: return await ctx.send(embed=error_embed(ctx.author, "Yoru nincs voice csatornában."))
         player = await self._player(ctx.guild.id); player.queue.clear(); player.current = None; player.stop_requested = True
-        await self._cancel_idle(player); await voice.disconnect(force=False); self.players.pop(ctx.guild.id, None)
+        await self._cancel_idle(player); await self._disconnect_voice(voice); self.players.pop(ctx.guild.id, None)
         await self._refresh_panel(ctx.guild); await ctx.send("👋 **Kiléptem a voice csatornából.**")
 
 
@@ -1140,10 +1430,12 @@ class MusicPanelView(discord.ui.View):
     async def pause_resume(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
         if not await self.cog._gate_interaction(interaction, control=True): return
         voice = self.cog._voice_client(interaction.guild)
-        if voice is None or (not voice.is_playing() and not voice.is_paused()):
+        if voice is None or (not self.cog._voice_playing(voice) and not self.cog._voice_paused(voice)):
             return await interaction.response.send_message("❌ Most nem szól zene.", ephemeral=True)
-        if voice.is_paused(): voice.resume(); text = "▶️ Folytatva."
-        else: voice.pause(); text = "⏸️ Szüneteltetve."
+        if self.cog._voice_paused(voice):
+            await self.cog._pause_voice(voice, False); text = "▶️ Folytatva."
+        else:
+            await self.cog._pause_voice(voice, True); text = "⏸️ Szüneteltetve."
         await self.cog._refresh_panel(interaction.guild)
         await interaction.response.send_message(text, ephemeral=True)
 
@@ -1151,9 +1443,9 @@ class MusicPanelView(discord.ui.View):
     async def skip(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
         if not await self.cog._gate_interaction(interaction, control=True): return
         voice = self.cog._voice_client(interaction.guild); player = await self.cog._player(interaction.guild.id)
-        if voice is None or (not voice.is_playing() and not voice.is_paused()):
+        if voice is None or (not self.cog._voice_playing(voice) and not self.cog._voice_paused(voice)):
             return await interaction.response.send_message("❌ Most nem szól zene.", ephemeral=True)
-        player.skip_current = True; voice.stop()
+        player.skip_current = True; await self.cog._skip_voice(voice)
         await interaction.response.send_message("⏭️ Átugorva.", ephemeral=True)
 
     @discord.ui.button(label="Queue", emoji="📋", style=discord.ButtonStyle.secondary, custom_id="yoru:music:queue", row=0)
@@ -1194,7 +1486,7 @@ class MusicPanelView(discord.ui.View):
         if not await self.cog._gate_interaction(interaction, control=True): return
         player = await self.cog._player(interaction.guild.id); voice = self.cog._voice_client(interaction.guild)
         player.queue.clear(); player.loop_current = False; player.stop_requested = True
-        if voice and (voice.is_playing() or voice.is_paused()): voice.stop()
+        if voice and (self.cog._voice_playing(voice) or self.cog._voice_paused(voice)): await self.cog._skip_voice(voice)
         else: player.current = None; player.stop_requested = False; await self.cog._refresh_panel(interaction.guild)
         await interaction.response.send_message("⏹️ Leállítva, queue ürítve.", ephemeral=True)
 
@@ -1204,7 +1496,7 @@ class MusicPanelView(discord.ui.View):
         voice = self.cog._voice_client(interaction.guild)
         if voice is None: return await interaction.response.send_message("❌ Yoru nincs voice csatornában.", ephemeral=True)
         player = await self.cog._player(interaction.guild.id); player.queue.clear(); player.current = None; player.stop_requested = True
-        await self.cog._cancel_idle(player); await voice.disconnect(force=False); self.cog.players.pop(interaction.guild.id, None)
+        await self.cog._cancel_idle(player); await self.cog._disconnect_voice(voice); self.cog.players.pop(interaction.guild.id, None)
         await self.cog._refresh_panel(interaction.guild); await interaction.response.send_message("👋 Kiléptem a voice csatornából.", ephemeral=True)
 
 
@@ -1232,8 +1524,8 @@ class MusicTuneModal(discord.ui.Modal, title="Music alapbeállítások"):
         if player is not None:
             player.volume = volume / 100
             voice = self.parent_view.cog._voice_client(interaction.guild)
-            if voice and isinstance(voice.source, discord.PCMVolumeTransformer):
-                voice.source.volume = player.volume
+            if voice:
+                await self.parent_view.cog._set_voice_volume(voice, volume)
         await self.parent_view.cog._refresh_panel(interaction.guild)
         await self.parent_view.refresh(interaction)
 
@@ -1282,7 +1574,7 @@ class MusicSettingsView(OwnedView):
             if player:
                 player.queue.clear(); player.loop_current = False; player.stop_requested = True
             if voice:
-                await voice.disconnect(force=False)
+                await self.cog._disconnect_voice(voice)
             self.cog.players.pop(interaction.guild_id, None)
         await self.cog._refresh_panel(interaction.guild)
         await self.refresh(interaction)
@@ -1299,6 +1591,12 @@ class MusicSettingsView(OwnedView):
             return await interaction.response.send_message("❌ Nem találom a Music csatornát.", ephemeral=True)
         message = await self.cog.publish_panel(interaction.guild, channel)
         await interaction.response.send_message(f"🎶 Music panel kész/frissítve: {message.jump_url}", ephemeral=True)
+
+    @discord.ui.button(label="Resolver cache ürítés", emoji="🧹", style=discord.ButtonStyle.primary, row=1)
+    async def clear_resolver_cache(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
+        self.cog._spotify_metadata_cache.clear()
+        self.cog._stream_url_cache.clear()
+        await self.refresh(interaction)
 
     @discord.ui.button(label="Csatorna törlése", emoji="💬", style=discord.ButtonStyle.secondary, row=1)
     async def clear_channel(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:

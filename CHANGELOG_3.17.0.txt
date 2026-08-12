@@ -1,0 +1,23 @@
+Yoru v3.17.0 — Polish / Performance / Diagnostics
+
+UI / Settings
+- /settings kapott egy új interaktív Diagnosztika oldalt.
+- A Diagnosztika élőben mutatja a gateway latencyt, Python/discord.py verziót, betöltött cogokat, persistent view-k számát, slash budgetet és a legnagyobb slash groupot.
+- Bot permission + role hierarchy ellenőrzés került bele, így az admin rögtön látja, ha Yoru nem tud rangot/csatornát/üzenetet kezelni.
+- Music runtime ellenőrzés: FFmpeg, spotDL és yt-dlp elérhetőség.
+- SQLite quick_check, WAL mód, DB méret és freelist státusz Discordon belül látható.
+- /settings főoldal frissítve: Frakció, Biznisz és Nagy Meló tényleges állapota látszik; a régi "következő modul: Frakció 2.0" placeholder törölve.
+- Biznisz Ingatlanpiac select javítva: minden lap csak az adott oldal propertyjeit mutatja, nem mindig az első 25 elemet.
+
+Performance / large-server
+- Új SQLite indexek a transaction analytics, Crew invite, Server Shop claim, PvP history, Business offer és Heist hot pathokra.
+- PRAGMA optimize fut a séma/index inicializálás végén.
+- Prefix anti-flood runtime cache automatikusan prúnolódik nagy uptime / sok egyedi user esetén.
+- AutoMod spam/duplicate/notice runtime cache periodikusan prúnolódik.
+- Community AFK mention notice cache nagy szerveren nem nő korlátlanul.
+- Duplikált delete-log suppression bejegyzés eltávolítva a prefix flood gate-ből.
+
+Safety
+- Nincs economy balance változás ebben a release-ben.
+- Nincs DB reset vagy destruktív migráció.
+- Meglévő v3.16 adatok teljesen kompatibilisek.

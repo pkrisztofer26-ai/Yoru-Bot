@@ -142,6 +142,26 @@ class AutomodCog(commands.GroupCog, group_name="automod", group_description="Yor
         self._notice_times: dict[tuple[int, int, str], float] = {}
         self._joins: dict[int, deque[tuple[float, int]]] = defaultdict(deque)
         self._raid_alert_times: dict[int, float] = {}
+        self._runtime_prune_counter = 0
+
+    def _prune_runtime_state(self, now: float) -> None:
+        # Anti-spam deques are keyed by user. Without periodic pruning, users who
+        # leave after one message would keep tiny cache entries for the whole uptime.
+        stale_after = max(600.0, float(modcfg.RAID_JOIN_WINDOW_SECONDS) * 4.0)
+        if len(self._spam) >= 1000:
+            for key, values in list(self._spam.items()):
+                if not values or now - values[-1] > stale_after:
+                    self._spam.pop(key, None)
+        if len(self._duplicate) >= 1000:
+            for key, values in list(self._duplicate.items()):
+                if not values or now - values[-1][0] > stale_after:
+                    self._duplicate.pop(key, None)
+        notice_cutoff = now - max(600.0, float(modcfg.AUTOMOD_NOTICE_COOLDOWN_SECONDS) * 4.0)
+        if len(self._notice_times) >= 1000:
+            self._notice_times = {key: stamp for key, stamp in self._notice_times.items() if stamp >= notice_cutoff}
+        raid_cutoff = now - max(600.0, float(modcfg.RAID_ALERT_COOLDOWN_SECONDS) * 4.0)
+        if len(self._raid_alert_times) >= 250:
+            self._raid_alert_times = {gid: stamp for gid, stamp in self._raid_alert_times.items() if stamp >= raid_cutoff}
 
     async def _global_enabled(self, guild_id: int) -> bool:
         return await self.settings.get_automod_enabled(guild_id)
@@ -319,6 +339,11 @@ class AutomodCog(commands.GroupCog, group_name="automod", group_description="Yor
             return False
         if not await self._global_enabled(message.guild.id):
             return False
+
+        self._runtime_prune_counter += 1
+        if self._runtime_prune_counter >= 256:
+            self._runtime_prune_counter = 0
+            self._prune_runtime_state(time.monotonic())
 
         content = message.content or ""
         domains = _extract_domains(content)

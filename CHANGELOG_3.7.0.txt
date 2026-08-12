@@ -1,0 +1,42 @@
+Yoru v3.7.0 — Welcome & Roles
+================================
+
+ÚJ: /settings > Welcome
+- Welcome ON/OFF.
+- Welcome csatorna Discord channel selectorral.
+- Embed vagy sima szöveg.
+- Szerkeszthető embed cím és welcome sablon.
+- Változók: {user}, {username}, {display_name}, {server}, {membercount}, {account_age}.
+- Random welcome mód legfeljebb 10 sablonnal.
+- Opcionális privát welcome DM saját szöveggel.
+- Ephemeral Teszt előnézet.
+- Goodbye ON/OFF, külön csatorna, embed/sima szöveg, saját cím/szöveg és teszt.
+
+ÚJ: /settings > Roles
+- Külön emberi és bot autorole lista, max. 10-10 rang.
+- Role Restore: biztonságos rangok visszaadása újracsatlakozáskor.
+- Self-role panel builder csatorna-, rang- és módválasztóval.
+- Self-role panel módok: multi/toggle vagy single-choice.
+- Max. 10 rang / panel, max. 20 aktív panel / szerver.
+- Persistent self-role gombok: restart után is működnek.
+- Aktív self-role panelek listázása és deaktiválása / üzenet törlése.
+- Verification / Rules acceptance panel.
+- Verification gomb kioszt egy rangot és opcionálisan levesz egy másikat.
+- Verification panel persistent és újraküldéskor lecseréli a korábbit.
+- Aktív verification panel interaktívan letiltható.
+
+BIZTONSÁG
+- Yoru nem enged @everyone, managed, a saját rangja fölötti vagy veszélyes moderációs/admin jogokkal rendelkező rangokat autorole/self-role/verification célként.
+- Welcome sablonok nem pingelhetnek tetszőleges role/@everyone mentiont; csak a belépő user mentionje engedélyezett.
+- Role restore szintén csak biztonságos rangokat ment/visszaállít.
+
+ARCHITEKTÚRA
+- Minden guild config továbbra is a központi ServerSettingsService + DB backendben él.
+- Persistent role/verification panelek külön DB táblákban vannak, dashboard-kompatibilis módon.
+- Nem került be új top-level slash command: a funkciók a meglévő /settings panelben vannak.
+- Statikus slash-limit audit: 83/100 top-level; /mod 21/25; /automod 12/25.
+
+FRISSÍTÉS
+- Nincs kézi DB migration vagy reset.
+- .env és data/vaultbot.db maradjon meg.
+- Fájlok felülírása -> Restart -> !version -> /settings.

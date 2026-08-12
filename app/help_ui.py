@@ -28,12 +28,13 @@ HELP_PAGES: dict[str, dict[str, object]] = {
         ],
     },
     "gambling": {
-        "title": "🎰 Gambling",
-        "description": "Gyors játékok valódi kockázattal. Csak a tárcádban lévő pénzből fogadhatsz.",
+        "title": "🎰 Casino",
+        "description": "Casino house game-ek közös tétfoglalással, Game ID-val és auditált payouttal. Csak a tárcádban lévő pénzből fogadhatsz.",
         "fields": [
-            ("🪙 Gyors játékok", "`!cf fej 10k` Coinflip\n`!dice 4 10k` Dice\n`!sl 10k` Slots\n`!r piros 10k` Roulette", False),
-            ("🃏 Interaktív", "`!bj 10k` Blackjack\n`!hl high 10k` High/Low\n`!rps rock 10k` Kő-papír-olló\n`!cock 10k` Chicken Fight", False),
-            ("💡 Tipp", "`all` is használható tétként, de a gambling hosszú távon nem garantált profit.", False),
+            ("🎰 Casino panel", "`!casino` • `/casino lobby`\nSaját stat: `/casino stats` • játék history: `/casino history` • havi pool: `/casino jackpot`", False),
+            ("✨ Fő játékok", "`!bj 10k` Blackjack — Double / Split / Insurance / 3:2 natural\n`!sl 10k` Slots — 5×3 / Wild / Scatter / Free Spins\n`!r` Roulette egyéni asztal • egy pörgetésre több külön fogadást is rakhatsz", False),
+            ("🪙 Quick game-ek", "`!cf fej 10k` Coinflip\n`!dice 4 10k` Dice\n`!hl 10k` High/Low\n`!rps rock 10k` • `!cock 10k`", False),
+            ("🔒 Tétbiztonság", "A tét a kör elején reserve-olódik; restartkor a nyitva maradt session safe refundot kap. `all` továbbra is támogatott, max-bet plafon nélkül.", False),
         ],
     },
     "shop": {
@@ -54,6 +55,16 @@ HELP_PAGES: dict[str, dict[str, object]] = {
             ("🌌 Endgame", "`!prestige` Prestige • `!prestigetop` Prestige ranglista\n`!boost` aktív boosterek • `!bl` bank level • `!invest medium 50k` befektetés", False),
         ],
     },
+    "social": {
+        "title": "🤝 Social Economy",
+        "description": "Player piactér, szerver-specifikus reward shop, PvP duelok és economy analytics.",
+        "fields": [
+            ("🛒 Player Marketplace", "`!market` / `/social market` böngészés • `!market list <item> <db> <ár>` listing\n`!market buy <id> [db]` vásárlás • `!market cancel <id>` • `!market history`", False),
+            ("🏪 Server Shop", "`!servershop` / `/social shop` • `!servershop buy <id>` / `/social shopbuy`\nAdmin: `/social shopadd`, `shopremove`, `shopclaims`, `shopfulfill`.", False),
+            ("⚔️ PvP Duel", "`!duel @tag 100k coinflip|dice|rps` • `/social duel`\nMindkét tét elfogadáskor escrow-ba kerül; timeoutnál/refundnál nem ragad bent pénz.", False),
+            ("📊 Analytics", "Admin: `/social analytics` vagy `!ecoanalytics 24h|7d|30d` • supply, sink/source, market/PvP volume és wealth koncentráció.", False),
+        ],
+    },
     "community": {
         "title": "🌙 Community & Eventek",
         "description": "Közösségi eszközök, közös játékok és automatikusan induló szervereventek.",
@@ -61,17 +72,39 @@ HELP_PAGES: dict[str, dict[str, object]] = {
             ("💡 Közösségi eszközök", "`!suggest <szöveg>` / `/community suggest` • `!poll kérdés | A | B` / `/community poll` • `!afk [ok]` / `/community afk`", False),
             ("🎉 Giveaway / Sticky", "Staff: `!giveaway 1h 1 Nyeremény` / `/community giveaway` • `!sticky <szöveg>` / `/community sticky`", False),
             ("⭐ Starboard", "A `⭐` reakciók a `/settings → Community` alatt beállított küszöbnél automatikusan a Starboard csatornába kerülnek.", False),
-            ("🎰 Közös economy", "`!jp 25k` / `/community jackpot` • `!lot 5` / `/community lottery` • `!bm` / `/community blackmarket`", False),
+            ("🎰 Közös economy", "`!jp` / `/casino jackpot` • `!lot 5` / `/casino lottery` • `!bm` / `/community blackmarket`", False),
             ("🎁 Auto eventek", "**Kincses Láda** és **Hirtelen Halál** csak aktív chatnél indul automatikusan. Az event után új aktivitás kell a következőhöz.", False),
             ("⚡ Szerver eventek", "`!effects` / `/community servereffects` megmutatja az aktív Work / Crime / Luck szorzókat.", False),
         ],
     },
+    "business": {
+        "title": "🏢 Biznisz Empire",
+        "description": "Late-game üzleti birodalom: propertyk, dolgozók, fejlesztések és escrow ajánlatok.",
+        "fields": [
+            ("🏢 Főpanel", "`!biznisz` / `/business panel` megnyitja a teljes interaktív Biznisz Empire UI-t.", False),
+            ("🏙️ Propertyk", "Business License után az **Ingatlanpiac** oldalon vásárolhatsz fikciós üzleteket magyar game-world helyszíneken. Fejlesztés, reputation és offline bevétel a panelből kezelhető.", False),
+            ("👷 Dolgozók", "A napi rotációból bérelhetsz dolgozókat. Hire fee + órabér mellett bevételi boostot adnak a szerződés végéig.", False),
+            ("🤝 Player piac", "Más játékos propertyjére ajánlatot tehetsz. A pénz escrow-ba kerül; elfogadás, elutasítás, lejárat és visszavonás biztonságosan kezelt.", False),
+            ("⚙️ Admin", "`/settings → Biznisz`: unlockok, license ár, adó, offline cap, income multiplier, worker idő és anti-monopoly limitek.", False),
+        ],
+    },
+    "heist": {
+        "title": "🎯 Nagy Meló",
+        "description": "Kooperatív, fikciós endgame heistek teljes interaktív party/lobby rendszerrel.",
+        "fields": [
+            ("🎯 Főpanel", "`!heist` / `/heist panel` • célpontok, lobby, gear, meghívók és előzmények egy helyen.", False),
+            ("👥 Party", "Leader meghív játékosokat, mindenki saját szerepkört/loadoutot választ, a leader javasolja a részesedést, amit minden tag külön elfogad.", False),
+            ("🎬 Fázisok", "Felkészülés → Végrehajtás → Kijutás. A rendszer absztrakt játékmechanika, nem használ valós biztonsági vagy műveleti részleteket.", False),
+            ("🚔 Kockázat", "Bukásnál jail, bírság és opcionális gear loss jöhet. Siker esetén a rewardpool a jóváhagyott részesedések szerint oszlik el.", False),
+            ("⚙️ Admin", "`/settings → Nagy Meló`: unlock, cooldown, jail, bírság, gear loss és reward multiplier.", False),
+        ],
+    },
     "crew": {
-        "title": "👥 Crew",
+        "title": "🌙 Frakció",
         "description": "Csapat, közös bank és fejlődési bónuszok.",
         "fields": [
-            ("👥 Alapok", "`!crew` saját Crew • `!crewcreate <név>` létrehozás\n`!crewinvite @tag` meghívás • `!crewaccept` elfogadás • `!crewleave` kilépés", False),
-            ("🏦 Crew Bank", "`!crewdeposit 250k` befizetés • `!crewwithdraw 100k` kivét (Leader) • `!crewupgrade` fejlesztés", False),
+            ("👥 Alapok", "`!crew` saját Frakció • `!crewcreate <név>` létrehozás\n`!crewinvite @tag` meghívás • `!crewaccept` elfogadás • `!crewleave` kilépés", False),
+            ("🏦 Frakció Bank", "`!crewdeposit 250k` befizetés • `!crewwithdraw 100k` kivét (Leader) • `!crewupgrade` fejlesztés", False),
             ("👑 Vezetés", "`!crewpromote` • `!crewdemote` • `!crewkick` • `!crewtransfer`\n`!crewdesc <szöveg>` leírás • `!crewtop` ranglista", False),
         ],
     },
@@ -119,12 +152,15 @@ BUTTONS = (
     ("shop", "Shop", "🛒", discord.ButtonStyle.primary, 0),
     ("progression", "Progression", "🏆", discord.ButtonStyle.primary, 0),
     ("community", "Community", "🌙", discord.ButtonStyle.primary, 0),
-    ("crew", "Crew", "👥", discord.ButtonStyle.secondary, 1),
+    ("crew", "Frakció", "🌙", discord.ButtonStyle.secondary, 1),
     ("profile", "Profil", "👤", discord.ButtonStyle.secondary, 1),
     ("staff", "Staff", "🛡️", discord.ButtonStyle.secondary, 1),
     ("home", "Kezdőlap", "🌙", discord.ButtonStyle.secondary, 1),
     ("music", "Music", "🎵", discord.ButtonStyle.secondary, 2),
     ("fun", "Fun", "🎉", discord.ButtonStyle.secondary, 2),
+    ("social", "Social", "🤝", discord.ButtonStyle.success, 2),
+    ("business", "Biznisz", "🏢", discord.ButtonStyle.success, 2),
+    ("heist", "Nagy Meló", "🎯", discord.ButtonStyle.danger, 2),
 )
 
 

@@ -1,0 +1,27 @@
+Yoru v3.4.3 — Core Bugfix & Help UX
+====================================
+
+FIXED
+- Role Income: az első claim azonnal elérhető, 4 órányi income-mal indul.
+- Blackjack: kezdő 21 esetén a kör automatikusan lezárul; dealer 21 is azonnali eredmény.
+- Blackjack: két kezdő 21 esetén push/refund.
+- Crime / Slut büntetés: a tárca negatívba mehet, így bankba tett pénzzel nem kerülhető meg a büntetés.
+- Failed Rob bírság: teljes bírság levonható negatív tárcába is.
+- Negatív pénz megjelenítés: -$500 000 formátum.
+- /setroleincome: megszűnt a 100M felső limit; k/m/b/t/q formátum és 0=off támogatás.
+
+NEW / UX
+- Teljesen új interaktív !help rendszer.
+- !commands, !cmds és !parancsok ugyanazt az interaktív help menüt nyitják.
+- Új /help slash parancs.
+- Help kategóriák: Economy, Gambling, Shop, Progression, Eventek, Crew, Profil, Staff.
+- Rövid, példás parancsleírások a korábbi egyetlen hosszú parancslista helyett.
+
+ANTI-SPAM
+- Állapotmódosító prefix parancsokra 1.25 mp felhasználónkénti flood-védelem.
+- A túl gyorsan ismételt parancsot a bot válasz nélkül eldobja, és ha van jogosultsága, törli a chatből.
+- A valódi Work/Crime/stb. cooldownok ettől függetlenül változatlanok.
+
+BALANCE
+- ROB_SUCCESS_SHARE továbbra is 60%.
+- A v3.4.2 economy/gambling balance értékei változatlanok.

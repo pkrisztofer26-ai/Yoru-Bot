@@ -76,11 +76,11 @@ ACHIEVEMENT_DEFINITIONS: dict[str, AchievementDefinition] = {
     "prestige_3": AchievementDefinition("🌀 Visszatérő", "Hajts végre 3 prestige-et.", "prestige.count", 3, "prestige"),
     "prestige_5": AchievementDefinition("🌠 Ascended", "Hajts végre 5 prestige-et.", "prestige.count", 5, "prestige"),
     "prestige_10": AchievementDefinition("🪐 Örökös", "Hajts végre 10 prestige-et.", "prestige.count", 10, "prestige"),
-    "crew_join": AchievementDefinition("🤝 Csapatjátékos", "Csatlakozz egy Crew-hoz.", "crew.joined", 1, "social"),
+    "crew_join": AchievementDefinition("🤝 Csapatjátékos", "Csatlakozz egy Frakcióhoz.", "crew.joined", 1, "social"),
     "crew_contrib_25m": AchievementDefinition("💸 Támogató", "Fizess be összesen $2 milliót Crew Bankba.", "crew.contributed", 2_000_000, "social"),
     "crew_contrib_250m": AchievementDefinition("🏦 Mecénás", "Fizess be összesen $10 milliót Crew Bankba.", "crew.contributed", 10_000_000, "social"),
-    "crew_contrib_1b": AchievementDefinition("🐋 Crew Whale", "Fizess be összesen $50 milliót Crew Bankba.", "crew.contributed", 50_000_000, "social"),
-    "crew_upgrade": AchievementDefinition("🏗️ Crew Architect", "Fejlessz egy Crew-t legalább egyszer.", "crew.upgrades", 1, "social"),
+    "crew_contrib_1b": AchievementDefinition("🐋 Crew Whale", "Fizess be összesen $50 milliót a Frakció Bankba.", "crew.contributed", 50_000_000, "social"),
+    "crew_upgrade": AchievementDefinition("🏗️ Crew Architect", "Fejlessz egy Frakciót legalább egyszer.", "crew.upgrades", 1, "social"),
 }
 
 ACHIEVEMENT_DEFINITIONS.update(_series("worker", "Munkás", "🛠️", "work.count", [10, 50, 100, 500, 1000], "activity"))
@@ -90,6 +90,7 @@ ACHIEVEMENT_DEFINITIONS.update(_series("slut", "Éjszakai műszak", "💋", "slu
 ACHIEVEMENT_DEFINITIONS.update(_series("crime", "Bűnöző", "🕵️", "crime.success", [10, 50, 100, 500], "crime"))
 ACHIEVEMENT_DEFINITIONS.update(_series("robber", "Rabló", "🥷", "rob.success", [1, 10, 50, 100], "crime"))
 ACHIEVEMENT_DEFINITIONS.update(_series("gambler", "Szerencsejátékos", "🎰", "gambling.wins", [10, 50, 100, 500, 1000], "gambling"))
+ACHIEVEMENT_DEFINITIONS.update(_series("heist", "Nagy Melós", "🎯", "heist.successes", [1, 10, 50], "heist"))
 ACHIEVEMENT_DEFINITIONS.update(_series("gambles", "High Roller", "🎲", "gambling.plays", [100, 500, 1000, 5000], "gambling"))
 ACHIEVEMENT_DEFINITIONS.update(_series("blackjack", "Blackjack játékos", "🃏", "gambling.blackjack.wins", [25, 100, 500], "gambling"))
 ACHIEVEMENT_DEFINITIONS.update(_series("coinflip", "Pénzfeldobó", "🪙", "gambling.coinflip.wins", [25, 100, 500], "gambling"))
@@ -129,9 +130,10 @@ BADGE_DEFINITIONS: dict[str, BadgeDefinition] = {
     "prestige": BadgeDefinition("🌌", "Újjászületett", "Első prestige teljesítve.", "prestige_1"),
     "ascended": BadgeDefinition("🌠", "Ascended", "5 prestige teljesítve.", "prestige_5"),
     "eternal": BadgeDefinition("🪐", "Örökös", "10 prestige teljesítve.", "prestige_10"),
-    "team_player": BadgeDefinition("🤝", "Csapatjátékos", "$2 millió Crew befizetés.", "crew_contrib_25m"),
-    "patron": BadgeDefinition("🏦", "Mecénás", "$10 millió Crew befizetés.", "crew_contrib_250m"),
-    "crew_architect": BadgeDefinition("🏗️", "Crew Architect", "Legalább egy Crew fejlesztés.", "crew_upgrade"),
+    "team_player": BadgeDefinition("🤝", "Csapatjátékos", "$2 millió Frakció befizetés.", "crew_contrib_25m"),
+    "patron": BadgeDefinition("🏦", "Mecénás", "$10 millió Frakció befizetés.", "crew_contrib_250m"),
+    "crew_architect": BadgeDefinition("🏗️", "Crew Architect", "Legalább egy Frakció fejlesztés.", "crew_upgrade"),
+    "heist_veteran": BadgeDefinition("🎯", "Nagy Meló Veteran", "10 sikeres Nagy Meló.", "heist_10"),
 }
 
 
@@ -164,6 +166,8 @@ TITLE_REQUIREMENTS: dict[str, str | None] = {
     "Támogató": "crew_contrib_25m",
     "Mecénás": "crew_contrib_250m",
     "Crew Architect": "crew_upgrade",
+    "Nagy Melós": "heist_1",
+    "Nagy Meló Veteran": "heist_10",
 }
 
 

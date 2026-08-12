@@ -1,0 +1,16 @@
+Yoru v3.16.0 — Nagy Meló
+
+- Interaction-first co-op Heist / Nagy Meló system.
+- Fictional Hungarian game-world targets with Activity + Prestige gates.
+- Restart-safe party lobbies and three persisted abstract phases.
+- Discord UserSelect invitations with participant accept/decline.
+- Per-player role + loadout selection.
+- Leader-proposed payout cuts; every accepted participant must approve before launch.
+- Abstract gear shop with optional loss on failed runs.
+- Failure consequences: configurable jail, fine, cooldown and gear-loss chance.
+- Success payouts follow accepted cuts; Frakció XP integration included.
+- !heist / /heist panel and !heisttop / /heist top.
+- /settings -> Nagy Meló: ON/OFF, unlock requirements, cooldown, jail, fine, gear loss and reward multiplier.
+- Economy Analytics recognizes Nagy Meló source/sink transactions.
+- Full reset/rebase paths include Nagy Meló economy state.
+- No real-world security/layout or operational bank-robbery details are modeled.

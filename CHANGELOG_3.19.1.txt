@@ -1,0 +1,8 @@
+Yoru v3.19.1 — Casino hotfix + Blackjack visual rework
+
+- Fixed Slots runtime crash when no RNG object is injected.
+- Rebuilt Blackjack Discord UI with large card faces.
+- Added opening deal animation and player draw reveal animation.
+- Improved dealer reveal/draw animation.
+- Removed player-facing V2/rework wording from Casino UI, help and tutorial.
+- Blackjack title is now simply BLACKJACK.

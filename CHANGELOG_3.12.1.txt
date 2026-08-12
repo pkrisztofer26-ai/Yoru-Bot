@@ -1,0 +1,7 @@
+Yoru v3.12.1 — Activity startup hotfix
+
+- Fixed PebbleHost startup crash caused by assigning ActivityService to discord.Client.activity.
+- Activity service now uses the non-reserved bot.activity_service attribute.
+- Updated Profile/Stats Activity integration to use activity_service consistently.
+- Added a regression test that prevents reusing discord.Client.activity for Yoru services.
+- No balance or Activity pacing changes.

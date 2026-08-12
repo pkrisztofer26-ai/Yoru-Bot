@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import importlib.util
+import shutil
+import sys
 from urllib.parse import urlsplit
 
 import discord
@@ -317,6 +320,69 @@ class HomeView(OwnedView):
     @discord.ui.button(label="Community", emoji="🌙", style=discord.ButtonStyle.secondary, row=2)
     async def community(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
         await self.cog.show_community(interaction, self.owner_id)
+
+    @discord.ui.button(label="Activity", emoji="📈", style=discord.ButtonStyle.secondary, row=2)
+    async def activity(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
+        activity_cog = self.cog.bot.get_cog("ActivityCog")
+        if activity_cog is None or not hasattr(activity_cog, "show_settings"):
+            return await interaction.response.send_message("❌ Az Activity modul jelenleg nem elérhető.", ephemeral=True)
+        await activity_cog.show_settings(interaction, self.owner_id)
+
+    @discord.ui.button(label="Social", emoji="🛒", style=discord.ButtonStyle.secondary, row=2)
+    async def social(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
+        social_cog = self.cog.bot.get_cog("SocialEconomyCog")
+        if social_cog is None or not hasattr(social_cog, "show_settings"):
+            return await interaction.response.send_message("❌ A Social Economy settings jelenleg nem elérhető.", ephemeral=True)
+        await social_cog.show_settings(interaction, self.owner_id)
+
+    @discord.ui.button(label="Frakció", emoji="⚔️", style=discord.ButtonStyle.secondary, row=3)
+    async def faction(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
+        crew_cog = self.cog.bot.get_cog("CrewCog")
+        if crew_cog is None or not hasattr(crew_cog, "show_settings"):
+            return await interaction.response.send_message("❌ A Frakció settings jelenleg nem elérhető.", ephemeral=True)
+        await crew_cog.show_settings(interaction, self.owner_id)
+
+    @discord.ui.button(label="Biznisz", emoji="🏢", style=discord.ButtonStyle.secondary, row=3)
+    async def business(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
+        business_cog = self.cog.bot.get_cog("BusinessCog")
+        if business_cog is None or not hasattr(business_cog, "show_settings"):
+            return await interaction.response.send_message("❌ A Biznisz Empire settings jelenleg nem elérhető.", ephemeral=True)
+        await business_cog.show_settings(interaction, self.owner_id)
+
+    @discord.ui.button(label="Nagy Meló", emoji="🎯", style=discord.ButtonStyle.secondary, row=3)
+    async def heist(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
+        heist_cog = self.cog.bot.get_cog("HeistCog")
+        if heist_cog is None or not hasattr(heist_cog, "show_settings"):
+            return await interaction.response.send_message("❌ A Nagy Meló settings jelenleg nem elérhető.", ephemeral=True)
+        await heist_cog.show_settings(interaction, self.owner_id)
+
+    @discord.ui.button(label="Tutorial", emoji="📚", style=discord.ButtonStyle.secondary, row=3)
+    async def tutorial(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
+        tutorial_cog = self.cog.bot.get_cog("TutorialCog")
+        if tutorial_cog is None or not hasattr(tutorial_cog, "show_settings"):
+            return await interaction.response.send_message("❌ A Tutorial settings jelenleg nem elérhető.", ephemeral=True)
+        await tutorial_cog.show_settings(interaction, self.owner_id)
+
+    @discord.ui.button(label="Diagnosztika", emoji="🩺", style=discord.ButtonStyle.primary, row=3)
+    async def diagnostics(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
+        await self.cog.show_diagnostics(interaction, self.owner_id)
+
+    @discord.ui.button(label="Casino", emoji="🎰", style=discord.ButtonStyle.secondary, row=4)
+    async def casino(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
+        casino_cog = self.cog.bot.get_cog("CasinoCog")
+        if casino_cog is None or not hasattr(casino_cog, "show_settings"):
+            return await interaction.response.send_message("❌ A Casino settings jelenleg nem elérhető.", ephemeral=True)
+        await casino_cog.show_settings(interaction, self.owner_id)
+
+
+class DiagnosticsView(OwnedView):
+    @discord.ui.button(label="Frissítés", emoji="🔄", style=discord.ButtonStyle.primary, row=0)
+    async def refresh(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
+        await self.cog.show_diagnostics(interaction, self.owner_id)
+
+    @discord.ui.button(label="Vissza", emoji="⬅️", style=discord.ButtonStyle.secondary, row=0)
+    async def back(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
+        await self.cog.show_home(interaction, self.owner_id)
 
 
 class RuleSelect(discord.ui.Select):
@@ -1929,6 +1995,18 @@ class SettingsCog(commands.Cog):
             if fun_cog is not None and hasattr(fun_cog, "home_status")
             else "⚪ Nem elérhető"
         )
+        activity_cog = self.bot.get_cog("ActivityCog")
+        activity_status = (
+            await activity_cog.home_status(guild)
+            if activity_cog is not None and hasattr(activity_cog, "home_status")
+            else "⚪ Nem elérhető"
+        )
+        social_cog = self.bot.get_cog("SocialEconomyCog")
+        social_status = (
+            await social_cog.home_status(guild)
+            if social_cog is not None and hasattr(social_cog, "home_status")
+            else "⚪ Nem elérhető"
+        )
         economy_events_cog = self.bot.get_cog("EconomyEventsSettingsCog")
         economy_status = (
             await economy_events_cog.economy_home_status(guild)
@@ -1938,6 +2016,30 @@ class SettingsCog(commands.Cog):
         events_status = (
             await economy_events_cog.events_home_status(guild)
             if economy_events_cog is not None and hasattr(economy_events_cog, "events_home_status")
+            else "⚪ Nem elérhető"
+        )
+        crew_cog = self.bot.get_cog("CrewCog")
+        faction_status = (
+            await crew_cog.home_status(guild)
+            if crew_cog is not None and hasattr(crew_cog, "home_status")
+            else "⚪ Nem elérhető"
+        )
+        business_cog = self.bot.get_cog("BusinessCog")
+        business_status = (
+            await business_cog.home_status(guild)
+            if business_cog is not None and hasattr(business_cog, "home_status")
+            else "⚪ Nem elérhető"
+        )
+        heist_cog = self.bot.get_cog("HeistCog")
+        heist_status = (
+            await heist_cog.home_status(guild)
+            if heist_cog is not None and hasattr(heist_cog, "home_status")
+            else "⚪ Nem elérhető"
+        )
+        tutorial_cog = self.bot.get_cog("TutorialCog")
+        tutorial_status = (
+            await tutorial_cog.home_status(guild)
+            if tutorial_cog is not None and hasattr(tutorial_cog, "home_status")
             else "⚪ Nem elérhető"
         )
         embed = base_embed(
@@ -1955,8 +2057,109 @@ class SettingsCog(commands.Cog):
         embed.add_field(name="🎉 Fun", value=fun_status, inline=True)
         embed.add_field(name="💰 Economy", value=economy_status, inline=True)
         embed.add_field(name="🎁 Events", value=events_status, inline=True)
-        embed.add_field(name="🔜 Következő modul", value="🌐 Web Dashboard / Profile & Leveling", inline=True)
+        embed.add_field(name="📈 Activity", value=activity_status, inline=True)
+        embed.add_field(name="🛒 Social Economy", value=social_status, inline=True)
+        embed.add_field(name="⚔️ Frakció", value=faction_status, inline=True)
+        embed.add_field(name="🏢 Biznisz", value=business_status, inline=True)
+        embed.add_field(name="🎯 Nagy Meló", value=heist_status, inline=True)
+        embed.add_field(name="📚 Tutorial", value=tutorial_status, inline=True)
+        embed.add_field(name="🩺 Diagnosztika", value="Jogosultságok • DB • slash budget • runtime", inline=True)
         embed.set_footer(text="Yoru • Settings • Csak Manage Server jogosultsággal")
+        return embed
+
+    @staticmethod
+    def _human_bytes(value: int) -> str:
+        amount = float(max(0, int(value)))
+        for unit in ("B", "KB", "MB", "GB"):
+            if amount < 1024 or unit == "GB":
+                return f"{amount:.1f} {unit}" if unit != "B" else f"{int(amount)} B"
+            amount /= 1024
+        return f"{amount:.1f} GB"
+
+    def _runtime_slash_status(self, guild: discord.Guild) -> tuple[int, str]:
+        local = self.bot.tree.get_commands(guild=discord.Object(id=guild.id))
+        commands_now = local or self.bot.tree.get_commands()
+        top_level = len(commands_now)
+        groups = []
+        for command in commands_now:
+            children = getattr(command, "commands", None)
+            if children is not None:
+                groups.append((str(getattr(command, "name", "group")), len(children)))
+        if not groups:
+            return top_level, "nincs group adat"
+        name, count = max(groups, key=lambda item: item[1])
+        return top_level, f"legnagyobb: /{name} {count}/25"
+
+    async def diagnostics_embed(self, guild: discord.Guild) -> discord.Embed:
+        health = await self.db.health_report()
+        me = guild.me
+        perms = me.guild_permissions if me is not None else discord.Permissions.none()
+        required = (
+            ("Üzenetek", "manage_messages"),
+            ("Rangok", "manage_roles"),
+            ("Csatornák", "manage_channels"),
+            ("Timeout", "moderate_members"),
+            ("Embed", "embed_links"),
+            ("Fájl", "attach_files"),
+            ("Voice connect", "connect"),
+            ("Voice speak", "speak"),
+        )
+        perm_lines = [f"{'✅' if getattr(perms, attr, False) else '❌'} {label}" for label, attr in required]
+        top_level, group_status = self._runtime_slash_status(guild)
+        reserve = max(0, 90 - top_level)
+        persistent_views = len(getattr(self.bot, "persistent_views", []) or [])
+        bot_role = me.top_role if me is not None else None
+        roles_above = 0
+        if bot_role is not None:
+            roles_above = sum(1 for role in guild.roles if not role.is_default() and role.position > bot_role.position)
+
+        db_ok = str(health["quick_check"]).lower() == "ok"
+        embed = base_embed(
+            "🩺 Yoru • Diagnosztika",
+            "Élő szerver/runtime ellenőrzés. Nem jelenít meg tokent, jelszót vagy más titkos konfigurációt.",
+            SUCCESS if db_ok else DANGER,
+        )
+        embed.add_field(
+            name="🤖 Runtime",
+            value=(
+                f"Gateway: **{round(self.bot.latency * 1000)} ms**\n"
+                f"Python: **{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}**\n"
+                f"discord.py: **{discord.__version__}**\n"
+                f"Cogok: **{len(self.bot.cogs)}** • persistent view: **{persistent_views}**"
+            ),
+            inline=True,
+        )
+        embed.add_field(
+            name="⚙️ Discord limitek",
+            value=f"Top-level slash: **{top_level}/90**\nSzabad tartalék: **{reserve}**\n{group_status}",
+            inline=True,
+        )
+        embed.add_field(
+            name="🗃️ SQLite",
+            value=(
+                f"{'✅' if db_ok else '❌'} quick_check: **{health['quick_check']}**\n"
+                f"Journal: **{str(health['journal_mode']).upper()}**\n"
+                f"DB méret: **{self._human_bytes(int(health['file_bytes']))}**\n"
+                f"Szabad lapok: **{health['free_pages']}**"
+            ),
+            inline=True,
+        )
+        embed.add_field(name="🔐 Yoru jogosultságok", value="\n".join(perm_lines), inline=True)
+        role_text = "Nincs guild member cache." if bot_role is None else f"Top role: **@{bot_role.name}**\nFölötte lévő rangok: **{roles_above}**"
+        if bot_role is not None and roles_above:
+            role_text += "\n⚠️ A fölötte lévő rangokat Yoru nem tudja kezelni."
+        embed.add_field(name="🎭 Role hierarchy", value=role_text, inline=True)
+        music_cog = self.bot.get_cog("MusicCog")
+        spotify_cache = len(getattr(music_cog, "_spotify_metadata_cache", {})) if music_cog else 0
+        stream_cache = len(getattr(music_cog, "_stream_url_cache", {})) if music_cog else 0
+        deps = (
+            f"{'✅' if shutil.which('ffmpeg') else '❌'} FFmpeg\n"
+            f"{'✅' if importlib.util.find_spec('spotdl') else '❌'} spotDL Fast Resolver\n"
+            f"{'✅' if importlib.util.find_spec('yt_dlp') else '❌'} yt-dlp audio\n"
+            f"Cache: **{spotify_cache}** metadata / **{stream_cache}** stream"
+        )
+        embed.add_field(name="🎵 Music runtime", value=deps, inline=True)
+        embed.set_footer(text="Yoru • Diagnosztika • Frissítés gombbal újramérhető")
         return embed
 
     async def community_embed(self, guild: discord.Guild) -> tuple[discord.Embed, dict[str, bool]]:
@@ -2474,6 +2677,9 @@ class SettingsCog(commands.Cog):
 
     async def show_home(self, interaction: discord.Interaction, owner_id: int) -> None:
         await interaction.response.edit_message(embed=await self.home_embed(interaction.guild), view=HomeView(self, owner_id))
+
+    async def show_diagnostics(self, interaction: discord.Interaction, owner_id: int) -> None:
+        await interaction.response.edit_message(embed=await self.diagnostics_embed(interaction.guild), view=DiagnosticsView(self, owner_id))
 
     async def show_automod(self, interaction: discord.Interaction, owner_id: int) -> None:
         enabled = await self.settings.get_automod_enabled(interaction.guild_id)

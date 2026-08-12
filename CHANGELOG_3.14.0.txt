@@ -1,0 +1,13 @@
+Yoru v3.14.0 — Frakció 2.0
+
+- User-facing Crew -> Frakció transition while preserving legacy crew_* DB ids and command aliases.
+- Full interaction-first !crew / /crew panel with Overview, Shared Objectives, Perk Tree, Members and Wars pages.
+- Frakció XP + Level 1-100, contribution XP and centralized stat/activity event integration.
+- 3 daily + 3 weekly shared objectives with automatic Frakció XP + bank rewards.
+- Four-branch perk tree: Treasury, Objectives, Momentum and War; 1 perk point every 5 Frakció levels.
+- Custom internal Frakció ranks with granular permissions: invite, kick, bank withdraw, infrastructure upgrade, profile, ranks, perks and wars.
+- Objective-based Frakció Wars with challenge/accept/decline, 24h active window, live shared score and automatic settlement.
+- /settings -> Frakció admin UI: master enable, objectives enable, wars enable and XP multiplier tuning.
+- Activity chat/voice XP now also feeds Frakció activity objectives/progression for faction members.
+- Existing Frakció identity/membership, bank, infrastructure, prestige compatibility and old crew commands remain intact.
+- No new top-level slash command was added.

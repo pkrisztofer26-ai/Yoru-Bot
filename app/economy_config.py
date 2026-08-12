@@ -141,31 +141,24 @@ INTEREST_TIERS = [
 ]
 ROLE_INCOME_BALANCE_WARNING_PER_HOUR = 15_000
 
-# --- Gambling ---
-# NINCS max bet. `all` és milliárd/trillió fölötti tétek is működhetnek,
-# ha a játékos walletje fedezi. A house edge tartja kordában hosszú távon.
-GAMBLING_MIN_BET = 5_000
-COINFLIP_TOTAL_PAYOUT = 1.90        # 95.0% RTP
-DICE_TOTAL_PAYOUT = 5.50            # 91.7% RTP
-ROULETTE_EVEN_TOTAL_PAYOUT = 1.92  # ~93.4% RTP
-ROULETTE_SINGLE_TOTAL_PAYOUT = 34.0 # ~91.9% RTP
-CHICKEN_WIN_CHANCE = 0.46
-CHICKEN_TOTAL_PAYOUT = 2.00         # 92% RTP
-HIGHLOW_TOTAL_PAYOUT = 1.88         # tie refunddal ~94.5% RTP
-RPS_TOTAL_PAYOUT = 1.85             # tie refunddal 95% RTP
-BLACKJACK_WIN_TOTAL_PAYOUT = 2.00
+# --- Gambling / Casino V2 compatibility aliases ---
+# A payoutok tényleges source-of-truth fájlja: app/casino_config.py
+from app import casino_config as casino
 
-SLOTS_SYMBOLS = ("🍒", "🍋", "🍇", "🔔", "💎", "7️⃣")
-SLOTS_WEIGHTS = (30, 26, 20, 13, 8, 3)
-SLOTS_PAIR_TOTAL_PAYOUT = 0.80
-SLOTS_TRIPLE_TOTAL_PAYOUT = {
-    "🍒": 8.0,
-    "🍋": 10.0,
-    "🍇": 12.0,
-    "🔔": 18.0,
-    "💎": 30.0,
-    "7️⃣": 80.0,
-}  # ~94.44% RTP
+GAMBLING_MIN_BET = casino.MIN_BET
+COINFLIP_TOTAL_PAYOUT = casino.COINFLIP_TOTAL_PAYOUT
+DICE_TOTAL_PAYOUT = casino.DICE_TOTAL_PAYOUT
+ROULETTE_EVEN_TOTAL_PAYOUT = casino.ROULETTE_EVEN_TOTAL_PAYOUT
+ROULETTE_SINGLE_TOTAL_PAYOUT = casino.ROULETTE_SINGLE_TOTAL_PAYOUT
+CHICKEN_WIN_CHANCE = casino.CHICKEN_WIN_CHANCE
+CHICKEN_TOTAL_PAYOUT = casino.CHICKEN_TOTAL_PAYOUT
+HIGHLOW_TOTAL_PAYOUT = casino.HIGHLOW_TOTAL_PAYOUT
+RPS_TOTAL_PAYOUT = casino.RPS_TOTAL_PAYOUT
+BLACKJACK_WIN_TOTAL_PAYOUT = casino.BLACKJACK_WIN_TOTAL_PAYOUT
+SLOTS_SYMBOLS = casino.SLOTS_SYMBOLS
+SLOTS_WEIGHTS = casino.SLOTS_WEIGHTS
+SLOTS_PAIR_TOTAL_PAYOUT = casino.SLOTS_PAIR_TOTAL_PAYOUT
+SLOTS_TRIPLE_TOTAL_PAYOUT = casino.SLOTS_TRIPLE_TOTAL_PAYOUT
 
 # --- Sorsjegy / lootbox ---
 SCRATCH_TIERS = (

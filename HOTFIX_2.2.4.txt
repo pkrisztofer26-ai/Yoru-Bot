@@ -1,0 +1,3 @@
+Yoru v2.2.4 - economy_config completeness hotfix
+Fix: restored all config constants used by economy/extras services.
+Validated: every eco.X reference resolves; full project compileall passes.

@@ -1,0 +1,12 @@
+Yoru v3.13.2 — Server Shop Custom Role hotfix
+
+- Custom Role backend aktiválva a meglévő interaktív Server Shop UI mögött.
+- Új reward típusok: custom_role és temporary_custom_role.
+- Custom role-nál NEM kell létező Discord Role ID.
+- A játékos vásárláskor modalban adja meg a role nevét és HEX színét.
+- Yoru ezután létrehozza a role-t és kiosztja a vásárlónak.
+- temporary_custom_role lejáratkor automatikusan törlődik a szerverről.
+- A delete_on_expire flag adatbázisban persistálódik és régi DB-n automatikusan migrálódik.
+- Existing role és temporary existing role továbbra is meglévő Role ID-val működik.
+- A Settings reward editorban a Reward / ID mező custom role típusoknál opcionális és üresen hagyható.
+- Hibás role create/assign esetén automatikus rollback + refund.

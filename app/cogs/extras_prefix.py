@@ -7,6 +7,7 @@ from app.amounts import parse_amount
 from app.services.economy import CooldownError, JailError, EconomyService
 from app.services.extras import ExtrasService
 from app.ui import DANGER, GOLD, SUCCESS, action_embed, cooldown_embed, error_embed, money, player_embed
+from app.cogs.access_utils import handle_wrong_economy_channel, handle_wrong_gambling_channel
 
 
 class ExtrasPrefixCog(commands.Cog):
@@ -27,10 +28,35 @@ class ExtrasPrefixCog(commands.Cog):
         feature = self._FEATURES.get(ctx.command.name)
         if feature is None:
             return
+
+        if feature == "gambling":
+            try:
+                await self.economy.prepare_context(ctx.guild.id)
+                await self.economy.guild_settings.require_feature(ctx.guild.id, "gambling")
+            except ValueError as error:
+                await ctx.send(embed=error_embed(ctx.author, str(error)))
+                raise commands.CheckFailure(str(error)) from error
+            try:
+                await self.economy.guild_settings.require_channel(
+                    ctx.guild.id, ctx.channel.id, getattr(ctx.channel, "category_id", None)
+                )
+            except ValueError as error:
+                await handle_wrong_gambling_channel(ctx, self.economy)
+                raise commands.CheckFailure(str(error)) from error
+            return
+
         try:
-            await self.economy.require_access(ctx.guild.id, feature, ctx.channel.id, getattr(ctx.channel, "category_id", None))
+            await self.economy.prepare_context(ctx.guild.id)
+            await self.economy.guild_settings.require_feature(ctx.guild.id, feature)
         except ValueError as error:
             await ctx.send(embed=error_embed(ctx.author, str(error)))
+            raise commands.CheckFailure(str(error)) from error
+        try:
+            await self.economy.guild_settings.require_channel(
+                ctx.guild.id, ctx.channel.id, getattr(ctx.channel, "category_id", None)
+            )
+        except ValueError as error:
+            await handle_wrong_economy_channel(ctx, self.economy)
             raise commands.CheckFailure(str(error)) from error
 
     @commands.command(name="weekly", aliases=["wk", "week"])
@@ -91,70 +117,46 @@ class ExtrasPrefixCog(commands.Cog):
     @commands.command(name="chickenfight", aliases=["cock", "fight", "chicken"])
     @commands.guild_only()
     async def chickenfight(self, ctx: commands.Context, bet: str) -> None:
+        cog = self.bot.get_cog("ExtrasCog")
+        if cog is None:
+            return await ctx.send(embed=error_embed(ctx.author, "A gambling modul nem érhető el."))
         wallet, _ = await self.economy.balance(ctx.guild.id, ctx.author.id)
-        try:
-            parsed = parse_amount(bet, wallet)
-            won, opponent, amount, wallet = await self.extras.chickenfight(ctx.guild.id, ctx.author.id, parsed)
-        except JailError as e: return await ctx.send(embed=error_embed(ctx.author, f"Börtönben vagy még: <t:{int(e.ready_at.timestamp())}:R>", title="🚔 Börtön"))
+        try: parsed = parse_amount(bet, wallet)
         except ValueError as e: return await ctx.send(embed=error_embed(ctx.author, str(e)))
-        embed = player_embed("🐔 Chicken Fight", ctx.author, color=SUCCESS if won else DANGER)
-        embed.add_field(name="⚔️ Ellenfél", value=f"**{opponent}**", inline=False)
-        payout = parsed + amount if won else 0
-        embed.add_field(name="🎟️ Tét", value=f"**{money(parsed)}**", inline=True)
-        embed.add_field(name="Eredmény", value=(f"✅ **+{money(amount)}**" if won else f"❌ **-{money(amount)}**"), inline=True)
-        embed.add_field(name="💵 Kifizetés", value=f"**{money(payout)}**", inline=True)
-        embed.add_field(name="💰 Egyenleg", value=f"**{money(wallet)}**", inline=False)
-        if not won:
-            embed.add_field(name="🐔 Chicken", value="**A Chickened elpusztult a csatában.** Vegyél újat a shopból a következő harchoz.", inline=False)
-        await ctx.send(embed=embed)
+        await cog.run_chicken_prefix(ctx, parsed)
 
     @commands.command(name="highlow", aliases=["hl"])
     @commands.guild_only()
-    async def highlow(self, ctx: commands.Context, choice: str, bet: str) -> None:
+    async def highlow(self, ctx: commands.Context, first: str, second: str | None = None) -> None:
+        cog = self.bot.get_cog("ExtrasCog")
+        if cog is None:
+            return await ctx.send(embed=error_embed(ctx.author, "A gambling modul nem érhető el."))
         wallet, _ = await self.economy.balance(ctx.guild.id, ctx.author.id)
-        try:
-            parsed = parse_amount(bet, wallet)
-            card, result, amount, wallet = await self.extras.highlow(ctx.guild.id, ctx.author.id, choice, parsed)
-        except JailError as e: return await ctx.send(embed=error_embed(ctx.author, f"Börtönben vagy még: <t:{int(e.ready_at.timestamp())}:R>", title="🚔 Börtön"))
+        bet_text = first if second is None else second
+        # Backwards compatibility: `!hl high 100k` still opens the new button-based game.
+        if second is not None:
+            try:
+                parse_amount(first, wallet)
+                bet_text = first
+            except ValueError:
+                bet_text = second
+        try: parsed = parse_amount(bet_text, wallet)
         except ValueError as e: return await ctx.send(embed=error_embed(ctx.author, str(e)))
-        color = GOLD if result == "tie" else (SUCCESS if result == "win" else DANGER)
-        embed = player_embed("🃏 High / Low", ctx.author, description=f"A húzott lap: **{card}**", color=color)
-        embed.add_field(name="🎯 Tipp", value=f"**{choice.title()}**", inline=True)
-        embed.add_field(name="🎟️ Tét", value=f"**{money(parsed)}**", inline=True)
-        result_text = f"🤝 **{money(0)}**" if result == "tie" else (f"✅ **+{money(amount)}**" if result == "win" else f"❌ **-{money(amount)}**")
-        payout = parsed if result == "tie" else (parsed + amount if result == "win" else 0)
-        embed.add_field(name="Eredmény", value=result_text, inline=True)
-        embed.add_field(name="💵 Kifizetés", value=f"**{money(payout)}**", inline=True)
-        embed.add_field(name="💰 Egyenleg", value=f"**{money(wallet)}**", inline=False)
-        await ctx.send(embed=embed)
+        await cog.start_highlow_prefix(ctx, parsed)
 
     @commands.command(name="rps", aliases=["kpo"])
     @commands.guild_only()
     async def rps(self, ctx: commands.Context, first: str, second: str) -> None:
+        cog = self.bot.get_cog("ExtrasCog")
+        if cog is None:
+            return await ctx.send(embed=error_embed(ctx.author, "A gambling modul nem érhető el."))
         wallet, _ = await self.economy.balance(ctx.guild.id, ctx.author.id)
         choices = {"rock", "r", "ko", "kő", "paper", "p", "papir", "papír", "scissors", "s", "ollo", "olló"}
-        first_norm = first.lower().strip()
-        second_norm = second.lower().strip()
-        if first_norm in choices:
-            choice, bet = first, second
-        elif second_norm in choices:
-            choice, bet = second, first
-        else:
-            return await ctx.send(embed=error_embed(ctx.author, "Használat: `!rps rock 25k` vagy `!rps 25k rock`."))
-        try:
-            parsed = parse_amount(bet, wallet)
-            player, bot, profit, wallet = await self.extras.rps(ctx.guild.id, ctx.author.id, choice, parsed)
-        except JailError as e: return await ctx.send(embed=error_embed(ctx.author, f"Börtönben vagy még: <t:{int(e.ready_at.timestamp())}:R>", title="🚔 Börtön"))
+        first_norm = first.lower().strip(); second_norm = second.lower().strip()
+        if first_norm in choices: choice, bet = first, second
+        elif second_norm in choices: choice, bet = second, first
+        else: return await ctx.send(embed=error_embed(ctx.author, "Használat: `!rps rock 25k` vagy `!rps 25k rock`."))
+        try: parsed = parse_amount(bet, wallet)
         except ValueError as e: return await ctx.send(embed=error_embed(ctx.author, str(e)))
-        icons = {"rock":"🪨","paper":"📄","scissors":"✂️"}
-        color = GOLD if profit == 0 else (SUCCESS if profit > 0 else DANGER)
-        embed = player_embed("✂️ Kő • Papír • Olló", ctx.author, color=color)
-        embed.add_field(name="Te", value=f"{icons[player]} **{player.title()}**", inline=True)
-        embed.add_field(name="Yoru", value=f"{icons[bot]} **{bot.title()}**", inline=True)
-        embed.add_field(name="🎟️ Tét", value=f"**{money(parsed)}**", inline=True)
-        result_text = f"🤝 **Döntetlen • {money(0)}**" if profit == 0 else (f"✅ **+{money(profit)}**" if profit > 0 else f"❌ **-{money(abs(profit))}**")
-        payout = parsed + profit if profit >= 0 else 0
-        embed.add_field(name="Eredmény", value=result_text, inline=True)
-        embed.add_field(name="💵 Kifizetés", value=f"**{money(payout)}**", inline=True)
-        embed.add_field(name="💰 Egyenleg", value=f"**{money(wallet)}**", inline=False)
-        await ctx.send(embed=embed)
+        await cog.run_rps_prefix(ctx, choice, parsed)
+

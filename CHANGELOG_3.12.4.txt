@@ -1,0 +1,6 @@
+Yoru v3.12.4 — Unified Economy Channel Cleanup
+
+- Prefix economy commands now use the same delete + private DM cleanup as gambling when used outside configured economy locations.
+- Applies to core economy guards and Extras prefix economy guards, plus Black Market prefix commands.
+- Public leaderboards remain exempt from location restrictions.
+- Feature-disabled errors remain distinct from location errors.

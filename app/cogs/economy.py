@@ -307,8 +307,8 @@ class EconomyCog(commands.Cog):
     async def _send_top(self, interaction: discord.Interaction, category: str) -> None:
         if interaction.guild_id is None:
             return
-        if not await self._guard(interaction):
-            return
+        # /top is read-only community information and is intentionally public
+        # in every text channel, independent of the economy location allowlist.
         rows = await self.economy.leaderboard(interaction.guild_id, category, 10)
         labels = {
             "money":"💰 Vagyon", "wallet":"💵 Tárca", "bank":"🏦 Bank",
@@ -319,6 +319,8 @@ class EconomyCog(commands.Cog):
             "scratch":"🎟️ Lekapart sorsjegyek", "weekly":"📅 Weekly átvételek",
             "level":"⭐ Szint / XP", "investment":"📈 Befektetés profit",
             "jackpot":"🎰 Jackpot győzelem", "lottery":"🎟️ Lottery győzelem",
+            "activity":"📈 Activity Level", "activity_xp":"✨ Activity XP",
+            "chat":"💬 Chat üzenetek", "chatxp":"🗨️ Chat XP", "voice":"🎙️ Voice idő",
         }
         medals = ["🥇", "🥈", "🥉"]
         lines = []
@@ -331,6 +333,16 @@ class EconomyCog(commands.Cog):
                 shown = f"{score:,} XP".replace(",", " ")
             elif category == "daily":
                 shown = f"{score} nap"
+            elif category == "activity":
+                shown = f"Activity Level {score}"
+            elif category in {"activity_xp", "chatxp"}:
+                shown = f"{score:,} XP".replace(",", " ")
+            elif category == "chat":
+                shown = f"{score:,} üzenet".replace(",", " ")
+            elif category == "voice":
+                minutes = score // 60
+                hours, minutes = divmod(minutes, 60)
+                shown = f"{hours}ó {minutes}p" if hours else f"{minutes} perc"
             else:
                 shown = f"{score} db"
             member = interaction.guild.get_member(user_id) if interaction.guild else None
@@ -362,6 +374,11 @@ class EconomyCog(commands.Cog):
         app_commands.Choice(name="Befektetés profit", value="investment"),
         app_commands.Choice(name="Jackpot győzelem", value="jackpot"),
         app_commands.Choice(name="Lottery győzelem", value="lottery"),
+        app_commands.Choice(name="Activity Level", value="activity"),
+        app_commands.Choice(name="Activity XP", value="activity_xp"),
+        app_commands.Choice(name="Chat üzenetek", value="chat"),
+        app_commands.Choice(name="Chat XP", value="chatxp"),
+        app_commands.Choice(name="Voice idő", value="voice"),
     ])
     async def top(self, interaction: discord.Interaction, kategoria: app_commands.Choice[str]) -> None:
         await self._send_top(interaction, kategoria.value)

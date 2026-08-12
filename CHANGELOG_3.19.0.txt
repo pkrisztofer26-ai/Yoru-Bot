@@ -1,0 +1,38 @@
+Yoru Bot v3.19.0 — Casino V2 Main Rework
+===========================================
+
+BLACKJACK V2
+- Hit / Stand / Double Down / Split / Insurance teljes interaktív UI.
+- Valódi 52 lapos deck és több hand támogatás split esetén.
+- Double/Split/Insurance extra tétek a Casino Core reserve_extra ledger útvonalon mennek.
+- Natural Blackjack: klasszikus 3:2 profit (2.5x total payout).
+- Dealer hole-card reveal + több frame-es dealer animation.
+- Bust UX: ha minden player hand bust, Yoru nem játssza végig félrevezetően a dealer draw-t.
+- Game végén az input gombok letiltódnak; más user UI kattintása blokkolt.
+
+SLOTS V2
+- 5×3 grid, 10 paylines.
+- Normál symbolok + ⭐ Wild + 💰 Scatter.
+- Scatter-triggerelt Free Spins ugyanabban a game sessionben, automatikus feature futással.
+- Balról jobbra megálló 5-frame reel animation.
+- Központi symbol weight/paytable/free-spin config.
+- RTP simulator + release regression test.
+
+ROULETTE V2
+- Guildenként közös aktív Roulette table / közös wheel result.
+- Egy player egy roundon belül több fogadást tehet; extra fogadások ugyanahhoz a Casino sessionhöz reserve-olódnak.
+- Betek: Red/Black, Odd/Even, 1–18/19–36, 1st/2nd/3rd dozen, 1st/2nd/3rd column, straight 0–36.
+- Betting phase + több frame-es lassuló spin animation.
+- Minden résztvevő ugyanazt a round resultot kapja, saját P/L és Game ID kijelzéssel.
+- Race protection: lejárt betting round nem cserélhető le settlement előtt.
+
+CASINO LOBBY / PARITY
+- `/casino blackjack`, `/casino slots`, `/casino roulette` direct entrypointok.
+- `/casino lobby` modern navigáció Blackjack/Slots/Roulette/Stats/History/Jackpot gombokkal.
+- `!bj`, `!sl`, `!r` továbbra is shortcut, de ugyanarra a V2 service/backendre fut.
+- Help + Player Tutorial frissítve a Casino V2 Main Rework szabályaira.
+
+COMPATIBILITY / SAFETY
+- v3.18.0 Casino Core, Game ID, Ledger, restart recovery, jackpot hook és meglévő DB adatok megmaradnak.
+- `.env` és adatbázis nincs a release ZIP-ben.
+- Existing quick games nem lettek eltávolítva; teljes V2 reworkjük a v3.20.0 batch része.

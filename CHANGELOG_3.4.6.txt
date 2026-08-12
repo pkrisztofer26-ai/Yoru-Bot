@@ -1,0 +1,16 @@
+Yoru v3.4.6 — Negative Wallet Recovery Hotfix
+
+Fix
+- Negatív tárcával is használhatóak a pénzkereső economy parancsok (Work, Daily, Beg, Search, sikeres Crime/Slut stb.).
+- A pozitív jóváírás most mindig csökkenti az adósságot / növeli a walletet akkor is, ha az eredmény még negatív marad.
+- Példa: -$5M wallet + $700k Work = -$4.3M wallet, nem hiba.
+
+Safety
+- Gambling, shop, pay, deposit és más költési műveletek továbbra sem engednek pénzt elkölteni negatív vagy elégtelen walletből.
+- Crime/Slut bukás továbbra is negatívba viheti a walletet.
+- Rob saját kockázati fedezet szabálya változatlan.
+- A v3.4.5 economy balance értékei nem változtak.
+
+Compatibility
+- Nincs DB migráció.
+- .env és data/vaultbot.db nincs az update ZIP-ben.

@@ -1,15 +1,24 @@
 # Yoru Roadmap
 
-_Last updated: 2026-08-11_
+_Last updated: 2026-08-12_
 
 This is the agreed long-term development plan for Yoru. Existing stable features should be preserved unless a roadmap item explicitly changes them. Releases are delivered as a complete ready-to-upload project archive; the live `.env` and live database are never included.
+
+## Current Casino UX standard (v3.19.4)
+
+- One active Casino game per player/guild.
+- Game-first, mobile-friendly visual hierarchy.
+- Client-side animation where possible; CPU rendering stays off the asyncio event loop.
+- Animated state is replaced by a static final result image after settlement.
+- Shareable game visuals include the player's display name.
+- This standard applies to every future Casino rework/new game.
 
 ## Core design decisions
 
 - **Activity Level is separate** from the existing Yoru economy/progression level.
 - Activity Level is earned from real Discord **chat + voice activity** with anti-farm rules.
 - Yoru **automatically assigns milestone Discord roles** when members reach configured Activity Levels. The previous milestone role is removed when appropriate so Role Income does not unintentionally stack.
-- Milestone roles can use the existing **Role Income** system.
+- Milestone roles can use the existing **Role Income** system. Since v3.17.5 the ladder is fully dynamic, DB-persisted and Discord-role appearance syncs back to the DB.
 - The existing **Crew** feature is renamed user-facing to **Frakció**. Internal `crew_*` database names may remain for safe backwards compatibility.
 - **Biznisz** is a true **late-game/endgame** system, not an early passive-income command.
 - Proposed Biznisz unlock gate: meaningful Activity Level + Prestige progression + a permanent paid Business License. Exact numbers are finalized after the Activity XP curve is balanced.
@@ -65,7 +74,9 @@ This is the agreed long-term development plan for Yoru. Existing stable features
 - No mandatory Lavalink/Java dependency; managed-host/PebbleHost compatibility remains the priority.
 - This does **not** claim direct Spotify audio streaming: Spotify metadata is resolved to playable external audio sources.
 
-## v3.12 — Activity System
+## ✅ v3.12 — Activity System
+
+**Status:** implemented in v3.12.0.
 
 A separate Discord-activity progression layer.
 
@@ -95,11 +106,19 @@ A separate Discord-activity progression layer.
 ### Settings
 - `/settings -> Activity / Progression`;
 - Chat/Voice XP toggles and multipliers;
-- milestone role management;
+- fully dynamic milestone role management (add/edit/delete/link + paginated 25+ ladder);
 - level-up announcements;
 - settings for existing quests, achievements and prestige where useful.
 
-## v3.13 — Social Economy
+
+## ✅ v3.12.2 — Channel Guard Hotfix
+
+- Activity/chat/voice leaderboards are usable outside economy allowlisted locations.
+- Misplaced prefix gambling commands are removed from public chat and the user receives the configured allowed location by DM.
+
+## ✅ v3.13 — Social Economy
+
+**Status:** implemented and regression-tested in v3.13.0. Fixed-price marketplace is the v3.13 scope; auction/bid mode remains a later extension.
 
 ### Player Marketplace / Auction House
 - player item listings;
@@ -137,9 +156,19 @@ Admins can create server-specific rewards:
 - richest-share/concentration metrics;
 - later Business/Heist metrics.
 
+## ✅ v3.13.1 — Social Economy UI/UX
+
+**Status:** implemented.
+
+- Player Market and Server Shop are now interaction-first Discord UIs.
+- `/settings -> Social` contains the full Server Shop admin manager and Economy Analytics dashboard.
+- New Yoru systems should default to modern buttons/selects/modals/pagination and Discord-native admin configuration rather than command-only workflows.
+
 ## v3.14 — Frakció 2.0
 
-User-facing Crew name becomes **Frakció**.
+**Status: implemented in v3.14.0.**
+
+User-facing Crew name becomes **Frakció**. Legacy `crew_*` identifiers and command aliases remain for compatibility.
 
 ### Core
 - Frakció XP + levels;
@@ -169,6 +198,8 @@ Proposed format:
 - losing a war never deletes or steals a player's permanent business/property.
 
 ## v3.15 — Biznisz Empire (Hungary, late-game only)
+
+**Status: implemented in v3.15.0.**
 
 A large endgame player-owned business/property economy.
 
@@ -250,9 +281,11 @@ Scarcity is desirable but hard-lock monopolies are not:
 - Frakció wars may award temporary area perks/influence;
 - permanent player businesses are never confiscated merely because a Frakció loses a war.
 
-## v3.16 — Heist / Nagy Meló (Hungary)
+## ✅ v3.16 — Heist / Nagy Meló (Hungary)
 
-Co-op heists based in the same Hungarian world.
+**Status: implemented in v3.16.0.**
+
+Co-op heists based in the same Hungarian world. The shipped target names are fictional and the phase system stays abstract; no real branch security/layout information is modeled.
 
 ### Targets
 Use recognizable Hungarian flavor and bank brands, but target entries are fictional game branches/locations. Examples may include:
@@ -279,15 +312,64 @@ Do not model exact real branch security/layouts or provide real-world operationa
 
 Potential name in Hungarian UI: **Nagy Meló** for the feature, with individual missions described as heists/rablások.
 
-## Later — Polish then Web Dashboard
+## ✅ v3.17 — Polish / Performance / Diagnostics
 
-Before dashboard:
-- bug fixing;
-- balance pass;
-- performance/concurrency testing;
-- UI/UX consistency;
-- large-server tests;
-- slash-command budget checks;
-- analytics-informed economy tuning.
+**Status: implemented in v3.17.0.**
 
-Then build the Web Dashboard on top of the same server-settings backend for moderation, tickets, economy, events, shops, Frakció, Activity, Business and analytics management.
+- Settings Hub cleanup and current Frakció/Biznisz/Nagy Meló statuses;
+- interactive `/settings → Diagnosztika`;
+- permission + role hierarchy + music runtime health checks;
+- SQLite quick_check/WAL visibility and hot-path indexes;
+- large-server runtime cache pruning;
+- Business marketplace pagination/select consistency;
+- slash/component regression checks remain mandatory before release.
+
+No economy rebalance was forced without live analytics data. Balance tuning stays analytics-driven rather than changing numbers blindly.
+
+## ✅ v3.18–v3.20 — Casino Rework
+
+The existing Casino catalog has been rebuilt around a shared session/ledger core and the game-first visual standard. The detailed implementation history lives in `CASINO_ROADMAP.md`.
+
+### ✅ Casino Core (v3.18.0)
+- shared prefix/slash/UI backend;
+- atomic bet reservation + one active Casino game/player/guild;
+- internal Game ID + Casino Ledger audit;
+- idempotent settlement and restart recovery;
+- central payout config and stat tracking;
+- Monthly Casino Jackpot contribution hook.
+
+### ✅ Main visual games (v3.19.x)
+- Blackjack: Double, Split, Insurance, multi-hand, 3:2 natural, dealer animation;
+- Slots: 5×3, Wild, Scatter, Free Spins, 20 paylines, simulated RTP, client-side animation;
+- Roulette: **individual** European wheel, multi-bet per spin, red/black/0/even/odd/specific number, accelerated-start → gradual slowdown ball animation;
+- game-first mobile-friendly visuals, player branding, GIF only during action and static final result;
+- Game ID removed from player UI; `/settings → Casino` audit log keeps it for admins.
+
+### ✅ Quick-game visual polish (v3.20.1)
+- collision-safe shared header/player badge layout
+- richer Coinflip/Dice/RPS/High-Low/Chicken animations
+- shareable player branding + static final result
+
+### ✅ Quick & Community games (v3.20.0)
+- Coinflip: large branded animated flip → static final;
+- Dice: Exact, High/Low, Odd/Even, Over/Under 7, Exactly 7 modes;
+- RPS: animated reveal;
+- High/Low: streak + dynamic probability-based cashout;
+- Chicken Fight: HP-based multi-round visual fight generated from the real final outcome;
+- Monthly Casino Jackpot: automatic month-end draw, eligibility, equal eligible-player odds, rollover and persistent history;
+- Lottery: interactive Casino panel with quick ticket buttons and last-winner/history display;
+- old manual player-funded `!jp <amount>` flow retired; `!jp` is now Monthly Casino Jackpot status.
+
+### Casino UX standard going forward
+Every current or future Casino game follows the same baseline: **game-first large display, mobile-first layout, compact secondary HUD, bounded off-loop rendering, smooth client animation, static final state, player branding, owner-locked controls, one active game/player, internal-only Game ID.**
+
+### Next Casino content
+Only after the existing catalog is stable: Mines, Crash / MÁV Crash, Plinko, Poker, Chicken Road, Tower and other new games.
+
+## Later — Web Dashboard
+
+The Web Dashboard remains planned, but only after the Casino bot-side rework is stable enough that the same systems do not have to be rebuilt twice.
+
+## v3.21.0 — Casino PvP + Balance Pass
+
+PvP visual standard + full default Casino RTP/EV audit completed. Next new Casino-game candidate: Mines.

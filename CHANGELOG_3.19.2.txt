@@ -1,0 +1,13 @@
+Yoru v3.19.2 — Casino Visual Framework
+
+- Game-first Casino UI rule introduced: gameplay is the main visual surface, compact HUD underneath.
+- Slots now renders a large 5x3 Pillow-generated machine image with reel stop animation and winning-cell highlights.
+- Roulette is now an individual game instead of a guild-shared table.
+- Roulette gets a generated European wheel image with animated ball positions and final pocket result.
+- Roulette player buttons: Red, Black, Green/0, Even, Odd, Specific 0-36 number.
+- Blackjack dealer upcard score is shown immediately while the hole card remains hidden.
+- Internal Casino Game IDs removed from player-facing game/history displays.
+- New /settings -> Casino page allows selecting a dedicated Casino audit log channel.
+- Casino settlement logs include Game ID, player, game, bet, payout, P/L, multiplier, result and jackpot contribution.
+- Casino DB ledger remains the source of truth even when no Discord log channel is configured.
+- Slots/Roulette visual frames are bounded to a small edit budget for Discord rate-limit safety.

@@ -1,0 +1,11 @@
+Yoru v3.20.1 — Casino Quick Visual Polish
+
+- Shared quick-game header rebuilt into two collision-safe rows.
+- Player branding now has its own centered badge and can no longer overlap game titles.
+- Coinflip: real squash/flip illusion with multiple full rotations and deterministic final reveal.
+- Dice: bounce/roll motion instead of simple value swapping.
+- RPS: 3-2-1 suspense reveal.
+- High/Low: face-down card slide-in + reveal animation.
+- Chicken Fight: attack lunge, hit recoil/flash and fitted opponent labels.
+- Final results remain static PNGs so completed games do not replay GIFs.
+- All quick-game displays remain mobile-friendly and player-branded.

@@ -1,0 +1,17 @@
+Yoru v3.13.1 — Social Economy UI/UX Overhaul
+
+- Player Marketplace: teljes interaktív, lapozható Discord UI.
+  - listing select, keresés, vásárlás mennyiség modallal
+  - inventory-alapú eladás UI
+  - saját hirdetések + visszavonás
+  - lapozható saját tranzakciós előzmények
+- Server Shop player UI: reward select, lapozás, részletes feltételek, Buy gomb.
+- /settings -> Social:
+  - interaktív Server Shop admin manager
+  - reward létrehozás és teljes szerkesztés Discord modalokkal
+  - alapadatok, reward type/ref/quantity/duration, stock, user limit, Activity/Yoru level gate
+  - reward ON/OFF
+  - pending custom claim manager
+  - Economy Analytics 24h / 7d / 30d interaktív dashboard
+- Legacy prefix/slash shortcutok megmaradnak, de a modern UI az elsődleges workflow.
+- Új top-level slash command nincs.

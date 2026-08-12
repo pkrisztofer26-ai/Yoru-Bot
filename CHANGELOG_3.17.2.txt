@@ -1,0 +1,13 @@
+Yoru v3.17.2 — Spotify Fast Resolver Hotfix
+
+- Spotify is Python-first; no Lavalink/Java host required.
+- Removed playlist-wide Spotify audio preloading/source resolution.
+- Spotify playlist enqueue performs one metadata-only spotDL pass.
+- Audio source lookup is just-in-time per current track only.
+- ISRC lookup is preferred; artist/title search is fallback only.
+- spotDL metadata/source calls have hard timeouts and max_retries=1.
+- yt-dlp has socket/retry/overall resolve timeouts; stuck tracks are skipped.
+- Metadata + short-lived stream URL caches speed repeated links/loop.
+- First track startup is backgrounded so !play and /play can answer immediately after metadata enqueue.
+- Resolver caches are bounded for long-running large servers.
+- Lavalink config remains optional backwards compatibility only.

@@ -1,0 +1,35 @@
+Yoru v3.10.0 — Music + Fun
+
+MUSIC
+- /music GroupCog: play, pause, resume, skip, stop, queue, now, volume, loop, shuffle, leave
+- Prefix: !play, !pause, !resume, !skip, !stop, !queue, !np, !vol, !loop, !shuffle, !leave
+- YouTube/URL/search extraction via yt-dlp
+- Discord voice playback via FFmpeg + PyNaCl
+- Per-guild queue, current track, volume, current-track loop and shuffle
+- Queue maximum configurable 5–100, default 50
+- Default volume configurable 5–150%, default 75%
+- Optional Music text-channel restriction
+- Optional DJ role for disruptive controls
+- 5-minute idle disconnect
+- Dedicated Music channel is added to Yoru generic-link AutoMod exemptions so prefix !play URLs can work
+- Missing yt-dlp/FFmpeg does not prevent the rest of Yoru from starting
+
+FUN
+- /fun GroupCog: eightball, choose, roll, coin, rate, ship, truth, dare, wyr, mock, joke
+- Prefix equivalents included
+- Per-guild ON/OFF
+- Optional Fun text-channel restriction
+- Economy-independent fun commands; no balance changes
+
+SETTINGS / HELP
+- /settings Music enabled and wired
+- /settings Fun enabled and wired
+- Existing 23-item paginated channel/role selectors reused
+- Home status shows Tickets + Music + Fun
+- Help menu gains Music and Fun pages
+
+SAFETY / REGRESSION
+- 2 new top-level slash groups instead of many standalone slash commands
+- Prefix command/alias collision test
+- Existing tests preserved
+- No database replacement required; settings use existing guild_state storage

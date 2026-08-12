@@ -1,0 +1,8 @@
+Yoru v3.19.4 — Casino Finish Polish
+
+- One active Casino game per player/guild with process + DB race protection.
+- Slots and Roulette client-side GIF timing slowed by ~30%.
+- Animated results are replaced with static PNG final frames, so win/loss does not replay the GIF.
+- Roulette animation expanded to 16 frames with several fast rotations and progressive deceleration.
+- Slots/Roulette visuals now carry a compact "<PLAYER>'S GAME" owner label for shareable clips.
+- Deferred visual-session locks remain active until the final static result is displayed, then release safely.

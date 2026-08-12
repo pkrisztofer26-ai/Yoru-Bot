@@ -1,0 +1,34 @@
+Yoru v3.1.0 — Player Experience Update
+
+ADDED
+- Interaktív, gombos profile panel: Profil / Stats / Inventory / Achievement / Címek / Badge-ek.
+- /stats, !stats, !stat, !statistics.
+- Valódi badge backend és user_badges adatbázis tábla.
+- /badges, !badges, !badge.
+- Részletes inventory metadata (rarity + category) és új inventory UI.
+- Gambling v3 stat tracking minden settle_gamble alapú játékhoz.
+- Shop/Market purchase/sale/use v3 stat tracking.
+- Weekly/Monthly/Interest/Scratch/Investment v3 stat tracking.
+- Jackpot/Lottery/Feketepiac/Kincses Láda/Hirtelen Halál v3 stat tracking.
+
+CHANGED
+- /profile és !profile ugyanazt a közös ProfileView/UI implementációt használja.
+- /inventory és !inventory ugyanazt az interaktív panelt használja.
+- /achievements, /titles és prefix megfelelőik ugyanazt a panelt használják.
+- Profile overview sokkal letisztultabb; a részletes statok külön Stats oldalra kerültek.
+- Achievement leírások igazítva a tényleges thresholdokhoz.
+- 30 napos daily streakhez új "Megállíthatatlan" title.
+- ShopService StatisticsService integrációt kapott.
+
+DATABASE
+- Új user_badges tábla. Automatikusan létrejön induláskor.
+- Economy reset a user_badges adatokat is törli.
+- Régi játékosadatok nem törlődnek és nem igényelnek kézi migrációt.
+
+BACKWARDS COMPATIBILITY
+- A meglévő prefix és slash parancsok megmaradtak.
+- A legacy users stat oszlopok továbbra is megmaradnak kompatibilitás miatt.
+
+TEST
+- Python compileall: PASS.
+- Teljes discord.py runtime teszt ebben a build környezetben nem futott, mert a csomag telepítése hálózat nélkül nem lehetséges.

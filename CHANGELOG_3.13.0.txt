@@ -1,0 +1,29 @@
+Yoru v3.13.0 — Social Economy
+
+PLAYER MARKETPLACE
+- Fixed-price player listings with item escrow.
+- 72h expiry and seller cancellation return unsold items.
+- 5% market tax as an economy sink.
+- Search + page browsing and buyer/seller history.
+- Atomic buy path prevents double-spend/double-item races.
+
+CUSTOM SERVER SHOP
+- Server-specific Discord roles, temporary roles, Yoru items and custom/manual rewards.
+- Stock, per-user purchase limits, Activity Level/Yoru Level requirements and configurable price.
+- Pending custom reward claim workflow for staff.
+- Temporary roles are persisted and removed automatically after expiry.
+
+PVP GAMBLING
+- Coinflip Duel, Dice Duel and RPS Duel.
+- Accept/decline/timeout flow with persistent stake escrow.
+- RPS choices stay private until both players have chosen.
+- Startup/timeout safety refunds unresolved accepted duel escrow.
+
+ECONOMY ANALYTICS
+- Total supply, wallet/bank split and concentration metrics.
+- Net money creation/burn and source/sink breakdown for 24h/7d/30d.
+- Player Marketplace and PvP volume.
+
+COMMAND BUDGET
+- Social Economy is one GroupCog: /social.
+- No scatter of new top-level slash commands.

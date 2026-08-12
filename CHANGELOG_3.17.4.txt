@@ -1,0 +1,34 @@
+Yoru v3.17.4 — Activity Rank Ladder + Frakció Discord Role Quick Fix
+
+ACTIVITY RANKS
+- Replaced the old 7-step default Activity milestone ladder with a 15-step Hungarian social ladder:
+  Lv5 Csöves
+  Lv10 Pórnép
+  Lv15 Közmunkás
+  Lv20 Minimálbéres
+  Lv30 Melós
+  Lv40 Szakmunkás
+  Lv50 Maszekos
+  Lv60 Kft.-tulaj
+  Lv75 Vállalkozó
+  Lv90 Nagyvállalkozó
+  Lv110 Újgazdag
+  Lv130 Stróman
+  Lv150 Oligarcha
+  Lv175 Felső tízezer
+  Lv200 NER-elit
+- Milestone level/name layout is now persisted in the live guild DB/settings instead of being file-only.
+- Existing manual Activity role mappings are migrated by exact role name where possible.
+- Activity role sync can bind existing named roles and create missing configured milestone roles.
+- 15 milestones remain under Discord's 25-option select limit.
+
+FRAKCIÓ DISCORD ROLES
+- Creating a Frakció now creates/adopts a Discord role named exactly after the Frakció.
+- The role is hoisted so the Frakció appears as a separate group in the Discord member list.
+- The founder receives the role immediately.
+- Members receive the role when accepting an invite.
+- Leaving/kicking removes the role; disbanding deletes it.
+- Existing Frakciók are reconciled on startup: missing roles are created/adopted and current members are synced.
+- Discord role IDs are persisted in the live DB, so full ZIP updates do not lose the mapping.
+
+No economy balance changes.

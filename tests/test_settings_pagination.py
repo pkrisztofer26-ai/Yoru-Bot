@@ -12,6 +12,7 @@ class SettingsPaginationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.source = SETTINGS.read_text(encoding="utf-8")
+        cls.activity_source = (ROOT / "app" / "cogs" / "activity.py").read_text(encoding="utf-8") if (ROOT / "app" / "cogs" / "activity.py").exists() else ""
 
     def test_native_channel_and_role_select_removed_from_settings(self) -> None:
         # Native entity selects can show an incomplete list on larger guilds.
@@ -41,10 +42,12 @@ class SettingsPaginationTests(unittest.TestCase):
             "VerificationChannelSelect",
             "CommunitySuggestionChannelSelect",
             "CommunityStarboardChannelSelect",
+            "ActivityLevelChannelSelect",
         ]
         for class_name in expected:
             with self.subTest(class_name=class_name):
-                self.assertIn(f"class {class_name}(PagedGuildChannelSelect):", self.source)
+                combined = self.source + "\n" + self.activity_source
+                self.assertIn(f"class {class_name}(PagedGuildChannelSelect):", combined)
 
     def test_all_role_pickers_use_paged_selector(self) -> None:
         expected = [
@@ -55,10 +58,12 @@ class SettingsPaginationTests(unittest.TestCase):
             "RolePanelRoleSelect",
             "VerificationGiveRoleSelect",
             "VerificationRemoveRoleSelect",
+            "ActivityMilestoneRoleSelect",
         ]
         for class_name in expected:
             with self.subTest(class_name=class_name):
-                self.assertIn(f"class {class_name}(PagedGuildRoleSelect):", self.source)
+                combined = self.source + "\n" + self.activity_source
+                self.assertIn(f"class {class_name}(PagedGuildRoleSelect):", combined)
 
     def test_pagination_has_both_directions(self) -> None:
         self.assertIn('value=CHANNEL_NAV_PREV', self.source)

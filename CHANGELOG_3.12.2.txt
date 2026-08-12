@@ -1,0 +1,7 @@
+Yoru v3.12.2 — Channel Guard Hotfix
+
+- Activity leaderboards (`top activity`, `top activityxp`, `top chat`, `top chatxp`, `top voice`) are community-facing and can now be used outside economy/gambling allowlisted channels, including General.
+- Prefix gambling commands used outside the configured economy/gambling location are deleted from the public channel.
+- The user is notified by DM with the configured allowed channel/category locations.
+- If the user blocks DMs, Yoru falls back to a short-lived 8-second channel notice.
+- Gambling-disabled errors still behave as feature errors; only wrong-location attempts trigger deletion/private routing.

@@ -1,0 +1,21 @@
+Yoru v3.12.0 — Activity System
+================================
+
+NEW
+- Independent Activity XP + Activity Level system.
+- Chat XP: configurable 12–20 default reward, cooldown, message anti-farm gate, duplicate protection, prefix commands excluded.
+- Voice XP: configurable 3 XP/min default, minimum 2 qualifying real users, AFK/deaf/stage audience protection, optional self-deaf exclusion, and a full uninterrupted qualifying tick before payout.
+- Persistent Activity XP, Chat XP, Voice XP, qualifying messages, voice time and Activity Level.
+- /settings -> Activity with paginated channel/role selectors.
+- Milestone roles at Lv. 5/10/20/35/50/75/100. Existing roles or Yoru-created roles are supported.
+- Milestone Role Income integration through the existing role_income backend.
+- Hierarchy-safe role upgrades: higher role first, old milestone removed only after success.
+- Configurable level-up announcement channel.
+- Profile Activity page and Activity section in detailed stats.
+- Existing /top and !top expanded with activity/activity_xp/chat/chatxp/voice categories.
+
+COMPATIBILITY
+- No new top-level slash command is added.
+- Existing database is migrated automatically through CREATE TABLE IF NOT EXISTS.
+- Existing economy/progression XP, balance and unrelated systems are unchanged.
+- .env and live DB must not be packaged in release ZIP.

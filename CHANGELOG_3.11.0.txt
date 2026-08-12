@@ -1,0 +1,17 @@
+Yoru Bot v3.11.0 — Economy + Events Settings
+
+NEW
+- /settings → Economy teljes szerverenkénti konfiguráció
+- /settings → Events teljes szerverenkénti konfiguráció
+- Economy/channel/feature/cooldown/reward/rob/gambling/currency beállítások
+- Auto/Safe/Bomb/Manual event kapcsolók, event channel, timing, activity és reward tuning
+- Economy/Events közös guild_state backend a későbbi web dashboardhoz
+
+COMPATIBILITY
+- Nincs új top-level slash command
+- Meglévő szerverek régi értékei fallbackként megmaradnak
+- .env és élő adatbázis nem része a release ZIP-nek
+- Community market eventek az új Events Auto/channel beállítást követik
+
+PERMISSIONS
+- Manuális Kincses Láda / Hirtelen Halál: Manage Server (Szerver kezelése)

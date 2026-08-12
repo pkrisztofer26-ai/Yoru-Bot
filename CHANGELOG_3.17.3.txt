@@ -1,0 +1,11 @@
+Yoru v3.17.3 — Tutorial 2.0
+
+- Rebuilt the player tutorial into a strict numbered learning path: 01 → 02 → 03...
+- Player Forum now contains only player-facing systems; moderation/admin configuration is removed from it.
+- Expanded player tutorial into a full guide from first login through economy, Activity, progression, shop, gambling, events, Marketplace, Server Shop/PvP, Frakció, Biznisz, Nagy Meló, Music and community/server usage.
+- Forum posts are created/updated in reverse activity order so section 01 appears first in Discord's default Forum view.
+- Added tutorial schema migration: old Yoru-managed mixed tutorial posts are removed once and rebuilt cleanly in the new order.
+- Added `!tutorial admin` for a separate admin-only tutorial Forum.
+- Admin Forum is hidden from @everyone and covers Settings, moderation, AutoMod, logs, Welcome/Roles, Tickets, economy configuration, Activity/Social, late-game modules, Music/Community and diagnostics.
+- `/settings → Tutorial` now shows both Forums and has separate Player sync / Admin sync controls.
+- Both tutorial Forums use the same configurable category and are version-synced without creating duplicate managed posts.

@@ -1,0 +1,50 @@
+Yoru v3.18.0 — Casino V2 Phase 1: Casino Core
+
+CASINO CORE / SESSION ENGINE
+- Új közös CasinoService kezeli a house game-ek pénzügyi életciklusát.
+- Coinflip, Dice, Slots, Roulette, Blackjack, High/Low, RPS és Chicken Fight ugyanazt a reserve → settle/refund útvonalat használja.
+- Prefix, slash és interaktív UI ugyanarra a backend/session logikára támaszkodik; a meglévő játékmechanika ebben a fázisban szándékosan nem lett teljesen újratervezve.
+- Minden új Casino Core kör olvasható, egyedi Game ID-t kap (pl. BJ-XXXXXXXX).
+
+MONEY SAFETY / CONCURRENCY
+- A base tét játékindításkor atomikusan reserve-olódik SQLite BEGIN IMMEDIATE tranzakcióval.
+- Ugyanaz a wallet balance nem használható el két párhuzamos all-in/session indításra.
+- 1B feletti tétek továbbra is támogatottak; nincs új fix max bet.
+- Extra reservation API készült a későbbi Blackjack Double/Split és Roulette multi-bet funkciókhoz.
+- Settlement idempotens: ugyanaz a Game ID retry/race esetén sem fizethet kétszer.
+- Restartkor az előző processből ACTIVE/WAITING_INPUT/SETTLING állapotban maradt reserved tét automatikus safe refundot kap.
+
+CASINO LEDGER / STATS / HISTORY
+- Új casino_sessions és casino_ledger táblák kerültek a meglévő SQLite DB-be in-place migrációval.
+- Ledger auditálja a reservationt, extra reservationt, payoutot, refundot és jackpot contributiont.
+- Egységes stat tracking: games played, W/L/push, wagered, payout, net P/L, biggest bet, biggest win és highest multiplier.
+- Új player history Game ID-val és session eredménnyel; a history v3.18.0-tól induló Casino Core köröket tartalmazza.
+
+CENTRAL PAYOUT CONFIG
+- A Casino payout/source-of-truth az app/casino_config.py fájlba került.
+- app/economy_config.py kompatibilitási aliasokat tart a régi kódhoz/tesztekhez.
+- Minden session startkor snapshotolja a szerver gambling payout multiplierét és jackpot rate-et, így futó játékot nem módosít egy közbeni Settings változtatás.
+
+MONTHLY GLOBAL JACKPOT FOUNDATION
+- House game valódi nettó veszteségének 2%-a automatikusan a guild havi Casino Jackpot pooljába kerül.
+- PvP/escrow jellegű settlement explicit kizárható és nem finanszírozza a house jackpotot.
+- Pool, total house loss, total contribution és játékos saját havi contribution külön persistálódik.
+- A havi automatikus draw, eligibility és jackpot history a későbbi Casino Community fázisban készül el.
+
+CASINO UI
+- Új interaction-first /casino group: /casino lobby, /casino stats, /casino history, /casino jackpot.
+- Prefix shortcut: !casino (kaszino/kaszinó alias).
+- Lobby mutatja a walletet, havi Casino P/L-t, game countot, Monthly Jackpot poolt és saját contributiont.
+- Player-owned gombokkal navigálható Casino home/stats/history/jackpot felület.
+- A meglévő rövid prefix game commandok (!bj, !cf, !dice, !sl, !r, !hl, !rps, !cock) megmaradtak.
+
+DOCS / ROADMAP
+- CASINO_ROADMAP.md tartalmazza a user által elfogadott teljes Casino V2 rework tervet és az architektúra-kiegészítéseket.
+- A fejlesztési sorrend: Core → Blackjack V2 → Quick Games V2 → Roulette V2 → Slots V2 → Community Systems → Chicken Fight V2.
+- Player tutorial/help frissítve Casino Core, Game ID, reservation, stats/history és Monthly Jackpot alapokkal.
+- Dashboard/Endgame nagyobb fejlesztések a Casino V2 utánra kerültek.
+
+COMPATIBILITY
+- Meglévő live data/vaultbot.db megmarad; új táblák automatikusan létrejönnek.
+- Régi Community Jackpot (!jp) egyelőre változatlanul megmarad a Monthly Casino Jackpot mellett.
+- Activity Roles 2.0, Frakció hoisted role sync, Biznisz, Heist, Music és minden korábbi rendszer megmarad.

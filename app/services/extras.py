@@ -1,12 +1,28 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from dataclasses import dataclass, field
 import asyncio
 import random
 
 from app.database import Database
 from app.services.economy import CooldownError, EconomyService, JailError
+from app.services.casino import CasinoService
 from app import economy_config as eco
+from app import casino_config as casino_cfg
+from app.ui import money
+
+
+@dataclass(slots=True)
+class ExtrasCasinoResult:
+    game_id: str
+    bet: int
+    payout: int
+    profit: int
+    wallet: int
+    multiplier: float
+    result: str
+    details: dict = field(default_factory=dict)
 
 
 class ExtrasService:
@@ -14,9 +30,10 @@ class ExtrasService:
     MONTHLY_COOLDOWN = eco.MONTHLY_COOLDOWN
     INTEREST_COOLDOWN = eco.INTEREST_COOLDOWN
 
-    def __init__(self, database: Database, economy: EconomyService) -> None:
+    def __init__(self, database: Database, economy: EconomyService, casino: CasinoService | None = None) -> None:
         self.db = database
         self.economy = economy
+        self.casino = casino or CasinoService(database)
         self._chicken_locks: dict[tuple[int, int], asyncio.Lock] = {}
 
     async def _cooldown(self, guild_id: int, user_id: int, column: str, duration: timedelta) -> datetime:
@@ -135,32 +152,142 @@ class ExtrasService:
     async def give_item(self, guild_id: int, sender_id: int, receiver_id: int, item_id: str, quantity: int):
         return await self.db.transfer_item(guild_id, sender_id, receiver_id, item_id.lower().strip(), quantity)
 
+    async def rps_visual(self, guild_id: int, user_id: int, choice: str, bet: int) -> ExtrasCasinoResult:
+        await self.economy.prepare_context(guild_id)
+        await self.economy.guild_settings.require_feature(guild_id, "gambling")
+        await self.economy.require_not_jailed(guild_id, user_id)
+        aliases = {"rock":"rock","r":"rock","ko":"rock","kő":"rock","paper":"paper","p":"paper","papir":"paper","papír":"paper","scissors":"scissors","s":"scissors","ollo":"scissors","olló":"scissors"}
+        player = aliases.get(choice.lower().strip())
+        if player is None:
+            raise ValueError("Válassz: `rock`, `paper` vagy `scissors`.")
+        if bet < casino_cfg.MIN_BET:
+            raise ValueError(f"A minimum tét {money(casino_cfg.MIN_BET)}.")
+        session = await self.casino.begin(
+            guild_id, user_id, "rps", bet,
+            config={"base_total": casino_cfg.RPS_V2_TOTAL_PAYOUT, "defer_player_lock_release": True, "engine": "rps_visual"},
+        )
+        try:
+            bot = random.choice(["rock", "paper", "scissors"])
+            if player == bot:
+                payout = bet
+                result = "tie"
+            else:
+                wins = {("rock","scissors"), ("paper","rock"), ("scissors","paper")}
+                won = (player, bot) in wins
+                total = self.casino.scaled_total_payout(casino_cfg.RPS_V2_TOTAL_PAYOUT, session)
+                payout = int(bet * total) if won else 0
+                result = "win" if won else "lose"
+            settlement = await self.casino.settle(session, payout, result=f"{result}:{player}:{bot}", multiplier=(payout / bet) if bet else 0.0)
+            return ExtrasCasinoResult(
+                game_id=settlement.game_id, bet=settlement.bet, payout=settlement.payout, profit=settlement.profit,
+                wallet=settlement.wallet, multiplier=settlement.multiplier, result=result, details={"player": player, "bot": bot},
+            )
+        except Exception:
+            try: await self.casino.refund(session, "rps_visual_error")
+            except ValueError: pass
+            raise
+
+    @staticmethod
+    def _chicken_frames(won: bool) -> list[tuple[int, int, str]]:
+        player_hp = 100
+        opponent_hp = 100
+        frames: list[tuple[int, int, str]] = [(player_hp, opponent_hp, "FIGHT!")]
+        events = ["ATTACK", "DODGE", "CRITICAL", "COUNTER", "ATTACK"]
+        for index, event in enumerate(events):
+            if index == len(events) - 1:
+                if won:
+                    opponent_hp = 0
+                    player_hp = max(18, player_hp)
+                    event = "K.O.!"
+                else:
+                    player_hp = 0
+                    opponent_hp = max(18, opponent_hp)
+                    event = "K.O.!"
+            elif (index % 2 == 0) == won:
+                opponent_hp = max(1, opponent_hp - random.randint(14, 28))
+            else:
+                player_hp = max(1, player_hp - random.randint(12, 26))
+            frames.append((player_hp, opponent_hp, event))
+        return frames
+
+    async def chickenfight_visual(self, guild_id: int, user_id: int, bet: int) -> ExtrasCasinoResult:
+        await self.economy.prepare_context(guild_id)
+        await self.economy.guild_settings.require_feature(guild_id, "gambling")
+        await self.economy.require_not_jailed(guild_id, user_id)
+        if bet < casino_cfg.MIN_BET:
+            raise ValueError(f"A minimum tét {money(casino_cfg.MIN_BET)}.")
+        lock = self._chicken_locks.setdefault((guild_id, user_id), asyncio.Lock())
+        async with lock:
+            if await self.db.get_item_quantity(guild_id, user_id, "chicken") < 1:
+                raise ValueError("Chicken Fighthoz kell legalább 1 🐔 Chicken az inventorydban.")
+            session = await self.casino.begin(
+                guild_id, user_id, "chickenfight", bet,
+                config={"win_chance": casino_cfg.CHICKEN_WIN_CHANCE, "base_total": casino_cfg.CHICKEN_TOTAL_PAYOUT, "defer_player_lock_release": True, "engine": "chicken_visual"},
+            )
+            try:
+                opponents = ["Kopasz Kakas", "Vasöklű Kotlós", "Éjféli Csőr", "Piros Taraj", "Csirke Terminátor"]
+                opponent = random.choice(opponents)
+                won = random.random() < casino_cfg.CHICKEN_WIN_CHANCE
+                total = self.casino.scaled_total_payout(casino_cfg.CHICKEN_TOTAL_PAYOUT, session)
+                payout = int(bet * total) if won else 0
+                settlement = await self.casino.settle(session, payout, result=f"{'win' if won else 'lose'}:{opponent}")
+                if won:
+                    await self.db.increment_stat(guild_id, user_id, "chicken_wins")
+                else:
+                    consumed = await self.db.consume_item(guild_id, user_id, "chicken", 1)
+                    if consumed:
+                        await self.economy.stats.increment(guild_id, user_id, "chicken.deaths")
+                frames = self._chicken_frames(won)
+                return ExtrasCasinoResult(
+                    game_id=settlement.game_id, bet=settlement.bet, payout=settlement.payout, profit=settlement.profit,
+                    wallet=settlement.wallet, multiplier=settlement.multiplier, result="win" if won else "lose",
+                    details={"opponent": opponent, "frames": frames, "won": won},
+                )
+            except Exception:
+                try: await self.casino.refund(session, "chicken_visual_error")
+                except ValueError: pass
+                raise
+
     async def chickenfight(self, guild_id: int, user_id: int, bet: int) -> tuple[bool, str, int, int]:
         await self.economy.prepare_context(guild_id)
         await self.economy.guild_settings.require_feature(guild_id, "gambling")
         await self.economy.require_not_jailed(guild_id, user_id)
-        if bet < eco.GAMBLING_MIN_BET:
-            raise ValueError(f"A minimum tét {money(eco.GAMBLING_MIN_BET)}.")
+        if bet < casino_cfg.MIN_BET:
+            raise ValueError(f"A minimum tét {money(casino_cfg.MIN_BET)}.")
 
         lock = self._chicken_locks.setdefault((guild_id, user_id), asyncio.Lock())
         async with lock:
             if await self.db.get_item_quantity(guild_id, user_id, "chicken") < 1:
                 raise ValueError("Chicken Fighthoz kell legalább 1 🐔 Chicken az inventorydban.")
-            opponents = ["Kopasz Kakas", "Vasöklű Kotlós", "Éjféli Csőr", "Piros Taraj", "Csirke Terminátor"]
-            opponent = random.choice(opponents)
-            won = random.random() < eco.CHICKEN_WIN_CHANCE
-            payout_scale = await self.economy.guild_settings.get_gambling_payout_multiplier(guild_id)
-            total_payout = 1.0 + (eco.CHICKEN_TOTAL_PAYOUT - 1.0) * payout_scale
-            profit = int(bet * (total_payout - 1.0)) if won else -bet
-            wallet = await self.db.settle_gamble(guild_id, user_id, bet, profit, "chickenfight", won)
-            if won:
-                await self.db.increment_stat(guild_id, user_id, "chicken_wins")
-            else:
-                # A Chicken most valódi fogyó harci eszköz: vereségnél meghal.
-                consumed = await self.db.consume_item(guild_id, user_id, "chicken", 1)
-                if consumed:
-                    await self.economy.stats.increment(guild_id, user_id, "chicken.deaths")
-            return won, opponent, abs(profit), wallet
+            session = await self.casino.begin(
+                guild_id, user_id, "chickenfight", bet,
+                config={"win_chance": casino_cfg.CHICKEN_WIN_CHANCE, "base_total": casino_cfg.CHICKEN_TOTAL_PAYOUT},
+            )
+            try:
+                opponents = ["Kopasz Kakas", "Vasöklű Kotlós", "Éjféli Csőr", "Piros Taraj", "Csirke Terminátor"]
+                opponent = random.choice(opponents)
+                won = random.random() < casino_cfg.CHICKEN_WIN_CHANCE
+                total_payout = self.casino.scaled_total_payout(casino_cfg.CHICKEN_TOTAL_PAYOUT, session)
+                payout = int(bet * total_payout) if won else 0
+                settlement = await self.casino.settle(
+                    session,
+                    payout,
+                    result=f"{'win' if won else 'lose'}:{opponent}",
+                )
+                if won:
+                    await self.db.increment_stat(guild_id, user_id, "chicken_wins")
+                else:
+                    consumed = await self.db.consume_item(guild_id, user_id, "chicken", 1)
+                    if consumed:
+                        await self.economy.stats.increment(guild_id, user_id, "chicken.deaths")
+                return won, opponent, abs(settlement.profit), settlement.wallet
+            except Exception:
+                # settle() is idempotent; refund only succeeds while the session is unfinished.
+                try:
+                    await self.casino.refund(session, "chickenfight_error")
+                except ValueError:
+                    pass
+                raise
 
     async def highlow(self, guild_id: int, user_id: int, choice: str, bet: int) -> tuple[int, str, int, int]:
         await self.economy.prepare_context(guild_id)
@@ -171,18 +298,25 @@ class ExtrasService:
         if normalized not in aliases:
             raise ValueError("Válassz: `high` vagy `low`.")
         normalized = aliases[normalized]
-        if bet < eco.GAMBLING_MIN_BET:
-            raise ValueError(f"A minimum tét {money(eco.GAMBLING_MIN_BET)}.")
-        card = random.randint(1, 13)
-        if card == 7:
-            wallet = await self.db.settle_gamble(guild_id, user_id, bet, 0, "highlow_tie", False)
-            return card, "tie", 0, wallet
-        won = (normalized == "high" and card > 7) or (normalized == "low" and card < 7)
-        payout_scale = await self.economy.guild_settings.get_gambling_payout_multiplier(guild_id)
-        total_payout = 1.0 + (eco.HIGHLOW_TOTAL_PAYOUT - 1.0) * payout_scale
-        profit = int(bet * (total_payout - 1.0)) if won else -bet
-        wallet = await self.db.settle_gamble(guild_id, user_id, bet, profit, "highlow", won)
-        return card, "win" if won else "lose", abs(profit), wallet
+        if bet < casino_cfg.MIN_BET:
+            raise ValueError(f"A minimum tét {money(casino_cfg.MIN_BET)}.")
+        session = await self.casino.begin(guild_id, user_id, "highlow", bet, config={"base_total": casino_cfg.HIGHLOW_TOTAL_PAYOUT})
+        try:
+            card = random.randint(1, 13)
+            if card == 7:
+                settlement = await self.casino.settle(session, bet, result=f"tie:{card}", multiplier=1.0)
+                return card, "tie", 0, settlement.wallet
+            won = (normalized == "high" and card > 7) or (normalized == "low" and card < 7)
+            total_payout = self.casino.scaled_total_payout(casino_cfg.HIGHLOW_TOTAL_PAYOUT, session)
+            payout = int(bet * total_payout) if won else 0
+            settlement = await self.casino.settle(session, payout, result=f"{'win' if won else 'lose'}:{card}")
+            return card, "win" if won else "lose", abs(settlement.profit), settlement.wallet
+        except Exception:
+            try:
+                await self.casino.refund(session, "highlow_error")
+            except ValueError:
+                pass
+            raise
 
     async def rps(self, guild_id: int, user_id: int, choice: str, bet: int) -> tuple[str, str, int, int]:
         await self.economy.prepare_context(guild_id)
@@ -192,16 +326,24 @@ class ExtrasService:
         player = aliases.get(choice.lower().strip())
         if player is None:
             raise ValueError("Válassz: `rock`, `paper` vagy `scissors`.")
-        if bet < eco.GAMBLING_MIN_BET:
-            raise ValueError(f"A minimum tét {money(eco.GAMBLING_MIN_BET)}.")
-        bot = random.choice(["rock", "paper", "scissors"])
-        if player == bot:
-            wallet = await self.db.settle_gamble(guild_id, user_id, bet, 0, "rps_tie", False)
-            return player, bot, 0, wallet
-        wins = {("rock","scissors"), ("paper","rock"), ("scissors","paper")}
-        won = (player, bot) in wins
-        payout_scale = await self.economy.guild_settings.get_gambling_payout_multiplier(guild_id)
-        total_payout = 1.0 + (eco.RPS_TOTAL_PAYOUT - 1.0) * payout_scale
-        profit = int(bet * (total_payout - 1.0)) if won else -bet
-        wallet = await self.db.settle_gamble(guild_id, user_id, bet, profit, "rps", won)
-        return player, bot, profit, wallet
+        if bet < casino_cfg.MIN_BET:
+            raise ValueError(f"A minimum tét {money(casino_cfg.MIN_BET)}.")
+        session = await self.casino.begin(guild_id, user_id, "rps", bet, config={"base_total": casino_cfg.RPS_TOTAL_PAYOUT})
+        try:
+            bot = random.choice(["rock", "paper", "scissors"])
+            if player == bot:
+                settlement = await self.casino.settle(session, bet, result=f"tie:{player}:{bot}", multiplier=1.0)
+                return player, bot, 0, settlement.wallet
+            wins = {("rock","scissors"), ("paper","rock"), ("scissors","paper")}
+            won = (player, bot) in wins
+            total_payout = self.casino.scaled_total_payout(casino_cfg.RPS_TOTAL_PAYOUT, session)
+            payout = int(bet * total_payout) if won else 0
+            settlement = await self.casino.settle(session, payout, result=f"{'win' if won else 'lose'}:{player}:{bot}")
+            return player, bot, settlement.profit, settlement.wallet
+        except Exception:
+            try:
+                await self.casino.refund(session, "rps_error")
+            except ValueError:
+                pass
+            raise
+

@@ -1,0 +1,22 @@
+Yoru v3.11.2 — Ship Image Card + Spotify Reliability
+
+SHIP
+- Replaced the Ship 2.0 verdict-heavy embed with a generated dark/purple image card.
+- Two large circular Discord avatars, member names and one large deterministic compatibility percentage.
+- Removed verdict/Ítélet, Yoru opinion text and the old compatibility meter clutter.
+- Added a minimal embed fallback if Pillow or avatar fetching fails.
+- Added Pillow==12.3.0.
+
+MUSIC / SPOTIFY
+- Spotify track/album/playlist resolution now tries spotDL save --preload first.
+- If preload fails, retries metadata-only spotDL save.
+- Missing source URLs are filled with spotDL url where possible.
+- Final fallback is per-track artist + title YouTube search.
+- If a preloaded source URL fails during yt-dlp resolution, playback automatically retries the fallback search.
+- No Lavalink/Java requirement.
+- YouTube, YouTube playlists, queue and persistent Music Panel are preserved.
+
+RELEASE
+- Built from the v3.11.1 golden build.
+- Activity System is NOT included in this release.
+- Existing .env and live database are not part of release archives.

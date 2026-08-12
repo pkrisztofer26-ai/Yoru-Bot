@@ -90,6 +90,7 @@ def gambling_result_embed(
     bet: int,
     profit: int,
     wallet: int,
+    game_id: str | None = None,
 ) -> discord.Embed:
     if profit > 0:
         color = SUCCESS
@@ -111,5 +112,5 @@ def gambling_result_embed(
     embed.add_field(name=outcome, value=f"**{amount_text}**", inline=True)
     embed.add_field(name="💵 Kifizetés", value=f"**{money(payout)}**", inline=True)
     embed.add_field(name="💰 Egyenleg", value=f"**{money(wallet)}**", inline=False)
-    embed.set_footer(text="Yoru • Gambling")
+    embed.set_footer(text=f"Yoru • Gambling{f' • {game_id}' if game_id else ''}")
     return embed

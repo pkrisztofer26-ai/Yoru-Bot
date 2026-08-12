@@ -1,0 +1,59 @@
+Yoru v3.5.0 — Economy Rebase / Balance Config
+
+A teljes fő balance egy helyen van:
+    app/economy_config.py
+
+Itt állítható többek között:
+- kezdő pénz
+- work / beg / search / crime / slut / rob
+- daily / weekly / monthly
+- cooldownok
+- gambling minimum + payoutok (nincs max bet)
+- interest
+- booster erősségek
+- Work/Crime/Luck szerver event szorzók + Feketepiac kedvezmény
+- shop visszaeladási arány + crate tier eloszlás
+- crate / scratch payoutok
+- shop árak
+- Silver / Gold / Diamond market
+- Nitro ár + account-age + level gate
+- auto Kincses Láda reward + HH entry
+- Crew / Prestige pénzügyi balance
+- quest pénzjutalmak
+- progression XP action rewardok + level curve
+
+Az .env-ben v3.5-től NEM balanceolunk pénzösszeget.
+Az .env maradjon token/csatorna/autoevent időzítés/activity gate konfigurációra.
+A régi STARTING_BALANCE / AUTO_SAFE_* / AUTO_BOMB_* pénz env értékeket a bot szándékosan figyelmen kívül hagyja.
+
+v3.5 alapfilozófia:
+- $1M már komoly mérföldkő.
+- Work 5 percenként $6k–$25k.
+- Crime maximum alap win $95k.
+- Slut maximum alap win $85k.
+- Search pénzjutalom legfeljebb $15k, Nitro nem eshet belőle.
+- Gambling all-in engedélyezett, nincs max bet; a house edge kb. 5–8% körüli.
+- Pénz NEM ad automatikusan progression XP-t.
+- Weekly csak 7 napos, Monthly csak 30 napos Yoru accounttól claimelhető.
+- Nitro Basic $500M, Discord Nitro $750M, külön age/level gate-tel.
+
+Egyszeri v3.5 átállás meglévő szerveren:
+    !rebaseeconomy REBASE
+vagy:
+    /rebaseeconomy confirm:REBASE
+
+A rebase megőrzi:
+- Yoru account created_at
+- lifetime activity count statokat
+- Crew tagságot és Crew neveket
+- premium reward itemeket
+- premium vásárlási historyt
+- moderációs adatokat
+
+A rebase nullázza / újraskálázza:
+- wallet / bank / progression XP
+- normál inventory / boosterek / market
+- questek / prestige
+- Crew bank / Crew level / contribution
+- régi pénzérték-alapú statokat
+- régi role income beállításokat

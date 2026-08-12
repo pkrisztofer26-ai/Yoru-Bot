@@ -7,6 +7,7 @@ import discord
 from discord.ext import commands
 
 from app.amounts import parse_amount
+from app.casino_games import parse_roulette_choice
 from app import economy_config as eco
 from app.services.economy import CooldownError, EconomyService, JailError
 from app.services.shop import ShopService
@@ -14,6 +15,7 @@ from app.shop_ui import build_shop_view
 from app.services.gambling import GamblingService
 from app.ui import BRAND, DANGER, GOLD, SUCCESS, action_embed, cooldown_embed, error_embed, gambling_result_embed, money
 from app.profile_ui import make_profile_view
+from app.cogs.access_utils import handle_wrong_economy_channel, handle_wrong_gambling_channel
 
 
 class PrefixCog(commands.Cog):
@@ -37,16 +39,54 @@ class PrefixCog(commands.Cog):
         "roulette": "gambling", "blackjack": "gambling",
     }
 
+    def _is_public_top(self, ctx: commands.Context) -> bool:
+        # Leaderboards are read-only community information. They must be usable
+        # from General regardless of the configured economy/gambling locations.
+        # This covers !top with no argument and every !top/!leaderboard/!lb alias.
+        return ctx.command is not None and ctx.command.name == "top"
+
     async def cog_before_invoke(self, ctx: commands.Context) -> None:
         if ctx.guild is None or ctx.command is None:
             return
         feature = self._ECONOMY_GUARDS.get(ctx.command.name)
         if feature is None:
             return
+
+        # All leaderboards are read-only community stats, so !top /
+        # !leaderboard / !lb are intentionally usable in General too.
+        if self._is_public_top(ctx):
+            return
+
+        if feature == "gambling":
+            try:
+                await self.economy.prepare_context(ctx.guild.id)
+                await self.economy.guild_settings.require_feature(ctx.guild.id, "gambling")
+            except ValueError as error:
+                await ctx.send(embed=error_embed(ctx.author, str(error)))
+                raise commands.CheckFailure(str(error)) from error
+            try:
+                await self.economy.guild_settings.require_channel(
+                    ctx.guild.id, ctx.channel.id, getattr(ctx.channel, "category_id", None)
+                )
+            except ValueError as error:
+                await handle_wrong_gambling_channel(ctx, self.economy)
+                raise commands.CheckFailure(str(error)) from error
+            return
+
+        # Keep feature-disabled errors distinct from wrong-location errors.
+        # Wrong-location prefix commands are removed and reported privately.
         try:
-            await self.economy.require_access(ctx.guild.id, feature, ctx.channel.id, getattr(ctx.channel, "category_id", None))
+            await self.economy.prepare_context(ctx.guild.id)
+            await self.economy.guild_settings.require_feature(ctx.guild.id, feature)
         except ValueError as error:
             await ctx.send(embed=error_embed(ctx.author, str(error)))
+            raise commands.CheckFailure(str(error)) from error
+        try:
+            await self.economy.guild_settings.require_channel(
+                ctx.guild.id, ctx.channel.id, getattr(ctx.channel, "category_id", None)
+            )
+        except ValueError as error:
+            await handle_wrong_economy_channel(ctx, self.economy)
             raise commands.CheckFailure(str(error)) from error
 
     @commands.command(name="ping")
@@ -313,10 +353,10 @@ class PrefixCog(commands.Cog):
     @commands.command(name="top", aliases=["leaderboard", "lb"])
     @commands.guild_only()
     async def top(self, ctx: commands.Context, category: str = "money") -> None:
-        aliases = {"money":"money","vagyon":"money","wallet":"wallet","cash":"wallet","bank":"bank","rob":"rob","rablás":"rob","gambling":"gambling","gamble":"gambling","wins":"wins","work":"work","crime":"crime","daily":"daily","streak":"daily","earned":"earned","chicken":"chicken","cock":"chicken","scratch":"scratch","weekly":"weekly","level":"level","lvl":"level","investment":"investment","invest":"investment","jackpot":"jackpot","jp":"jackpot","lottery":"lottery","lotto":"lottery"}
+        aliases = {"money":"money","vagyon":"money","wallet":"wallet","cash":"wallet","bank":"bank","rob":"rob","rablás":"rob","gambling":"gambling","gamble":"gambling","wins":"wins","work":"work","crime":"crime","daily":"daily","streak":"daily","earned":"earned","chicken":"chicken","cock":"chicken","scratch":"scratch","weekly":"weekly","level":"level","lvl":"level","investment":"investment","invest":"investment","jackpot":"jackpot","jp":"jackpot","lottery":"lottery","lotto":"lottery","activity":"activity","act":"activity","activityxp":"activity_xp","actxp":"activity_xp","chat":"chat","messages":"chat","msg":"chat","chatxp":"chatxp","voice":"voice","voicetime":"voice"}
         category = aliases.get(category.lower(), "money")
         rows = await self.economy.leaderboard(ctx.guild.id, category, 10)
-        labels = {"money":"💰 Vagyon","wallet":"💵 Tárca","bank":"🏦 Bank","rob":"🥷 Rablási profit","gambling":"🎰 Gambling profit","wins":"🏆 Játékgyőzelmek","work":"🛠️ Elvégzett munkák","crime":"🕵️ Sikeres crime","daily":"🔥 Daily streak","earned":"💹 Összes kereset","chicken":"🐔 Chicken Fight win","scratch":"🎟️ Lekapart sorsjegyek","weekly":"📅 Weekly átvételek","level":"⭐ Szint / XP","investment":"📈 Befektetés profit","jackpot":"🎰 Jackpot győzelem","lottery":"🎟️ Lottery győzelem"}
+        labels = {"money":"💰 Vagyon","wallet":"💵 Tárca","bank":"🏦 Bank","rob":"🥷 Rablási profit","gambling":"🎰 Gambling profit","wins":"🏆 Játékgyőzelmek","work":"🛠️ Elvégzett munkák","crime":"🕵️ Sikeres crime","daily":"🔥 Daily streak","earned":"💹 Összes kereset","chicken":"🐔 Chicken Fight win","scratch":"🎟️ Lekapart sorsjegyek","weekly":"📅 Weekly átvételek","level":"⭐ Szint / XP","investment":"📈 Befektetés profit","jackpot":"🎰 Jackpot győzelem","lottery":"🎟️ Lottery győzelem","activity":"📈 Activity Level","activity_xp":"✨ Activity XP","chat":"💬 Chat üzenetek","chatxp":"🗨️ Chat XP","voice":"🎙️ Voice idő"}
         lines = []
         for index, (user_id, _, _, score) in enumerate(rows, 1):
             if category in {"money", "wallet", "bank", "rob", "gambling", "earned", "investment"}:
@@ -325,6 +365,16 @@ class PrefixCog(commands.Cog):
                 shown = f"{score:,} XP".replace(",", " ")
             elif category == "daily":
                 shown = f"{score} nap"
+            elif category == "activity":
+                shown = f"Activity Level {score}"
+            elif category in {"activity_xp", "chatxp"}:
+                shown = f"{score:,} XP".replace(",", " ")
+            elif category == "chat":
+                shown = f"{score:,} üzenet".replace(",", " ")
+            elif category == "voice":
+                minutes = score // 60
+                hours, minutes = divmod(minutes, 60)
+                shown = f"{hours}ó {minutes}p" if hours else f"{minutes} perc"
             else:
                 shown = f"{score} db"
             lines.append(f"`{index}.` <@{user_id}> — **{shown}**")
@@ -532,64 +582,97 @@ class PrefixCog(commands.Cog):
             parsed_bet = parse_amount(bet, wallet)
         except ValueError as error:
             return await ctx.send(embed=error_embed(ctx.author, str(error)))
-        await self._send_prefix_gamble(ctx, "🪙 Coinflip", self.gambling.coinflip, parsed_bet, choice, parsed_bet)
+        cog = self.bot.get_cog("GamblingCog")
+        if cog is None:
+            return await ctx.send(embed=error_embed(ctx.author, "A gambling modul nem érhető el."))
+        await cog.run_coinflip_prefix(ctx, choice, parsed_bet)
 
     @commands.command(name="dice", aliases=["kocka", "roll"])
     @commands.guild_only()
-    async def dice(self, ctx: commands.Context, first: str, second: str) -> None:
+    async def dice(self, ctx: commands.Context, first: str, second: str, third: str | None = None) -> None:
+        cog = self.bot.get_cog("GamblingCog")
+        if cog is None:
+            return await ctx.send(embed=error_embed(ctx.author, "A gambling modul nem érhető el."))
         wallet, _ = await self.economy.balance(ctx.guild.id, ctx.author.id)
+        modes = {"exact","high","low","odd","even","over","over7","under","under7","seven","exact7","7"}
+        mode = "exact"
         guess = None
-        bet = None
+        bet_text = None
+        if third is not None:
+            mode = first.lower()
+            if mode not in modes:
+                return await ctx.send(embed=error_embed(ctx.author, "Dice mód: exact/high/low/odd/even/over7/under7/seven."))
+            if mode == "exact":
+                try: guess = int(second)
+                except ValueError: return await ctx.send(embed=error_embed(ctx.author, "Exact mód: `!dice exact 4 100k`."))
+                bet_text = third
+            else:
+                bet_text = third if second.lower() in {"bet","tet","tét"} else second
+        else:
+            if first.lower() in modes and first.lower() != "exact":
+                mode = first.lower(); bet_text = second
+            else:
+                try:
+                    candidate = int(first)
+                    if 1 <= candidate <= 6: guess, bet_text = candidate, second
+                except ValueError:
+                    pass
+                if guess is None:
+                    try:
+                        candidate = int(second)
+                        if 1 <= candidate <= 6: guess, bet_text = candidate, first
+                    except ValueError:
+                        pass
+        if bet_text is None or (mode == "exact" and guess is None):
+            return await ctx.send(embed=error_embed(ctx.author, "Használat: `!dice 4 100k`, `!dice odd 100k`, `!dice over7 100k`."))
         try:
-            candidate = int(first)
-            if 1 <= candidate <= 6:
-                guess, bet = candidate, second
-        except ValueError:
-            pass
-        if guess is None:
-            try:
-                candidate = int(second)
-                if 1 <= candidate <= 6:
-                    guess, bet = candidate, first
-            except ValueError:
-                pass
-        if guess is None or bet is None:
-            return await ctx.send(embed=error_embed(ctx.author, "Használat: `!roll 4 100k` vagy `!roll 100k 4`."))
-        try:
-            parsed_bet = parse_amount(bet, wallet)
+            parsed_bet = parse_amount(bet_text, wallet)
         except ValueError as error:
             return await ctx.send(embed=error_embed(ctx.author, str(error)))
-        await self._send_prefix_gamble(ctx, "🎲 Kockajáték", self.gambling.dice, parsed_bet, guess, parsed_bet)
+        await cog.run_dice_prefix(ctx, mode, parsed_bet, guess)
 
     @commands.command(name="slots", aliases=["slot", "sl"])
     @commands.guild_only()
     async def slots(self, ctx: commands.Context, bet: str) -> None:
+        cog = self.bot.get_cog("GamblingCog")
+        if cog is None:
+            return await ctx.send(embed=error_embed(ctx.author, "A gambling modul nem érhető el."))
         wallet, _ = await self.economy.balance(ctx.guild.id, ctx.author.id)
         try:
             parsed_bet = parse_amount(bet, wallet)
         except ValueError as error:
             return await ctx.send(embed=error_embed(ctx.author, str(error)))
-        await self._send_prefix_gamble(ctx, "🎰 Slots", self.gambling.slots, parsed_bet, parsed_bet)
+        await cog.run_slots_prefix(ctx, parsed_bet)
 
     @commands.command(name="roulette", aliases=["rulett", "r"])
     @commands.guild_only()
-    async def roulette(self, ctx: commands.Context, first: str, second: str) -> None:
+    async def roulette(self, ctx: commands.Context, first: str | None = None, second: str | None = None) -> None:
+        cog = self.bot.get_cog("GamblingCog")
+        if cog is None:
+            return await ctx.send(embed=error_embed(ctx.author, "A gambling modul nem érhető el."))
+        if first is None and second is None:
+            return await cog.open_roulette_prefix(ctx)
+        if first is None or second is None:
+            return await ctx.send(embed=error_embed(ctx.author, "Használat: `!roulette red 100k`, `!roulette 100k red`, vagy csak `!roulette` a saját kerékhez."))
         wallet, _ = await self.economy.balance(ctx.guild.id, ctx.author.id)
-        roulette_choices = {"piros", "red", "fekete", "black", "zold", "zöld", "green", "paros", "páros", "even", "paratlan", "páratlan", "odd", "alacsony", "low", "magas", "high"}
-        def is_choice(value: str) -> bool:
-            v = value.lower().strip()
-            return v in roulette_choices or (v.isdigit() and 0 <= int(v) <= 36)
-        if is_choice(first):
-            choice, bet = first, second
-        elif is_choice(second):
-            choice, bet = second, first
-        else:
-            return await ctx.send(embed=error_embed(ctx.author, "Használat: `!roulette red 100k` vagy `!roulette 100k red`."))
+        choice = None
+        bet_text = None
         try:
-            parsed_bet = parse_amount(bet, wallet)
+            parse_roulette_choice(first)
+            choice, bet_text = first, second
+        except ValueError:
+            try:
+                parse_roulette_choice(second)
+                choice, bet_text = second, first
+            except ValueError:
+                pass
+        if choice is None or bet_text is None:
+            return await ctx.send(embed=error_embed(ctx.author, "Fogadás: piros/fekete, zöld/0, páros/páratlan vagy konkrét 0-36 közötti szám."))
+        try:
+            parsed_bet = parse_amount(bet_text, wallet)
         except ValueError as error:
             return await ctx.send(embed=error_embed(ctx.author, str(error)))
-        await self._send_prefix_gamble(ctx, "🎡 Roulette", self.gambling.roulette, parsed_bet, choice, parsed_bet)
+        await cog.open_roulette_prefix(ctx, choice=choice, bet=parsed_bet)
 
     @commands.command(name="blackjack", aliases=["bj"])
     @commands.guild_only()
@@ -603,7 +686,8 @@ class PrefixCog(commands.Cog):
             view = await cog.start_blackjack(ctx.guild.id, ctx.author, parsed_bet)
         except ValueError as error:
             return await ctx.send(embed=error_embed(ctx.author, str(error)))
-        view.message = await ctx.send(embed=view.embed(), view=view)
+        view.message = await ctx.send(embed=view.embed(deal_stage=0), view=view)
+        await view.animate_opening()
         if view.opening_is_finished():
             await view.finish(auto=True)
 

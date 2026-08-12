@@ -1,0 +1,48 @@
+Yoru v3.20.0 — Casino Quick & Community Rework
+
+Casino UX standard
+- Coinflip, Dice, RPS, High/Low and Chicken Fight now use the same game-first visual standard as Slots/Roulette.
+- Large mobile-friendly Pillow displays, player branding, bounded off-event-loop rendering, smooth GIF during play, static PNG after result.
+- One active Casino game per player/guild remains enforced by the Casino Core.
+- Game IDs stay internal and are available through the Casino ledger/admin audit log only.
+
+Coinflip
+- Animated heads/tails reveal with static final state.
+- Central Casino reservation/settlement/stat/jackpot accounting.
+
+Dice
+- Exact 1–6, High, Low, Odd, Even, Over 7, Under 7 and Exactly 7 modes.
+- One-die and two-die visual layouts with central payouts.
+
+RPS
+- Animated Yoru choice reveal followed by static result.
+- Tie refunds the active stake; wins/losses use Casino settlement.
+
+High / Low
+- Rebuilt from one-shot guess into a streak + cashout game.
+- Higher/Lower buttons, tie continuation, owner lock and timeout handling.
+- Dynamic cashout factor uses the current card probability and configured house factor rather than a fixed streak table.
+
+Chicken Fight
+- HP-based multi-round fight animation with attack/dodge/critical/counter style events.
+- Visual sequence is generated from the already-decided real outcome.
+- Losing Chicken inventory semantics remain intact.
+
+Monthly Casino Jackpot
+- Automatic month-end processing of previous-month pools.
+- Eligibility: 25 settled Casino games OR 250k total monthly wager by default.
+- Every eligible player has equal draw odds.
+- No eligible player => pool rolls into the current month.
+- Persistent jackpot history and idempotent month finalization.
+- Legacy manual player-funded !jp flow is retired from commands; !jp and /community jackpot now show Monthly Casino Jackpot status.
+
+Lottery
+- /casino lottery interactive panel with current pot, own/total tickets, next draw and last winner.
+- +1/+5/+10/+50 quick-buy buttons.
+- Lottery draw history is persisted; legacy !lot shortcut remains.
+
+Persistence / reset safety
+- New casino jackpot history and lottery history tables are included in full economy reset/rebase cleanup paths.
+
+Docs
+- Player tutorial, help, README and Casino roadmap updated for the current gameplay and UX standard.

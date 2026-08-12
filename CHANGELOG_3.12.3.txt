@@ -1,0 +1,6 @@
+Yoru v3.12.3 Hotfix
+
+- All prefix leaderboards (!top / !leaderboard / !lb) are public/read-only and bypass economy channel restrictions.
+- Slash /top is public for every leaderboard category.
+- Wrong-channel prefix gambling commands keep the v3.12.2 delete + DM behavior.
+- Added direct regression coverage for the delete + DM helper.

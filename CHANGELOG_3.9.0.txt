@@ -1,0 +1,33 @@
+Yoru Bot v3.9.0 — Tickets
+==========================
+
+ÚJ
+- /settings -> Tickets oldal.
+- Persistent, gombos ticket panelek.
+- Maximum 5 ticket típus panelenként.
+- Privát ticket csatorna a kiválasztott Ticket kategóriában.
+- Staff role konfiguráció.
+- Ticket log csatorna.
+- Max nyitott ticket / user: 1-5.
+- Opcionális DM transcript.
+- Claim / Add User / Remove User / Rename / Close / Reopen / Delete kezelők.
+- Restart-safe panelek és kontrollgombok.
+- Ticket panel aktiválás/kikapcsolás.
+- Ticket DB táblák automatikus létrehozása a meglévő SQLite fájlban.
+
+AUTOMOD
+- A beállított Ticket kategória automatikusan invite + link kivételt kap Yoru AutoModban.
+- Emiatt a ticket csatornákban szerver invite-ok, normál linkek, képek és fájlok küldhetők.
+
+KOMPATIBILITÁS
+- Nincs új top-level slash command.
+- A meglévő prefix/slash parancsok és economy/moderation/community funkciók változatlanok.
+- A v3.8.0 -> v3.9.0 update nem igényel .env vagy database cserét.
+- A meglévő data/vaultbot.db maradjon a hoston.
+
+TELEPÍTÉS ONLINE HOSTON
+1. Állítsd le a botot.
+2. A v3.9.0 ZIP tartalmával írd felül a bot fájljait.
+3. A saját .env fájlodat és a data/vaultbot.db adatbázist NE töröld / NE cseréld.
+4. Indítsd újra a botot.
+5. Discord: /settings -> Tickets.

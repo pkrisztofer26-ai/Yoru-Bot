@@ -1,0 +1,9 @@
+Yoru v3.21.0 — Casino PvP + Balance Pass
+
+- Coinflip Duel, Dice Duel és RPS Duel átállt a Yoru Casino game-first vizuális standardra.
+- Nagy 960x640 PvP challenge/game display, két játékosnévvel, smooth GIF animációval és statikus final frame-mel.
+- 1 aktív Casino game/player szabály most house Casino és accepted PvP között is DB-szinten érvényes.
+- Pending kihívás nem zárja ki a targetet a house Casinóból; az elfogadás atomikusan ellenőrzi mindkét játékost.
+- Teljes default Casino RTP/EV audit; Slots 1M Monte Carlo ~94.88% RTP.
+- Coinflip/Dice/RPS/Chicken/Roulette/High-Low/Lottery/Jackpot default balance ellenőrizve: nincs pozitív EV-s statikus payout exploit.
+- Blackjack továbbra is strategy-dependent; payout rule sanity checkelve, külön exploit nem talált.
