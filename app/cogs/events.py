@@ -365,8 +365,11 @@ class EventCog(commands.Cog):
         eligible: list[discord.User | discord.Member] = []
         rejected = 0
         for user in reactors:
-            wallet, _ = await self.economy.balance(guild_id, user.id)
-            if wallet >= entry_fee:
+            wallet, bank = await self.economy.balance(guild_id, user.id)
+            # Hirtelen Halál nevezéshez a wallet + bank együtt számít.
+            # Negatív wallet nem csökkenti a bankban ténylegesen elkölthető összeget.
+            available = max(0, int(wallet)) + max(0, int(bank))
+            if available >= entry_fee:
                 eligible.append(user)
             else:
                 rejected += 1
@@ -446,25 +449,33 @@ class EventCog(commands.Cog):
         message: discord.Message,
         guild_id: int,
         entry_fee: int,
-    ) -> tuple[list[discord.User | discord.Member], list[discord.User | discord.Member]]:
+    ) -> tuple[
+        list[discord.User | discord.Member],
+        list[discord.User | discord.Member],
+        dict[int, tuple[int, int]],
+    ]:
         reactors = await self._get_participants(message, self.BOMB_EMOJI)
         paid: list[discord.User | discord.Member] = []
         rejected: list[discord.User | discord.Member] = []
+        payment_sources: dict[int, tuple[int, int]] = {}
         for user in reactors:
             try:
-                await self.economy.db.add_wallet(guild_id, user.id, -entry_fee, "hirtelen_halal_entry")
+                wallet_used, bank_used, _wallet, _bank = await self.economy.db.debit_wallet_and_bank(
+                    guild_id, user.id, entry_fee, "hirtelen_halal_entry"
+                )
+                payment_sources[int(user.id)] = (wallet_used, bank_used)
                 paid.append(user)
             except ValueError:
                 rejected.append(user)
             except Exception:
-                # Ha technikai hiba történik a nevezések levonása közben, az addig
-                # levont nevezéseket azonnal visszaadjuk, hogy senki ne veszítsen pénzt.
+                # Technikai hiba esetén pontosan oda refundolunk, ahonnan a nevezés jött.
                 for paid_user in paid:
-                    await self.economy.db.refund_wallet(
-                        guild_id, paid_user.id, entry_fee, "hirtelen_halal_entry_error_refund"
+                    wallet_used, bank_used = payment_sources.get(int(paid_user.id), (entry_fee, 0))
+                    await self.economy.db.refund_wallet_and_bank(
+                        guild_id, paid_user.id, wallet_used, bank_used, "hirtelen_halal_entry_error_refund"
                     )
                 raise
-        return paid, rejected
+        return paid, rejected, payment_sources
 
     async def _run_bomb(
         self,
@@ -477,6 +488,7 @@ class EventCog(commands.Cog):
         watcher: asyncio.Task[None] | None = None,
     ) -> None:
         paid: list[discord.User | discord.Member] = []
+        payment_sources: dict[int, tuple[int, int]] = {}
         payout_complete = False
         try:
             await asyncio.sleep(join_seconds)
@@ -484,11 +496,14 @@ class EventCog(commands.Cog):
                 watcher.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await watcher
-            paid, rejected = await self._collect_bomb_entries(message, guild_id, entry_fee)
+            paid, rejected, payment_sources = await self._collect_bomb_entries(message, guild_id, entry_fee)
 
             if len(paid) < 2:
                 for user in paid:
-                    await self.economy.db.refund_wallet(guild_id, user.id, entry_fee, "hirtelen_halal_refund")
+                    wallet_used, bank_used = payment_sources.get(int(user.id), (entry_fee, 0))
+                    await self.economy.db.refund_wallet_and_bank(
+                        guild_id, user.id, wallet_used, bank_used, "hirtelen_halal_refund"
+                    )
                 rejected_text = f"\n**{len(rejected)} fő** nem rendelkezett elegendő pénzzel." if rejected else ""
                 embed = base_embed(
                     "🛑 Hirtelen Halál • Elmaradt",
@@ -577,7 +592,10 @@ class EventCog(commands.Cog):
             if paid and not payout_complete:
                 for user in paid:
                     try:
-                        await self.economy.db.refund_wallet(guild_id, user.id, entry_fee, "hirtelen_halal_error_refund")
+                        wallet_used, bank_used = payment_sources.get(int(user.id), (entry_fee, 0))
+                        await self.economy.db.refund_wallet_and_bank(
+                            guild_id, user.id, wallet_used, bank_used, "hirtelen_halal_error_refund"
+                        )
                     except Exception:
                         logger.exception("Nem sikerült Hirtelen Halál refundot adni user=%s", user.id)
         finally:

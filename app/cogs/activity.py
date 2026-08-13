@@ -68,6 +68,28 @@ class ChatTuningModal(discord.ui.Modal, title="Activity • Chat beállítások"
         await self.parent_view.refresh(interaction)
 
 
+class AntiFarmTuningModal(discord.ui.Modal, title="Activity • Anti-farm"):
+    duplicate_window = discord.ui.TextInput(label="Duplicate védelem (mp, 0 = OFF)", max_length=6)
+    min_alnum = discord.ui.TextInput(label="Minimum betű/szám / üzenet", max_length=3)
+
+    def __init__(self, view: "ActivitySettingsView", current: tuple[int, int]) -> None:
+        super().__init__()
+        self.parent_view = view
+        self.duplicate_window.default = str(current[0])
+        self.min_alnum.default = str(current[1])
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        try:
+            await self.parent_view.cog.service.set_antifarm_tuning(
+                interaction.guild_id,
+                duplicate_window=int(str(self.duplicate_window.value)),
+                min_alnum=int(str(self.min_alnum.value)),
+            )
+        except (ValueError, TypeError) as exc:
+            return await interaction.response.send_message(f"❌ {exc}", ephemeral=True)
+        await self.parent_view.refresh(interaction)
+
+
 class VoiceTuningModal(discord.ui.Modal, title="Activity • Voice beállítások"):
     xp_per_minute = discord.ui.TextInput(label="Voice XP / qualifying perc", max_length=4)
 
@@ -329,6 +351,12 @@ class ActivitySettingsView(OwnedView):
         levels = await self.cog.service.get_milestone_levels(interaction.guild_id)
         await self.cog.show_milestones(interaction, self.owner_id, levels[0] if levels else None)
 
+    @discord.ui.button(label="Anti-farm", emoji="🛡️", style=discord.ButtonStyle.secondary, row=2)
+    async def antifarm_tuning(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
+        duplicate = await self.cog.service.duplicate_window(interaction.guild_id)
+        min_alnum = await self.cog.service.min_message_alnum(interaction.guild_id)
+        await interaction.response.send_modal(AntiFarmTuningModal(self, (duplicate, min_alnum)))
+
     @discord.ui.button(label="Csatorna törlése", emoji="🧹", style=discord.ButtonStyle.secondary, row=2)
     async def clear_channel(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
         await self.cog.service.settings.set_int(interaction.guild_id, cfg.ACTIVITY_LEVELUP_CHANNEL_KEY, None)
@@ -503,6 +531,8 @@ class ActivityCog(commands.Cog):
         low, high = await self.service.chat_xp_range(guild.id)
         cooldown = await self.service.chat_cooldown(guild.id)
         interval = await self.service.message_min_interval(guild.id)
+        duplicate_window = await self.service.duplicate_window(guild.id)
+        min_alnum = await self.service.min_message_alnum(guild.id)
         voice_xp = await self.service.voice_xp_per_minute(guild.id)
         channel_id = await self.service.get_levelup_channel_id(guild.id)
         channel = guild.get_channel(channel_id) if channel_id else None
@@ -517,7 +547,8 @@ class ActivityCog(commands.Cog):
         embed.add_field(name="Globális állapot", value="✅ ON" if enabled else "❌ OFF", inline=True)
         embed.add_field(name="💬 Chat XP", value=f"{'✅' if chat else '❌'} **{low}–{high} XP** • {cooldown} mp XP cooldown", inline=True)
         embed.add_field(name="🎙️ Voice XP", value=f"{'✅' if voice else '❌'} **{voice_xp} XP/perc**", inline=True)
-        embed.add_field(name="🛡️ Chat anti-farm", value=f"{interval} mp message gate • 5 perc duplicate védelem • prefix parancs nem számít", inline=False)
+        duplicate_text = "OFF" if duplicate_window <= 0 else f"{duplicate_window} mp"
+        embed.add_field(name="🛡️ Chat anti-farm", value=f"{interval} mp message gate • {duplicate_text} duplicate védelem • min {min_alnum} betű/szám • prefix parancs nem számít", inline=False)
         embed.add_field(
             name="🔊 Voice anti-farm",
             value=f"Minimum 2 qualifying real user • AFK/Stage audience kizárva • server-deaf kizárva • self-deaf: **{'kizárva' if self_deaf else 'engedélyezve'}**",
@@ -526,7 +557,7 @@ class ActivityCog(commands.Cog):
         embed.add_field(name="📣 Level-up csatorna", value=channel.mention if isinstance(channel, discord.abc.GuildChannel) else "Nincs • nincs automatikus értesítés", inline=True)
         embed.add_field(name="🏆 Milestone rangok", value=f"**{configured}/{len(milestones)}** beállítva", inline=True)
         embed.add_field(name="📈 XP görbe", value=f"Lv. 40 ≈ **{cfg.xp_for_level(40):,} XP** • Lv. 100 ≈ **{cfg.xp_for_level(100):,} XP**".replace(",", " "), inline=True)
-        embed.set_footer(text="Yoru • Settings • Activity Level külön rendszer")
+        embed.set_footer(text="Yoru • Settings • Activity • DB Settings az elsődleges")
         return embed
 
     async def milestone_embed(self, guild: discord.Guild, level: int | None, *, page: int = 0) -> discord.Embed:
@@ -593,13 +624,15 @@ class ActivityCog(commands.Cog):
         return embed
 
     async def show_settings(self, interaction: discord.Interaction, owner_id: int, existing: ActivitySettingsView | None = None) -> None:
+        if not interaction.response.is_done():
+            await interaction.response.defer()
         view = ActivitySettingsView(
             self,
             owner_id,
             interaction.guild,
             channel_page=existing.channel_page if existing else 0,
         )
-        await interaction.response.edit_message(embed=await self.settings_embed(interaction.guild), view=view)
+        await interaction.edit_original_response(embed=await self.settings_embed(interaction.guild), view=view)
 
     async def milestone_page_for_level(self, guild_id: int, level: int) -> int:
         levels = await self.service.get_milestone_levels(guild_id)

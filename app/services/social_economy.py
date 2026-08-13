@@ -10,6 +10,7 @@ import aiosqlite
 from app.database import Database
 from app.progression_math import progress_for_xp
 from app import social_config as cfg
+from app.services.gameplay_settings import GameplaySettingsService
 
 
 def _now() -> datetime:
@@ -59,6 +60,7 @@ class SocialEconomyService:
 
     def __init__(self, db: Database) -> None:
         self.db = db
+        self.gameplay = GameplaySettingsService(db)
 
     async def initialize(self) -> None:
         # Database.initialize creates these tables too. Keep this idempotent so
@@ -91,9 +93,10 @@ class SocialEconomyService:
 
     async def _ensure_user_tx(self, conn: aiosqlite.Connection, guild_id: int, user_id: int) -> None:
         now = _now().isoformat()
+        starting_balance = await self.db.get_starting_balance(guild_id, conn)
         await conn.execute(
             "INSERT OR IGNORE INTO users (guild_id,user_id,wallet,bank,created_at) VALUES (?,?,?,0,?)",
-            (guild_id, user_id, self.db.starting_balance, now),
+            (guild_id, user_id, starting_balance, now),
         )
 
     async def _stat_add_tx(self, conn: aiosqlite.Connection, guild_id: int, user_id: int, name: str, value: int) -> None:
@@ -146,12 +149,13 @@ class SocialEconomyService:
         item_id = item_id.strip().lower()
         quantity = int(quantity)
         unit_price = int(unit_price)
-        if quantity < 1 or quantity > cfg.PLAYER_MARKET_MAX_QUANTITY:
-            raise ValueError(f"A mennyiség 1–{cfg.PLAYER_MARKET_MAX_QUANTITY} lehet.")
-        if unit_price < cfg.PLAYER_MARKET_MIN_UNIT_PRICE:
-            raise ValueError(f"A minimum egységár {cfg.PLAYER_MARKET_MIN_UNIT_PRICE:,}.".replace(",", " "))
+        runtime = await self.gameplay.social(guild_id)
+        if quantity < 1 or quantity > runtime.market_max_quantity:
+            raise ValueError(f"A mennyiség 1–{runtime.market_max_quantity} lehet.")
+        if unit_price < runtime.market_min_unit_price:
+            raise ValueError(f"A minimum egységár {runtime.market_min_unit_price:,}.".replace(",", " "))
         now = _now()
-        expires = now + timedelta(hours=cfg.PLAYER_MARKET_LISTING_HOURS)
+        expires = now + timedelta(hours=runtime.market_listing_hours)
         async with aiosqlite.connect(self.db.path) as conn:
             await conn.execute("PRAGMA foreign_keys=ON;")
             await conn.execute("BEGIN IMMEDIATE")
@@ -160,9 +164,9 @@ class SocialEconomyService:
                 (guild_id, seller_id),
             )
             active = int((await cur.fetchone())[0])
-            if active >= cfg.PLAYER_MARKET_MAX_ACTIVE_PER_USER:
+            if active >= runtime.market_max_active_per_user:
                 await conn.rollback()
-                raise ValueError(f"Maximum {cfg.PLAYER_MARKET_MAX_ACTIVE_PER_USER} aktív listinged lehet.")
+                raise ValueError(f"Maximum {runtime.market_max_active_per_user} aktív listinged lehet.")
             cur = await conn.execute(
                 "SELECT name,emoji,COALESCE(category,'utility') FROM shop_items WHERE item_id=? AND active=1",
                 (item_id,),
@@ -260,7 +264,8 @@ class SocialEconomyService:
             if quantity > remaining:
                 await conn.rollback(); raise ValueError(f"Csak {remaining} db maradt a listingben.")
             gross = unit_price * quantity
-            tax = max(1, int(gross * cfg.PLAYER_MARKET_TAX_RATE)) if gross > 0 else 0
+            runtime = await self.gameplay.social(guild_id)
+            tax = max(1, int(gross * runtime.market_tax_rate)) if gross > 0 and runtime.market_tax_rate > 0 else 0
             net = gross - tax
             cur = await conn.execute("SELECT wallet FROM users WHERE guild_id=? AND user_id=?", (guild_id, buyer_id))
             buyer_wallet = int((await cur.fetchone())[0])
@@ -385,8 +390,9 @@ class SocialEconomyService:
             duration_minutes = 0
         async with aiosqlite.connect(self.db.path) as conn:
             cur = await conn.execute("SELECT COUNT(*) FROM server_shop_items WHERE guild_id=? AND active=1", (guild_id,))
-            if int((await cur.fetchone())[0]) >= cfg.SERVER_SHOP_MAX_ITEMS:
-                raise ValueError(f"Maximum {cfg.SERVER_SHOP_MAX_ITEMS} aktív server shop reward lehet.")
+            runtime = await self.gameplay.social(guild_id)
+            if int((await cur.fetchone())[0]) >= runtime.server_shop_max_items:
+                raise ValueError(f"Maximum {runtime.server_shop_max_items} aktív server shop reward lehet.")
             cur = await conn.execute(
                 """INSERT INTO server_shop_items
                    (guild_id,name,description,emoji,price,reward_type,reward_ref,reward_quantity,stock,per_user_limit,
@@ -479,8 +485,9 @@ class SocialEconomyService:
         if active and not int(item["active"]):
             async with aiosqlite.connect(self.db.path) as conn:
                 cur = await conn.execute("SELECT COUNT(*) FROM server_shop_items WHERE guild_id=? AND active=1", (guild_id,))
-                if int((await cur.fetchone())[0]) >= cfg.SERVER_SHOP_MAX_ITEMS:
-                    raise ValueError(f"Maximum {cfg.SERVER_SHOP_MAX_ITEMS} aktív server shop reward lehet.")
+                runtime = await self.gameplay.social(guild_id)
+                if int((await cur.fetchone())[0]) >= runtime.server_shop_max_items:
+                    raise ValueError(f"Maximum {runtime.server_shop_max_items} aktív server shop reward lehet.")
         async with aiosqlite.connect(self.db.path) as conn:
             cur = await conn.execute("UPDATE server_shop_items SET active=? WHERE guild_id=? AND id=?", (1 if active else 0, guild_id, item_id))
             await conn.commit()
@@ -659,13 +666,14 @@ class SocialEconomyService:
             raise ValueError("Magadat nem hívhatod ki duelre.")
         if game not in cfg.PVP_GAMES:
             raise ValueError("Játék: coinflip, dice vagy rps.")
-        if stake < cfg.PVP_MIN_STAKE:
-            raise ValueError(f"A minimum tét {cfg.PVP_MIN_STAKE:,}.".replace(",", " "))
+        runtime = await self.gameplay.social(guild_id)
+        if stake < runtime.pvp_min_stake:
+            raise ValueError(f"A minimum tét {runtime.pvp_min_stake:,}.".replace(",", " "))
         await self.db.ensure_user(guild_id, challenger_id)
         wallet, _ = await self.db.get_balance(guild_id, challenger_id)
         if wallet < stake:
             raise ValueError("Nincs elég pénzed ehhez a tétethez.")
-        now = _now(); expires = now + timedelta(seconds=cfg.PVP_CHALLENGE_SECONDS)
+        now = _now(); expires = now + timedelta(seconds=runtime.pvp_challenge_seconds)
         async with aiosqlite.connect(self.db.path) as conn:
             await conn.execute("BEGIN IMMEDIATE")
             # Cross-system guard: a player cannot enter a PvP duel while an
@@ -739,7 +747,8 @@ class SocialEconomyService:
                 await conn.execute("UPDATE users SET wallet=wallet-?,money_lost=money_lost+? WHERE guild_id=? AND user_id=?", (stake,stake,guild_id,uid))
                 await conn.execute("INSERT INTO transactions(guild_id,user_id,amount,reason,created_at) VALUES(?,?,?,?,?)", (guild_id,uid,-stake,f"pvp_escrow:{duel_id}:{game}",now.isoformat()))
                 await self._stat_add_tx(conn,guild_id,uid,"social.pvp.wagered",stake)
-            rps_expires = now + timedelta(seconds=cfg.PVP_RPS_SECONDS)
+            runtime = await self.gameplay.social(guild_id)
+            rps_expires = now + timedelta(seconds=runtime.pvp_rps_seconds)
             await conn.execute("UPDATE pvp_duels SET status='accepted',expires_at=? WHERE id=?", (rps_expires.isoformat(),duel_id))
             await conn.commit()
         return Duel(duel_id,guild_id,challenger,target,game,stake,"accepted",None,None,rps_expires,int(r[7]) if r[7] is not None else None,int(r[8]) if r[8] is not None else None)

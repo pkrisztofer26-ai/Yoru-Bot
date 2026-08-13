@@ -6,7 +6,8 @@ import random
 
 from app.database import Database
 from app import economy_config as eco
-from app.progression_config import QUESTS_BY_PERIOD, QUEST_COUNT_PER_PERIOD, QuestDefinition
+from app.progression_config import QUESTS_BY_PERIOD, QuestDefinition
+from app.services.gameplay_settings import GameplaySettingsService
 from app.services.statistics import StatisticsService
 
 
@@ -24,6 +25,7 @@ class QuestService:
     def __init__(self, database: Database, statistics: StatisticsService) -> None:
         self.db = database
         self.stats = statistics
+        self.settings = GameplaySettingsService(database)
 
     @staticmethod
     def period_key(period: str, now: datetime | None = None) -> str:
@@ -51,6 +53,13 @@ class QuestService:
         definitions = QUESTS_BY_PERIOD.get(period)
         if not definitions:
             raise ValueError("Ismeretlen quest periódus.")
+        runtime = await self.settings.quests(guild_id)
+        if not runtime.enabled:
+            raise ValueError("A Quest rendszer ezen a szerveren ki van kapcsolva.")
+        if period == "daily" and not runtime.daily_enabled:
+            raise ValueError("A napi Questek ezen a szerveren ki vannak kapcsolva.")
+        if period == "weekly" and not runtime.weekly_enabled:
+            raise ValueError("A heti Questek ezen a szerveren ki vannak kapcsolva.")
         key = self.period_key(period)
         existing = await self.db.get_quest_assignments(guild_id, user_id, period, key)
         if existing:
@@ -58,7 +67,7 @@ class QuestService:
 
         seed = f"yoru:{guild_id}:{user_id}:{period}:{key}"
         rng = random.Random(seed)
-        selected = rng.sample(list(definitions), k=min(QUEST_COUNT_PER_PERIOD, len(definitions)))
+        selected = rng.sample(list(definitions), k=min(runtime.count_per_period, len(definitions)))
         for slot, definition in enumerate(selected, start=1):
             current = await self.stats.get(guild_id, user_id, definition.stat)
             await self.db.create_quest_assignment(
@@ -69,8 +78,8 @@ class QuestService:
                 slot,
                 definition.quest_id,
                 current,
-                definition.target,
-                definition.reward_xp,
+                max(1, int(round(definition.target * runtime.target_multiplier))),
+                max(0, int(round(definition.reward_xp * runtime.money_multiplier))),
                 definition.reward_item,
             )
         return key
@@ -128,7 +137,8 @@ class QuestService:
             await self.db.add_item(guild_id, user_id, quest.definition.reward_item, 1)
         await self.stats.increment(guild_id, user_id, f"quests.{period}.claimed")
         await self.stats.add(guild_id, user_id, f"quests.{period}.earned", quest.definition.reward_xp)
-        xp_reward = int(eco.QUEST_PROGRESSION_XP.get(period, 0))
+        runtime = await self.settings.quests(guild_id)
+        xp_reward = int(runtime.daily_progression_xp if period == "daily" else runtime.weekly_progression_xp)
         if xp_reward > 0:
             await self.db.add_progression_xp(guild_id, user_id, xp_reward, f"quest_{period}")
             await self.stats.add(guild_id, user_id, f"quests.{period}.progression_xp", xp_reward)

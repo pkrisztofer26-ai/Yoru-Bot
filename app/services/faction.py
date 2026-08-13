@@ -76,6 +76,48 @@ class FactionService:
             raise ValueError(f"Az XP szorzó {cfg.FACTION_XP_MULTIPLIER_MIN}–{cfg.FACTION_XP_MULTIPLIER_MAX}% között lehet.")
         await self.settings.set_int(guild_id, cfg.FACTION_XP_MULTIPLIER_KEY, value)
 
+    async def tuning(self, guild_id: int) -> dict[str, int]:
+        async def val(key: str, default: int, lo: int, hi: int) -> int:
+            raw=await self.settings.get_int(guild_id,key)
+            return max(lo,min(hi,int(default if raw is None else raw)))
+        return {
+            "daily_objectives": await val(cfg.FACTION_OBJECTIVES_DAILY_KEY,cfg.FACTION_OBJECTIVES_DAILY,1,10),
+            "weekly_objectives": await val(cfg.FACTION_OBJECTIVES_WEEKLY_KEY,cfg.FACTION_OBJECTIVES_WEEKLY,1,10),
+            "war_hours": await val(cfg.FACTION_WAR_HOURS_KEY,cfg.FACTION_WAR_HOURS,1,168),
+            "challenge_hours": await val(cfg.FACTION_WAR_CHALLENGE_HOURS_KEY,cfg.FACTION_WAR_CHALLENGE_HOURS,1,168),
+            "win_bank": await val(cfg.FACTION_WAR_WIN_BANK_KEY,cfg.FACTION_WAR_WIN_BANK,0,10**15),
+            "win_xp": await val(cfg.FACTION_WAR_WIN_XP_KEY,cfg.FACTION_WAR_WIN_XP,0,1_000_000),
+            "draw_bank": await val(cfg.FACTION_WAR_DRAW_BANK_KEY,cfg.FACTION_WAR_DRAW_BANK,0,10**15),
+            "draw_xp": await val(cfg.FACTION_WAR_DRAW_XP_KEY,cfg.FACTION_WAR_DRAW_XP,0,1_000_000),
+            "deposit_xp_per": await val(cfg.FACTION_DEPOSIT_XP_PER_KEY,cfg.DEPOSIT_XP_PER,1,10**15),
+            "deposit_xp_cap": await val(cfg.FACTION_DEPOSIT_XP_CAP_KEY,cfg.DEPOSIT_XP_CAP_PER_EVENT,1,1_000_000),
+            "activity_xp_divisor": await val(cfg.FACTION_ACTIVITY_XP_DIVISOR_KEY,cfg.ACTIVITY_XP_DIVISOR,1,1_000_000),
+        }
+
+    async def set_tuning(self, guild_id: int, **values: int) -> None:
+        specs={
+            "daily_objectives":(cfg.FACTION_OBJECTIVES_DAILY_KEY,1,10),
+            "weekly_objectives":(cfg.FACTION_OBJECTIVES_WEEKLY_KEY,1,10),
+            "war_hours":(cfg.FACTION_WAR_HOURS_KEY,1,168),
+            "challenge_hours":(cfg.FACTION_WAR_CHALLENGE_HOURS_KEY,1,168),
+            "win_bank":(cfg.FACTION_WAR_WIN_BANK_KEY,0,10**15),
+            "win_xp":(cfg.FACTION_WAR_WIN_XP_KEY,0,1_000_000),
+            "draw_bank":(cfg.FACTION_WAR_DRAW_BANK_KEY,0,10**15),
+            "draw_xp":(cfg.FACTION_WAR_DRAW_XP_KEY,0,1_000_000),
+            "deposit_xp_per":(cfg.FACTION_DEPOSIT_XP_PER_KEY,1,10**15),
+            "deposit_xp_cap":(cfg.FACTION_DEPOSIT_XP_CAP_KEY,1,1_000_000),
+            "activity_xp_divisor":(cfg.FACTION_ACTIVITY_XP_DIVISOR_KEY,1,1_000_000),
+        }
+        for name,value in values.items():
+            if value is None or name not in specs: continue
+            key,lo,hi=specs[name]; iv=int(value)
+            if not lo<=iv<=hi: raise ValueError(f"{name}: {lo}–{hi}.")
+            await self.settings.set_int(guild_id,key,iv)
+
+    async def reset_tuning(self, guild_id: int) -> None:
+        for key in (cfg.FACTION_OBJECTIVES_DAILY_KEY,cfg.FACTION_OBJECTIVES_WEEKLY_KEY,cfg.FACTION_WAR_HOURS_KEY,cfg.FACTION_WAR_CHALLENGE_HOURS_KEY,cfg.FACTION_WAR_WIN_BANK_KEY,cfg.FACTION_WAR_WIN_XP_KEY,cfg.FACTION_WAR_DRAW_BANK_KEY,cfg.FACTION_WAR_DRAW_XP_KEY,cfg.FACTION_DEPOSIT_XP_PER_KEY,cfg.FACTION_DEPOSIT_XP_CAP_KEY,cfg.FACTION_ACTIVITY_XP_DIVISOR_KEY):
+            await self.db.set_guild_state(guild_id,key,"")
+
     async def progress(self, guild_id: int, crew_id: int) -> FactionProgress:
         async with aiosqlite.connect(self.db.path) as conn:
             await conn.execute(
@@ -193,7 +235,8 @@ class FactionService:
             return
         base_xp = cfg.STAT_XP.get(stat_name, 0) * amount
         if stat_name == "crew.contributed":
-            base_xp = min(cfg.DEPOSIT_XP_CAP_PER_EVENT, max(1, amount // cfg.DEPOSIT_XP_PER))
+            tuning=await self.tuning(guild_id)
+            base_xp = min(tuning["deposit_xp_cap"], max(1, amount // tuning["deposit_xp_per"]))
         if base_xp > 0:
             await self._apply_xp(guild_id, membership.crew.crew_id, user_id, base_xp)
         await self.record_event(guild_id, user_id, stat_name, amount, membership=membership)
@@ -204,7 +247,8 @@ class FactionService:
         membership = await self.crew.get_membership(guild_id, user_id)
         if membership is None:
             return
-        base_xp = max(1, int(activity_xp) // cfg.ACTIVITY_XP_DIVISOR)
+        tuning=await self.tuning(guild_id)
+        base_xp = max(1, int(activity_xp) // tuning["activity_xp_divisor"])
         await self._apply_xp(guild_id, membership.crew.crew_id, user_id, base_xp)
         await self.record_event(guild_id, user_id, "activity.xp", int(activity_xp), membership=membership)
 
@@ -213,7 +257,8 @@ class FactionService:
             raise ValueError("Ismeretlen objective időszak.")
         key = self._daily_key() if period == "daily" else self._weekly_key()
         definitions = cfg.DAILY_OBJECTIVES if period == "daily" else cfg.WEEKLY_OBJECTIVES
-        count = cfg.FACTION_OBJECTIVES_DAILY if period == "daily" else cfg.FACTION_OBJECTIVES_WEEKLY
+        tuning=await self.tuning(guild_id)
+        count = tuning["daily_objectives"] if period == "daily" else tuning["weekly_objectives"]
         async with aiosqlite.connect(self.db.path) as conn:
             cur = await conn.execute(
                 "SELECT slot,objective_id,progress,target,reward_xp,reward_bank,completed,completed_at FROM crew_objectives WHERE guild_id=? AND crew_id=? AND period=? AND period_key=? ORDER BY slot",
@@ -451,7 +496,8 @@ class FactionService:
             raise ValueError("A cél Frakció jelenleg már másik War-ban van.")
         objective = random.Random(f"yoru:war:{guild_id}:{actor.crew.crew_id}:{opponent_crew_id}:{self._weekly_key()}").choice(cfg.WAR_OBJECTIVES)
         now = self._now()
-        expires = now + timedelta(hours=cfg.FACTION_WAR_CHALLENGE_HOURS)
+        tuning=await self.tuning(guild_id)
+        expires = now + timedelta(hours=tuning["challenge_hours"])
         async with aiosqlite.connect(self.db.path) as conn:
             cur = await conn.execute(
                 """INSERT INTO crew_wars
@@ -492,7 +538,8 @@ class FactionService:
         if not war or war["status"] != "pending" or int(war["target_crew_id"]) != membership.crew.crew_id:
             raise ValueError("Nincs elfogadható War kihívásotok.")
         now = self._now()
-        ends = now + timedelta(hours=cfg.FACTION_WAR_HOURS)
+        tuning=await self.tuning(guild_id)
+        ends = now + timedelta(hours=tuning["war_hours"])
         async with aiosqlite.connect(self.db.path) as conn:
             await conn.execute(
                 "UPDATE crew_wars SET status='active',accepted_at=?,expires_at=? WHERE guild_id=? AND war_id=? AND status='pending'",
@@ -539,11 +586,13 @@ class FactionService:
         rank = await self.perk_rank(guild_id, crew_id, "war")
         multiplier = 1 + 0.10 * rank
         if draw:
-            bank = round(cfg.FACTION_WAR_DRAW_BANK * multiplier)
-            xp = round(cfg.FACTION_WAR_DRAW_XP * multiplier)
+            tuning=await self.tuning(guild_id)
+            bank = round(tuning["draw_bank"] * multiplier)
+            xp = round(tuning["draw_xp"] * multiplier)
         elif winner:
-            bank = round(cfg.FACTION_WAR_WIN_BANK * multiplier)
-            xp = round(cfg.FACTION_WAR_WIN_XP * multiplier)
+            tuning=await self.tuning(guild_id)
+            bank = round(tuning["win_bank"] * multiplier)
+            xp = round(tuning["win_xp"] * multiplier)
         else:
             bank, xp = 0, 0
         if bank:

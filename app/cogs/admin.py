@@ -233,7 +233,7 @@ class AdminCog(commands.Cog):
             f"📊 v3 stat sorok: **{result.get('user_statistics', 0)}**\n"
             f"🧾 Tranzakciók: **{result.get('transactions', 0)}**\n"
             "\nMindenki a következő economy parancsnál új játékosként indul. "
-            "A kezdő pénz a `.env` fájl `STARTING_BALANCE` értéke.",
+            "A kezdő pénzt a `!settings → Economy → Advanced → Kezdő egyenleg` kezeli; a kódbeli érték csak fallback.",
             ephemeral=True,
         )
 

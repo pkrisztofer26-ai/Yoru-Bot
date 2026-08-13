@@ -14,6 +14,10 @@ BUSINESS_ABSOLUTE_CAP_KEY = "business_absolute_property_cap"
 BUSINESS_CITY_CAP_KEY = "business_city_property_cap"
 BUSINESS_INCOME_MULTIPLIER_KEY = "business_income_multiplier_percent"
 BUSINESS_WORKER_DAYS_KEY = "business_worker_contract_days"
+BUSINESS_OFFER_HOURS_KEY = "business_property_offer_hours"
+BUSINESS_TRANSFER_TAX_KEY = "business_transfer_tax_percent"
+BUSINESS_FACTION_BONUS_KEY = "business_faction_bonus_percent"
+BUSINESS_FACTION_XP_KEY = "business_faction_xp_per_claim"
 
 DEFAULT_ENABLED = True
 DEFAULT_REQUIRED_ACTIVITY_LEVEL = 20

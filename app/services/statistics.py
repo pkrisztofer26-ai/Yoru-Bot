@@ -6,7 +6,8 @@ import logging
 import random
 
 from app.database import Database
-from app.progression_config import QUESTS_BY_PERIOD, QUEST_COUNT_PER_PERIOD
+from app.progression_config import QUESTS_BY_PERIOD
+from app.services.gameplay_settings import GameplaySettingsService
 
 
 GAME_LABELS: dict[str, tuple[str, str]] = {
@@ -34,6 +35,7 @@ class StatisticsService:
     def __init__(self, database: Database) -> None:
         self.db = database
         self._listeners: list = []
+        self.gameplay_settings = GameplaySettingsService(database)
         self._quest_stats_by_period = {
             period: {quest.stat for quest in definitions}
             for period, definitions in QUESTS_BY_PERIOD.items()
@@ -78,17 +80,25 @@ class StatisticsService:
         for period, relevant_stats in self._quest_stats_by_period.items():
             if stat_name not in relevant_stats:
                 continue
+            runtime = await self.gameplay_settings.quests(guild_id)
+            if not runtime.enabled:
+                continue
+            if period == "daily" and not runtime.daily_enabled:
+                continue
+            if period == "weekly" and not runtime.weekly_enabled:
+                continue
             key = self._quest_period_key(period)
             if await self.db.get_quest_assignments(guild_id, user_id, period, key):
                 continue
             definitions = QUESTS_BY_PERIOD[period]
             rng = random.Random(f"yoru:{guild_id}:{user_id}:{period}:{key}")
-            selected = rng.sample(list(definitions), k=min(QUEST_COUNT_PER_PERIOD, len(definitions)))
+            selected = rng.sample(list(definitions), k=min(runtime.count_per_period, len(definitions)))
             for slot, definition in enumerate(selected, start=1):
                 current = await self.get(guild_id, user_id, definition.stat)
                 await self.db.create_quest_assignment(
                     guild_id, user_id, period, key, slot, definition.quest_id,
-                    current, definition.target, definition.reward_xp, definition.reward_item,
+                    current, max(1, int(round(definition.target * runtime.target_multiplier))),
+                    max(0, int(round(definition.reward_xp * runtime.money_multiplier))), definition.reward_item,
                 )
 
     async def get(self, guild_id: int, user_id: int, stat_name: str, default: int = 0) -> int:

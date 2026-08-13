@@ -354,9 +354,196 @@ class EconomyEventsSettingsService:
             raise ValueError("A gambling payout szorzó 0.25× és 3.00× között lehet.")
         await self._set_float(guild_id, "economy_gambling_payout_multiplier", value)
 
+    async def get_rob_success_chance(self, guild_id: int) -> float:
+        return max(0.0, min(1.0, await self._get_float_default(guild_id, "economy_rob_success_chance", eco.ROB_SUCCESS_CHANCE)))
+
+    async def get_rob_boosted_max_chance(self, guild_id: int) -> float:
+        return max(0.0, min(1.0, await self._get_float_default(guild_id, "economy_rob_boosted_max_chance", eco.ROB_BOOSTED_MAX_CHANCE)))
+
+    async def get_rob_min_victim_wallet(self, guild_id: int) -> int:
+        return max(0, await self._get_int_default(guild_id, "economy_rob_min_victim_wallet", eco.ROB_MIN_VICTIM_WALLET))
+
+    async def get_rob_min_attempt_wallet(self, guild_id: int) -> int:
+        return max(0, await self._get_int_default(guild_id, "economy_rob_min_attempt_wallet", eco.ROB_MIN_ATTEMPT_WALLET))
+
+    async def get_rob_min_coverage_share(self, guild_id: int) -> float:
+        return max(0.0, min(1.0, await self._get_float_default(guild_id, "economy_rob_min_coverage_share", eco.ROB_MIN_COVERAGE_SHARE)))
+
+    async def get_withdraw_rob_protection_seconds(self, guild_id: int) -> int:
+        default = int(eco.WITHDRAW_ROB_PROTECTION.total_seconds())
+        return max(0, min(7 * 86400, await self._get_int_default(guild_id, "economy_withdraw_rob_protection_seconds", default)))
+
+    async def set_rob_rules(self, guild_id: int, *, success_chance: float, boosted_max_chance: float, min_victim_wallet: int, min_attempt_wallet: int, coverage_share: float) -> None:
+        if not 0 <= success_chance <= 1 or not 0 <= boosted_max_chance <= 1:
+            raise ValueError("A Rob esélyek 0–100% között lehetnek.")
+        if boosted_max_chance < success_chance:
+            raise ValueError("A boosterrel elérhető max esély nem lehet kisebb az alap esélynél.")
+        if min_victim_wallet < 0 or min_attempt_wallet < 0 or min_victim_wallet > 10**15 or min_attempt_wallet > 10**15:
+            raise ValueError("A Rob minimum összegek 0–1 quadrillion között lehetnek.")
+        if not 0 <= coverage_share <= 1:
+            raise ValueError("A kockázati fedezet 0–100% között lehet.")
+        await self._set_float(guild_id, "economy_rob_success_chance", success_chance)
+        await self._set_float(guild_id, "economy_rob_boosted_max_chance", boosted_max_chance)
+        await self.state.set_int(guild_id, "economy_rob_min_victim_wallet", int(min_victim_wallet))
+        await self.state.set_int(guild_id, "economy_rob_min_attempt_wallet", int(min_attempt_wallet))
+        await self._set_float(guild_id, "economy_rob_min_coverage_share", coverage_share)
+
+    async def set_withdraw_rob_protection_seconds(self, guild_id: int, seconds: int) -> None:
+        if not 0 <= int(seconds) <= 7 * 86400:
+            raise ValueError("Withdraw Rob-védelem: 0 mp–7 nap.")
+        await self.state.set_int(guild_id, "economy_withdraw_rob_protection_seconds", int(seconds))
+
+    async def get_role_income_first_claim_hours(self, guild_id: int) -> int:
+        return max(0, min(168, await self._get_int_default(guild_id, "economy_role_income_first_claim_hours", eco.ROLE_INCOME_FIRST_CLAIM_HOURS)))
+
+    async def get_role_income_max_accumulation_hours(self, guild_id: int) -> int:
+        default = int(eco.ROLE_INCOME_MAX_ACCUMULATION.total_seconds() // 3600)
+        return max(1, min(24 * 30, await self._get_int_default(guild_id, "economy_role_income_max_accumulation_hours", default)))
+
+    async def get_role_income_stacking(self, guild_id: int) -> bool:
+        return await self.state.get_bool(guild_id, "economy_role_income_stacking", eco.ROLE_INCOME_STACKING)
+
+    async def set_role_income_rules(self, guild_id: int, *, first_claim_hours: int, max_accumulation_hours: int, stacking: bool) -> None:
+        if not 0 <= int(first_claim_hours) <= 168:
+            raise ValueError("Első Role Income claim: 0–168 óra.")
+        if not 1 <= int(max_accumulation_hours) <= 24 * 30:
+            raise ValueError("Role Income felhalmozás: 1–720 óra.")
+        await self.state.set_int(guild_id, "economy_role_income_first_claim_hours", int(first_claim_hours))
+        await self.state.set_int(guild_id, "economy_role_income_max_accumulation_hours", int(max_accumulation_hours))
+        await self.state.set_bool(guild_id, "economy_role_income_stacking", bool(stacking))
+
+    async def get_interest_min_bank(self, guild_id: int) -> int:
+        return max(0, await self._get_int_default(guild_id, "economy_interest_min_bank", eco.INTEREST_MIN_BANK))
+
+    async def get_weekly_min_account_age_days(self, guild_id: int) -> int:
+        return max(0, min(3650, await self._get_int_default(guild_id, "economy_weekly_min_account_age_days", eco.WEEKLY_MIN_ACCOUNT_AGE_DAYS)))
+
+    async def get_monthly_min_account_age_days(self, guild_id: int) -> int:
+        return max(0, min(3650, await self._get_int_default(guild_id, "economy_monthly_min_account_age_days", eco.MONTHLY_MIN_ACCOUNT_AGE_DAYS)))
+
+    async def set_access_rules(self, guild_id: int, *, interest_min_bank: int, weekly_age_days: int, monthly_age_days: int) -> None:
+        if interest_min_bank < 0 or interest_min_bank > 10**15:
+            raise ValueError("Interest minimum bank: 0–1 quadrillion.")
+        if not 0 <= weekly_age_days <= 3650 or not 0 <= monthly_age_days <= 3650:
+            raise ValueError("Account age követelmény: 0–3650 nap.")
+        await self.state.set_int(guild_id, "economy_interest_min_bank", int(interest_min_bank))
+        await self.state.set_int(guild_id, "economy_weekly_min_account_age_days", int(weekly_age_days))
+        await self.state.set_int(guild_id, "economy_monthly_min_account_age_days", int(monthly_age_days))
+
+    async def get_starting_balance(self, guild_id: int) -> int:
+        return await self.db.get_starting_balance(guild_id)
+
+    async def set_starting_balance(self, guild_id: int, amount: int) -> None:
+        amount = int(amount)
+        if not 0 <= amount <= 10**15:
+            raise ValueError("Kezdő egyenleg: 0–1 quadrillion.")
+        await self.state.set_int(guild_id, "economy_starting_balance", amount)
+
+    async def get_daily_streak_bonus(self, guild_id: int) -> int:
+        return max(0, min(10**15, await self._get_int_default(guild_id, "economy_daily_streak_bonus", eco.DAILY_STREAK_BONUS)))
+
+    async def get_daily_streak_bonus_max_days(self, guild_id: int) -> int:
+        return max(0, min(3650, await self._get_int_default(guild_id, "economy_daily_streak_bonus_max_days", eco.DAILY_STREAK_BONUS_MAX_DAYS)))
+
+    async def get_daily_streak_grace_hours(self, guild_id: int) -> int:
+        return max(1, min(24 * 30, await self._get_int_default(guild_id, "economy_daily_streak_grace_hours", eco.DAILY_STREAK_GRACE_HOURS)))
+
+    async def get_crime_jail_chance(self, guild_id: int) -> float:
+        return max(0.0, min(1.0, await self._get_float_default(guild_id, "economy_crime_jail_chance", eco.CRIME_JAIL_CHANCE)))
+
+    async def get_crime_jail_minutes(self, guild_id: int) -> tuple[int, int]:
+        minimum = max(0, min(1440, await self._get_int_default(guild_id, "economy_crime_jail_min_minutes", eco.CRIME_JAIL_MIN_MINUTES)))
+        maximum = max(minimum, min(1440, await self._get_int_default(guild_id, "economy_crime_jail_max_minutes", eco.CRIME_JAIL_MAX_MINUTES)))
+        return minimum, maximum
+
+    async def get_slut_success_chance(self, guild_id: int) -> float:
+        return max(0.0, min(1.0, await self._get_float_default(guild_id, "economy_slut_success_chance", eco.SLUT_SUCCESS_CHANCE)))
+
+    async def set_daily_crime_rules(
+        self, guild_id: int, *, daily_bonus: int, daily_max_days: int, daily_grace_hours: int,
+        crime_jail_chance: float, crime_jail_min_minutes: int, crime_jail_max_minutes: int,
+    ) -> None:
+        if not 0 <= int(daily_bonus) <= 10**15:
+            raise ValueError("Daily streak bónusz: 0–1 quadrillion.")
+        if not 0 <= int(daily_max_days) <= 3650:
+            raise ValueError("Daily streak max nap: 0–3650.")
+        if not 1 <= int(daily_grace_hours) <= 24 * 30:
+            raise ValueError("Daily streak grace: 1–720 óra.")
+        if not 0.0 <= float(crime_jail_chance) <= 1.0:
+            raise ValueError("Crime jail esély: 0–100%.")
+        if not 0 <= int(crime_jail_min_minutes) <= int(crime_jail_max_minutes) <= 1440:
+            raise ValueError("Crime jail idő: 0–1440 perc, min ≤ max.")
+        await self.state.set_int(guild_id, "economy_daily_streak_bonus", int(daily_bonus))
+        await self.state.set_int(guild_id, "economy_daily_streak_bonus_max_days", int(daily_max_days))
+        await self.state.set_int(guild_id, "economy_daily_streak_grace_hours", int(daily_grace_hours))
+        await self._set_float(guild_id, "economy_crime_jail_chance", float(crime_jail_chance))
+        await self.state.set_int(guild_id, "economy_crime_jail_min_minutes", int(crime_jail_min_minutes))
+        await self.state.set_int(guild_id, "economy_crime_jail_max_minutes", int(crime_jail_max_minutes))
+
+    async def get_rob_fail_flat_range(self, guild_id: int) -> tuple[int, int]:
+        minimum = max(0, await self._get_int_default(guild_id, "economy_rob_fail_fine_min", eco.ROB_FAIL_FINE[0]))
+        maximum = max(minimum, await self._get_int_default(guild_id, "economy_rob_fail_fine_max", eco.ROB_FAIL_FINE[1]))
+        return min(minimum, 10**15), min(maximum, 10**15)
+
+    async def get_rob_fail_share_range(self, guild_id: int) -> tuple[float, float]:
+        minimum = max(0.0, min(1.0, await self._get_float_default(guild_id, "economy_rob_fail_share_min", eco.ROB_FAIL_FINE_SHARE[0])))
+        maximum = max(minimum, min(1.0, await self._get_float_default(guild_id, "economy_rob_fail_share_max", eco.ROB_FAIL_FINE_SHARE[1])))
+        return minimum, maximum
+
+    async def get_interest_min_reward(self, guild_id: int) -> int:
+        return max(0, min(10**15, await self._get_int_default(guild_id, "economy_interest_min_reward", eco.INTEREST_MIN_REWARD)))
+
+    async def get_interest_rate_multiplier(self, guild_id: int) -> float:
+        percent = await self._get_int_default(guild_id, "economy_interest_rate_multiplier_percent", 100)
+        return max(0.0, min(10.0, percent / 100.0))
+
+    async def get_interest_cap_multiplier(self, guild_id: int) -> float:
+        percent = await self._get_int_default(guild_id, "economy_interest_cap_multiplier_percent", 100)
+        return max(0.0, min(10.0, percent / 100.0))
+
+    async def set_risk_interest_rules(
+        self, guild_id: int, *, slut_success_chance: float, rob_flat_min: int, rob_flat_max: int,
+        rob_share_min: float, rob_share_max: float, interest_min_reward: int,
+        interest_rate_multiplier: float, interest_cap_multiplier: float,
+    ) -> None:
+        if not 0.0 <= float(slut_success_chance) <= 1.0:
+            raise ValueError("Slut siker: 0–100%.")
+        if not 0 <= int(rob_flat_min) <= int(rob_flat_max) <= 10**15:
+            raise ValueError("Rob fail flat büntetés: 0–1 quadrillion, min ≤ max.")
+        if not 0.0 <= float(rob_share_min) <= float(rob_share_max) <= 1.0:
+            raise ValueError("Rob fail célpontarány: 0–100%, min ≤ max.")
+        if not 0 <= int(interest_min_reward) <= 10**15:
+            raise ValueError("Interest minimum reward: 0–1 quadrillion.")
+        if not 0.0 <= float(interest_rate_multiplier) <= 10.0 or not 0.0 <= float(interest_cap_multiplier) <= 10.0:
+            raise ValueError("Interest rate/cap szorzó: 0–10×.")
+        await self._set_float(guild_id, "economy_slut_success_chance", float(slut_success_chance))
+        await self.state.set_int(guild_id, "economy_rob_fail_fine_min", int(rob_flat_min))
+        await self.state.set_int(guild_id, "economy_rob_fail_fine_max", int(rob_flat_max))
+        await self._set_float(guild_id, "economy_rob_fail_share_min", float(rob_share_min))
+        await self._set_float(guild_id, "economy_rob_fail_share_max", float(rob_share_max))
+        await self.state.set_int(guild_id, "economy_interest_min_reward", int(interest_min_reward))
+        await self.state.set_int(guild_id, "economy_interest_rate_multiplier_percent", round(float(interest_rate_multiplier) * 100))
+        await self.state.set_int(guild_id, "economy_interest_cap_multiplier_percent", round(float(interest_cap_multiplier) * 100))
+
     async def reset_economy_advanced(self, guild_id: int) -> None:
         await self.set_rob_share(guild_id, None)
         await self.set_gambling_payout_multiplier(guild_id, None)
+        for key in (
+            "economy_rob_success_chance", "economy_rob_boosted_max_chance",
+            "economy_rob_min_victim_wallet", "economy_rob_min_attempt_wallet",
+            "economy_rob_min_coverage_share", "economy_withdraw_rob_protection_seconds",
+            "economy_role_income_first_claim_hours", "economy_role_income_max_accumulation_hours",
+            "economy_role_income_stacking", "economy_interest_min_bank", "economy_starting_balance",
+            "economy_weekly_min_account_age_days", "economy_monthly_min_account_age_days",
+            "economy_daily_streak_bonus", "economy_daily_streak_bonus_max_days",
+            "economy_daily_streak_grace_hours", "economy_crime_jail_chance",
+            "economy_crime_jail_min_minutes", "economy_crime_jail_max_minutes",
+            "economy_slut_success_chance", "economy_rob_fail_fine_min",
+            "economy_rob_fail_fine_max", "economy_rob_fail_share_min",
+            "economy_rob_fail_share_max", "economy_interest_min_reward",
+            "economy_interest_rate_multiplier_percent", "economy_interest_cap_multiplier_percent",
+        ):
+            await self.db.set_guild_state(guild_id, key, "")
         await self.db.set_guild_state(guild_id, "economy_currency_name", "")
         await self.db.set_guild_state(guild_id, "economy_currency_symbol", "")
 

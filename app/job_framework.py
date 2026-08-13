@@ -125,6 +125,45 @@ class GridGame:
 
 
 @dataclass(frozen=True, slots=True)
+class ScenarioChoice:
+    key: str
+    label: str
+    emoji: str
+    description: str = ""
+    success_chance: float = 1.0
+    reward_success: float = 1.0
+    reward_fail: float = 0.65
+    score_success: int = 0
+    score_fail: int = -8
+    continue_on_success: bool = True
+    continue_on_fail: bool = True
+    default: bool = False
+
+    def normalized_chance(self) -> float:
+        return max(0.0, min(1.0, float(self.success_chance)))
+
+
+@dataclass(frozen=True, slots=True)
+class DecisionScenario:
+    key: str
+    title: str
+    prompt: str
+    choices: tuple[ScenarioChoice, ...]
+
+    def choice(self, key: str) -> ScenarioChoice:
+        for item in self.choices:
+            if item.key == key:
+                return item
+        raise ValueError("Ismeretlen scenario döntés.")
+
+    def default_choice(self) -> ScenarioChoice:
+        for item in self.choices:
+            if item.default:
+                return item
+        return self.choices[0]
+
+
+@dataclass(frozen=True, slots=True)
 class RiskCashout:
     """Shared push-your-luck state for future Jobs/Heist activities."""
 

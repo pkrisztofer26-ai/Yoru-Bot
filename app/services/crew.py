@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from app import crew_config as cfg
 from app.database import Database
 from app.services.statistics import StatisticsService
+from app.services.server_settings import ServerSettingsService
 
 
 @dataclass(frozen=True)
@@ -55,8 +56,29 @@ class CrewService:
     def __init__(self, database: Database, statistics: StatisticsService) -> None:
         self.db = database
         self.stats = statistics
+        self.settings = ServerSettingsService(database)
         self.faction = None
         self.bot = None
+
+    async def create_cost(self, guild_id: int) -> int:
+        value = await self.settings.get_int(guild_id, cfg.CREW_CREATE_COST_KEY)
+        return max(0, min(10**15, int(cfg.CREW_CREATE_COST if value is None else value)))
+
+    async def invite_hours(self, guild_id: int) -> int:
+        value = await self.settings.get_int(guild_id, cfg.CREW_INVITE_HOURS_KEY)
+        return max(1, min(720, int(cfg.CREW_INVITE_HOURS if value is None else value)))
+
+    async def set_core_settings(self, guild_id: int, *, create_cost: int, invite_hours: int) -> None:
+        if not 0 <= int(create_cost) <= 10**15:
+            raise ValueError("Frakció alapítási ár: 0–1 quadrillion.")
+        if not 1 <= int(invite_hours) <= 720:
+            raise ValueError("Frakció meghívó lejárat: 1–720 óra.")
+        await self.settings.set_int(guild_id, cfg.CREW_CREATE_COST_KEY, int(create_cost))
+        await self.settings.set_int(guild_id, cfg.CREW_INVITE_HOURS_KEY, int(invite_hours))
+
+    async def reset_core_settings(self, guild_id: int) -> None:
+        await self.db.set_guild_state(guild_id, cfg.CREW_CREATE_COST_KEY, "")
+        await self.db.set_guild_state(guild_id, cfg.CREW_INVITE_HOURS_KEY, "")
 
     def bind_bot(self, bot) -> None:
         self.bot = bot
@@ -241,10 +263,11 @@ class CrewService:
 
     async def create(self, guild_id: int, user_id: int, name: str) -> CrewMembership:
         clean, normalized = self.normalize_name(name)
-        crew_data = await self.db.create_crew(guild_id, user_id, clean, normalized, cfg.CREW_CREATE_COST)
+        create_cost = await self.create_cost(guild_id)
+        crew_data = await self.db.create_crew(guild_id, user_id, clean, normalized, create_cost)
         await self.stats.increment(guild_id, user_id, "crew.created")
         await self.stats.increment(guild_id, user_id, "crew.joined")
-        await self.stats.add(guild_id, user_id, "crew.creation_spent", cfg.CREW_CREATE_COST)
+        await self.stats.add(guild_id, user_id, "crew.creation_spent", create_cost)
         membership = await self.get_membership(guild_id, user_id)
         if membership is None:
             raise RuntimeError("A Frakció létrejött, de a tagság betöltése sikertelen volt.")
@@ -263,7 +286,7 @@ class CrewService:
             raise ValueError("Ez a játékos már egy Frakció tagja.")
         if membership.crew.member_count >= membership.crew.member_cap:
             raise ValueError(f"A Frakció megtelt (**{membership.crew.member_count}/{membership.crew.member_cap}**). Előbb fejlesszétek.")
-        expires = datetime.now(timezone.utc) + timedelta(hours=cfg.CREW_INVITE_HOURS)
+        expires = datetime.now(timezone.utc) + timedelta(hours=await self.invite_hours(guild_id))
         await self.db.set_crew_invite(guild_id, membership.crew.crew_id, target_id, actor_id, expires)
         await self.stats.increment(guild_id, actor_id, "crew.invites_sent")
         return expires

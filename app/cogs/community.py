@@ -16,6 +16,7 @@ from app.amounts import parse_amount
 from app.database import Database
 from app.services.economy import EconomyService
 from app.services.server_settings import ServerSettingsService
+from app.services.gameplay_settings import GameplaySettingsService
 from app.cogs.access_utils import handle_wrong_economy_channel
 from app.ui import base_embed, money, GOLD, SUCCESS
 from app import economy_config as eco
@@ -404,7 +405,6 @@ class GiveawayModal(discord.ui.Modal, title="Giveaway létrehozása"):
 
 
 class CommunityCog(commands.GroupCog, group_name="community", group_description="Yoru közösségi eszközök és közösségi economy."):
-    LOTTERY_TICKET_PRICE = eco.LOTTERY_TICKET_PRICE
     LOTTERY_INTERVAL = timedelta(hours=eco.LOTTERY_INTERVAL_HOURS)
     JACKPOT_SECONDS = eco.JACKPOT_SECONDS
 
@@ -419,6 +419,7 @@ class CommunityCog(commands.GroupCog, group_name="community", group_description=
         self._next_market_event_at: dict[int, float] = {}
         self.next_lottery_at = datetime.now(timezone.utc) + self.LOTTERY_INTERVAL
         self.settings_service = ServerSettingsService(db)
+        self.gameplay_settings = GameplaySettingsService(db)
         self.poll_tasks: dict[int, asyncio.Task] = {}
         self.giveaway_tasks: dict[int, asyncio.Task] = {}
         self._afk_notice_times: dict[tuple[int, int, int], float] = {}
@@ -558,7 +559,8 @@ class CommunityCog(commands.GroupCog, group_name="community", group_description=
         users = [u for u, _ in entries]
         weights = [t for _, t in entries]
         winner = random.choices(users, weights=weights, k=1)[0]
-        pot = max(eco.LOTTERY_MIN_POT, int(total_tickets * self.LOTTERY_TICKET_PRICE * eco.LOTTERY_PAYOUT_SHARE))
+        community_balance = await self.gameplay_settings.community_economy(guild.id)
+        pot = max(community_balance.lottery_min_pot, int(total_tickets * community_balance.lottery_ticket_price * community_balance.lottery_payout_share))
         await self.db.add_wallet(guild.id, winner, pot, "lottery_win")
         await self.db.increment_stat(guild.id, winner, "lottery_wins")
         await self.bot.statistics.increment(guild.id, winner, "community.lottery.wins")
@@ -578,9 +580,10 @@ class CommunityCog(commands.GroupCog, group_name="community", group_description=
 
     async def _buy_lottery(self, guild_id: int, user_id: int, tickets: int, channel_id: int | None = None, category_id: int | None = None) -> int:
         await self.economy.require_access(guild_id, "economy", channel_id, category_id)
-        if tickets < 1 or tickets > eco.LOTTERY_MAX_TICKETS_PER_BUY:
-            raise ValueError(f"Egyszerre 1–{eco.LOTTERY_MAX_TICKETS_PER_BUY} jegyet vehetsz.")
-        cost = tickets * self.LOTTERY_TICKET_PRICE
+        community_balance = await self.gameplay_settings.community_economy(guild_id)
+        if tickets < 1 or tickets > community_balance.lottery_max_tickets_per_buy:
+            raise ValueError(f"Egyszerre 1–{community_balance.lottery_max_tickets_per_buy} jegyet vehetsz.")
+        cost = tickets * community_balance.lottery_ticket_price
         wallet, _ = await self.db.get_balance(guild_id, user_id)
         if wallet < cost:
             raise ValueError("Nincs elég pénzed ennyi jegyre.")
@@ -591,7 +594,7 @@ class CommunityCog(commands.GroupCog, group_name="community", group_description=
         return cost
 
     @app_commands.command(name="lottery", description="Yoru lottery jegyek vásárlása.")
-    async def lottery_slash(self, interaction: discord.Interaction, jegyek: app_commands.Range[int, 1, 1000] = 1) -> None:
+    async def lottery_slash(self, interaction: discord.Interaction, jegyek: int = 1) -> None:
         if interaction.guild_id is None:
             return
         try:
@@ -631,30 +634,32 @@ class CommunityCog(commands.GroupCog, group_name="community", group_description=
                         continue
                     due = self._next_market_event_at.get(guild.id)
                     if due is None:
-                        delay = random.uniform(eco.GUILD_ECONOMY_EVENT_MIN_HOURS, eco.GUILD_ECONOMY_EVENT_MAX_HOURS) * 3600
+                        balance = await self.gameplay_settings.community_economy(guild.id)
+                        delay = random.uniform(balance.event_min_hours, balance.event_max_hours) * 3600
                         self._next_market_event_at[guild.id] = now + delay
                         continue
                     if now < due:
                         continue
 
                     await self.economy.prepare_context(guild.id)
+                    balance = await self.gameplay_settings.community_economy(guild.id)
                     event = random.choice(["blackmarket", "double_work", "crime_rush", "lucky_hour"])
                     if event == "blackmarket":
                         if guild.id not in self.black_markets or self.black_markets[guild.id].expires_at <= datetime.now(timezone.utc):
                             await self._open_black_market(channel)
                     elif event == "double_work":
-                        expires = datetime.now(timezone.utc) + timedelta(hours=eco.GUILD_ECONOMY_EVENT_DURATION_HOURS)
-                        await self.db.set_guild_effect(guild.id, "work_multiplier", eco.GUILD_EVENT_WORK_MULTIPLIER, expires)
-                        await channel.send(embed=base_embed("🛠️ WORK RUSH", f"A `!work` jutalmak **x{eco.GUILD_EVENT_WORK_MULTIPLIER:.2f}** szorzót kaptak!\n⏳ Vége: <t:{int(expires.timestamp())}:R>", SUCCESS))
+                        expires = datetime.now(timezone.utc) + timedelta(hours=balance.event_duration_hours)
+                        await self.db.set_guild_effect(guild.id, "work_multiplier", balance.work_multiplier, expires)
+                        await channel.send(embed=base_embed("🛠️ WORK RUSH", f"A `!work` jutalmak **x{balance.work_multiplier:.2f}** szorzót kaptak!\n⏳ Vége: <t:{int(expires.timestamp())}:R>", SUCCESS))
                     elif event == "crime_rush":
-                        expires = datetime.now(timezone.utc) + timedelta(hours=eco.GUILD_ECONOMY_EVENT_DURATION_HOURS)
-                        await self.db.set_guild_effect(guild.id, "crime_multiplier", eco.GUILD_EVENT_CRIME_MULTIPLIER, expires)
-                        await channel.send(embed=base_embed("🚨 CRIME RUSH", f"A sikeres `!crime` jutalmak **x{eco.GUILD_EVENT_CRIME_MULTIPLIER:.2f}** szorzót kaptak!\n⏳ Vége: <t:{int(expires.timestamp())}:R>"))
+                        expires = datetime.now(timezone.utc) + timedelta(hours=balance.event_duration_hours)
+                        await self.db.set_guild_effect(guild.id, "crime_multiplier", balance.crime_multiplier, expires)
+                        await channel.send(embed=base_embed("🚨 CRIME RUSH", f"A sikeres `!crime` jutalmak **x{balance.crime_multiplier:.2f}** szorzót kaptak!\n⏳ Vége: <t:{int(expires.timestamp())}:R>"))
                     else:
-                        expires = datetime.now(timezone.utc) + timedelta(hours=eco.GUILD_ECONOMY_EVENT_DURATION_HOURS)
-                        await self.db.set_guild_effect(guild.id, "luck_multiplier", eco.GUILD_EVENT_LUCK_MULTIPLIER, expires)
+                        expires = datetime.now(timezone.utc) + timedelta(hours=balance.event_duration_hours)
+                        await self.db.set_guild_effect(guild.id, "luck_multiplier", balance.luck_multiplier, expires)
                         await channel.send(embed=base_embed("🍀 LUCKY HOUR", f"Jobb esélyek a ládáknál és sorsjegyeknél.\n⏳ Vége: <t:{int(expires.timestamp())}:R>", SUCCESS))
-                    delay = random.uniform(eco.GUILD_ECONOMY_EVENT_MIN_HOURS, eco.GUILD_ECONOMY_EVENT_MAX_HOURS) * 3600
+                    delay = random.uniform(balance.event_min_hours, balance.event_max_hours) * 3600
                     self._next_market_event_at[guild.id] = time.monotonic() + delay
                 except Exception:
                     logger.exception("Community economy event loop hiba guild=%s", guild.id)
@@ -711,18 +716,19 @@ class CommunityCog(commands.GroupCog, group_name="community", group_description=
     async def _open_black_market(self, channel: discord.TextChannel) -> None:
         await self.economy.prepare_context(channel.guild.id)
         candidates = ["rare_crate", "epic_crate", "legendary_crate", "work_booster", "crime_booster", "luck_booster", "rob_booster", "interest_booster", "rob_shield"]
-        chosen = random.sample(candidates, k=4)
+        balance = await self.gameplay_settings.community_economy(channel.guild.id)
+        chosen = random.sample(candidates, k=min(balance.black_market_item_count, len(candidates)))
         items: dict[str, tuple[int, int]] = {}
         for item_id in chosen:
             item = await self.db.get_shop_item(item_id)
             if not item:
                 continue
             _, _, price, _, _ = item
-            discount = random.uniform(*eco.BLACK_MARKET_PRICE_MULTIPLIER)
+            discount = random.uniform(balance.black_market_price_min, balance.black_market_price_max)
             bm_price = max(1, int(price * discount))
-            stock = random.randint(1, 5)
+            stock = random.randint(balance.black_market_stock_min, balance.black_market_stock_max)
             items[item_id] = (bm_price, stock)
-        expires = datetime.now(timezone.utc) + timedelta(minutes=eco.BLACK_MARKET_DURATION_MINUTES)
+        expires = datetime.now(timezone.utc) + timedelta(minutes=balance.black_market_duration_minutes)
         self.black_markets[channel.guild.id] = BlackMarketState(expires, items)
         await channel.send(view=await self._build_black_market_view(channel.guild.id))
 

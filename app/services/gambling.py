@@ -95,7 +95,6 @@ class RouletteRound:
 
 
 class GamblingService:
-    MIN_BET = casino_cfg.MIN_BET
     RED_NUMBERS = {1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36}
 
     def __init__(self, database: Database, casino: CasinoService | None = None) -> None:
@@ -105,9 +104,8 @@ class GamblingService:
         self._roulette_rounds: dict[int, RouletteRound] = {}
         self._roulette_locks: dict[int, asyncio.Lock] = {}
 
-    def _validate_bet(self, bet: int) -> None:
-        if bet < self.MIN_BET:
-            raise ValueError(f"A minimum tét {money(self.MIN_BET)}.")
+    async def _validate_bet(self, guild_id: int, bet: int) -> None:
+        await self.casino.validate_bet(guild_id, bet)
 
     async def _ensure_available(self, guild_id: int, user_id: int) -> None:
         await self.casino._ensure_available(guild_id, user_id)
@@ -317,7 +315,7 @@ class GamblingService:
         bet_index: int = 1,
     ) -> tuple[str, RouletteBet]:
         """Reserve one bet for a player-specific multi-bet roulette table."""
-        self._validate_bet(bet)
+        await self._validate_bet(guild_id, bet)
         kind, number = parse_roulette_choice(choice)
         roulette_bet = RouletteBet(kind=kind, amount=int(bet), number=number)
         if session_id is None:
@@ -407,7 +405,7 @@ class GamblingService:
         return self._roulette_rounds.get(guild_id)
 
     async def place_roulette_bet(self, guild_id: int, user_id: int, choice: str, bet: int) -> RouletteRound:
-        self._validate_bet(bet)
+        await self._validate_bet(guild_id, bet)
         kind, number = parse_roulette_choice(choice)
         lock = self._roulette_lock(guild_id)
         async with lock:

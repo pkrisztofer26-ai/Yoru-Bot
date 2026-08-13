@@ -13,8 +13,10 @@ from app import moderation_config as modcfg
 from app import member_config as membercfg
 from app import community_config as communitycfg
 from app.database import Database
+from app.amounts import parse_amount
 from app.services.server_settings import PRESET_LABELS, ServerSettingsService
-from app.ui import BRAND, DANGER, GOLD, SUCCESS, base_embed
+from app.services.gameplay_settings import GameplaySettingsService
+from app.ui import BRAND, DANGER, GOLD, SUCCESS, base_embed, money
 
 
 RULE_ORDER = ["invite", "links", "spam", "duplicate", "mentions", "caps", "emoji", "words", "zalgo"]
@@ -58,6 +60,8 @@ def _channel_type_name(channel: discord.abc.GuildChannel) -> str:
         return "Kategória"
     if channel.type == discord.ChannelType.news:
         return "Hírcsatorna"
+    if channel.type == discord.ChannelType.forum:
+        return "Fórum"
     return "Szöveges csatorna"
 
 
@@ -380,6 +384,25 @@ class HomeView(OwnedView):
         if jobs_cog is None or not hasattr(jobs_cog, "show_settings"):
             return await interaction.response.send_message("❌ Az Interactive Jobs settings jelenleg nem elérhető.", ephemeral=True)
         await jobs_cog.show_settings(interaction, self.owner_id)
+
+    @discord.ui.button(label="Progression", emoji="🌌", style=discord.ButtonStyle.secondary, row=4)
+    async def progression(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
+        await self.cog.show_progression_settings(interaction, self.owner_id)
+
+    @discord.ui.button(label="Fogadás", emoji="🏟️", style=discord.ButtonStyle.secondary, row=4)
+    async def betting(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
+        cog = self.cog.bot.get_cog("BettingCog")
+        if cog is None or not hasattr(cog, "show_settings"):
+            return await interaction.response.send_message("❌ A Fogadás settings jelenleg nem elérhető.", ephemeral=True)
+        await cog.show_settings(interaction, self.owner_id)
+
+    @discord.ui.button(label="Live", emoji="🌆", style=discord.ButtonStyle.secondary, row=4)
+    async def live_world(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
+        cog = self.cog.bot.get_cog("LiveWorldCog")
+        if cog is None or not hasattr(cog, "show_settings"):
+            return await interaction.response.send_message("❌ A Live World settings jelenleg nem elérhető.", ephemeral=True)
+        await cog.show_settings(interaction, self.owner_id)
+
 
 
 class DiagnosticsView(OwnedView):
@@ -1847,6 +1870,91 @@ class CommunityTuneModal(discord.ui.Modal, title="Community finomhangolás"):
         await self.parent_view.cog.show_community(interaction, self.parent_view.owner_id, self.parent_view)
 
 
+class CommunityLotteryBalanceModal(discord.ui.Modal, title="Community Lottery balance"):
+    ticket_price = discord.ui.TextInput(label="Lottery jegy ára", placeholder="25k", max_length=24)
+    payout = discord.ui.TextInput(label="Pot visszaosztás %", placeholder="90", max_length=8)
+    min_pot = discord.ui.TextInput(label="Minimum nyeremény pot", placeholder="25k", max_length=24)
+    max_tickets = discord.ui.TextInput(label="Max jegy / vásárlás", placeholder="1000", max_length=10)
+
+    def __init__(self, view: "CommunitySettingsView") -> None:
+        super().__init__(); self.parent_view = view; cfg = view.economy_balance
+        self.ticket_price.default = str(cfg.lottery_ticket_price); self.payout.default = f"{cfg.lottery_payout_share*100:g}"
+        self.min_pot.default = str(cfg.lottery_min_pot); self.max_tickets.default = str(cfg.lottery_max_tickets_per_buy)
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        try:
+            await self.parent_view.cog.gameplay.set_community_economy(
+                interaction.guild_id, lottery_ticket_price=parse_amount(str(self.ticket_price.value)),
+                lottery_payout_share=float(str(self.payout.value).replace(",", ".").replace("%", ""))/100.0,
+                lottery_min_pot=parse_amount(str(self.min_pot.value)), lottery_max_tickets_per_buy=int(str(self.max_tickets.value)),
+            )
+        except ValueError as exc:
+            return await interaction.response.send_message(f"❌ {exc}", ephemeral=True)
+        await self.parent_view.cog.show_community(interaction, self.parent_view.owner_id, self.parent_view)
+
+
+class CommunityEventBalanceModal(discord.ui.Modal, title="Community economy eventek"):
+    interval = discord.ui.TextInput(label="Event intervallum óra (min-max)", placeholder="1-4", max_length=24)
+    duration = discord.ui.TextInput(label="Event időtartam (óra)", placeholder="1", max_length=12)
+    work_mult = discord.ui.TextInput(label="Work Rush szorzó", placeholder="1.5", max_length=12)
+    crime_mult = discord.ui.TextInput(label="Crime Rush szorzó", placeholder="1.25", max_length=12)
+    luck_mult = discord.ui.TextInput(label="Lucky Hour szorzó", placeholder="1.15", max_length=12)
+
+    def __init__(self, view: "CommunitySettingsView") -> None:
+        super().__init__(); self.parent_view = view; cfg = view.economy_balance
+        self.interval.default = f"{cfg.event_min_hours:g}-{cfg.event_max_hours:g}"; self.duration.default = f"{cfg.event_duration_hours:g}"
+        self.work_mult.default = f"{cfg.work_multiplier:g}"; self.crime_mult.default = f"{cfg.crime_multiplier:g}"; self.luck_mult.default = f"{cfg.luck_multiplier:g}"
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        try:
+            raw = str(self.interval.value).replace(",", ".").replace("–", "-").replace("—", "-")
+            left, right = [part.strip() for part in raw.split("-", 1)]
+            minimum, maximum = float(left), float(right)
+            if maximum < minimum: raise ValueError("Event intervallum: min ≤ max.")
+            await self.parent_view.cog.gameplay.set_community_economy(
+                interaction.guild_id, event_min_hours=minimum, event_max_hours=maximum,
+                event_duration_hours=float(str(self.duration.value).replace(",", ".")),
+                work_multiplier=float(str(self.work_mult.value).replace(",", ".")),
+                crime_multiplier=float(str(self.crime_mult.value).replace(",", ".")),
+                luck_multiplier=float(str(self.luck_mult.value).replace(",", ".")),
+            )
+        except (ValueError, IndexError) as exc:
+            return await interaction.response.send_message(f"❌ {exc}", ephemeral=True)
+        community = self.parent_view.cog.bot.get_cog("CommunityCog")
+        if community is not None and hasattr(community, "reschedule_event_config"):
+            community.reschedule_event_config(interaction.guild_id)
+        await self.parent_view.cog.show_community(interaction, self.parent_view.owner_id, self.parent_view)
+
+
+class CommunityMarketBalanceModal(discord.ui.Modal, title="Feketepiac balance"):
+    price_range = discord.ui.TextInput(label="Normál ár % (min-max)", placeholder="70-85", max_length=24)
+    duration = discord.ui.TextInput(label="Nyitvatartás (perc)", placeholder="15", max_length=10)
+    item_count = discord.ui.TextInput(label="Megjelenő itemek száma", placeholder="4", max_length=4)
+    stock_range = discord.ui.TextInput(label="Stock / item (min-max)", placeholder="1-5", max_length=20)
+
+    def __init__(self, view: "CommunitySettingsView") -> None:
+        super().__init__(); self.parent_view = view; cfg = view.economy_balance
+        self.price_range.default = f"{cfg.black_market_price_min*100:g}-{cfg.black_market_price_max*100:g}"
+        self.duration.default = str(cfg.black_market_duration_minutes); self.item_count.default = str(cfg.black_market_item_count)
+        self.stock_range.default = f"{cfg.black_market_stock_min}-{cfg.black_market_stock_max}"
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        try:
+            price_raw = str(self.price_range.value).replace("%", "").replace(",", ".").replace("–", "-").replace("—", "-")
+            pmin, pmax = [float(part.strip())/100.0 for part in price_raw.split("-", 1)]
+            stock_raw = str(self.stock_range.value).replace("–", "-").replace("—", "-")
+            smin, smax = [int(part.strip()) for part in stock_raw.split("-", 1)]
+            if pmax < pmin or smax < smin: raise ValueError("A range minimuma nem lehet nagyobb a maximumnál.")
+            await self.parent_view.cog.gameplay.set_community_economy(
+                interaction.guild_id, black_market_price_min=pmin, black_market_price_max=pmax,
+                black_market_duration_minutes=int(str(self.duration.value)), black_market_item_count=int(str(self.item_count.value)),
+                black_market_stock_min=smin, black_market_stock_max=smax,
+            )
+        except (ValueError, IndexError) as exc:
+            return await interaction.response.send_message(f"❌ {exc}", ephemeral=True)
+        await self.parent_view.cog.show_community(interaction, self.parent_view.owner_id, self.parent_view)
+
+
 class CommunitySettingsView(OwnedView):
     def __init__(
         self,
@@ -1854,6 +1962,7 @@ class CommunitySettingsView(OwnedView):
         owner_id: int,
         guild: discord.Guild,
         states: dict[str, bool],
+        economy_balance,
         *,
         suggestion_channel_page: int = 0,
         starboard_channel_page: int = 0,
@@ -1861,6 +1970,7 @@ class CommunitySettingsView(OwnedView):
         super().__init__(cog, owner_id)
         self.guild = guild
         self.states = states
+        self.economy_balance = economy_balance
         self.suggestion_channel_page = suggestion_channel_page
         self.starboard_channel_page = starboard_channel_page
         self._style_toggle(self.suggestions, states["suggestions"], "Suggestions")
@@ -1955,8 +2065,167 @@ class CommunitySettingsView(OwnedView):
         }
         await interaction.response.send_modal(CommunityTuneModal(self, values))
 
+    @discord.ui.button(label="Lottery balance", emoji="🎟️", style=discord.ButtonStyle.secondary, row=4)
+    async def lottery_balance(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
+        await interaction.response.send_modal(CommunityLotteryBalanceModal(self))
+
+    @discord.ui.button(label="Economy eventek", emoji="📈", style=discord.ButtonStyle.secondary, row=4)
+    async def economy_events(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
+        await interaction.response.send_modal(CommunityEventBalanceModal(self))
+
+    @discord.ui.button(label="Feketepiac", emoji="🌑", style=discord.ButtonStyle.secondary, row=4)
+    async def market_balance(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
+        await interaction.response.send_modal(CommunityMarketBalanceModal(self))
+
+    @discord.ui.button(label="Economy default", emoji="♻️", style=discord.ButtonStyle.danger, row=4)
+    async def economy_default(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
+        await self.cog.gameplay.reset_community_economy(interaction.guild_id)
+        community = self.cog.bot.get_cog("CommunityCog")
+        if community is not None and hasattr(community, "reschedule_event_config"):
+            community.reschedule_event_config(interaction.guild_id)
+        await self.cog.show_community(interaction, self.owner_id, self)
+
     @discord.ui.button(label="Vissza", emoji="⬅️", style=discord.ButtonStyle.secondary, row=1)
     async def back(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
+        await self.cog.show_home(interaction, self.owner_id)
+
+
+class PrestigeRequirementsModal(discord.ui.Modal, title="Prestige követelmények"):
+    level_base = discord.ui.TextInput(label="Prestige 1 minimum Level", placeholder="50", max_length=8)
+    level_step = discord.ui.TextInput(label="Level növekedés / Prestige", placeholder="10", max_length=8)
+    wealth_base = discord.ui.TextInput(label="Prestige 1 minimum vagyon", placeholder="35m", max_length=24)
+    wealth_growth = discord.ui.TextInput(label="Vagyon növekedés szorzó", placeholder="1.85", max_length=10)
+
+    def __init__(self, view: "ProgressionSettingsView", config) -> None:
+        super().__init__(); self.parent_view = view
+        self.level_base.default = str(config.level_base); self.level_step.default = str(config.level_step)
+        self.wealth_base.default = str(config.wealth_base); self.wealth_growth.default = f"{config.wealth_growth:g}"
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        try:
+            await self.parent_view.cog.gameplay.set_prestige(
+                interaction.guild_id,
+                level_base=int(str(self.level_base.value)), level_step=int(str(self.level_step.value)),
+                wealth_base=parse_amount(str(self.wealth_base.value)),
+                wealth_growth=float(str(self.wealth_growth.value).replace(",", ".")),
+            )
+        except ValueError as exc:
+            return await interaction.response.send_message(f"❌ {exc}", ephemeral=True)
+        await interaction.response.edit_message(embed=await self.parent_view.cog.progression_settings_embed(interaction.guild), view=ProgressionSettingsView(self.parent_view.cog, self.parent_view.owner_id))
+
+
+class PrestigeBonusModal(discord.ui.Modal, title="Prestige income bónusz"):
+    per_rank = discord.ui.TextInput(label="Income bónusz / Prestige (%)", placeholder="4", max_length=8)
+    cap = discord.ui.TextInput(label="Maximum income bónusz (%)", placeholder="40", max_length=8)
+
+    def __init__(self, view: "ProgressionSettingsView", config) -> None:
+        super().__init__(); self.parent_view = view
+        self.per_rank.default = f"{config.income_bonus_per_rank * 100:g}"; self.cap.default = f"{config.income_bonus_cap * 100:g}"
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        try:
+            await self.parent_view.cog.gameplay.set_prestige(
+                interaction.guild_id,
+                income_bonus_per_rank=float(str(self.per_rank.value).replace(",", ".")) / 100,
+                income_bonus_cap=float(str(self.cap.value).replace(",", ".")) / 100,
+            )
+        except ValueError as exc:
+            return await interaction.response.send_message(f"❌ {exc}", ephemeral=True)
+        await interaction.response.edit_message(embed=await self.parent_view.cog.progression_settings_embed(interaction.guild), view=ProgressionSettingsView(self.parent_view.cog, self.parent_view.owner_id))
+
+
+class QuestTuningModal(discord.ui.Modal, title="Quest tuning"):
+    count = discord.ui.TextInput(label="Quest darabszám / periódus", placeholder="3", max_length=4)
+    targets = discord.ui.TextInput(label="Target szorzó", placeholder="1.0", max_length=8)
+    money_mult = discord.ui.TextInput(label="Pénzjutalom szorzó", placeholder="1.0", max_length=8)
+    daily_xp = discord.ui.TextInput(label="Daily quest Progression XP", placeholder="20", max_length=8)
+    weekly_xp = discord.ui.TextInput(label="Weekly quest Progression XP", placeholder="75", max_length=8)
+
+    def __init__(self, view: "ProgressionSettingsView", config) -> None:
+        super().__init__(); self.parent_view = view
+        self.count.default = str(config.count_per_period); self.targets.default = f"{config.target_multiplier:g}"
+        self.money_mult.default = f"{config.money_multiplier:g}"; self.daily_xp.default = str(config.daily_progression_xp); self.weekly_xp.default = str(config.weekly_progression_xp)
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        try:
+            await self.parent_view.cog.gameplay.set_quests(
+                interaction.guild_id, count_per_period=int(str(self.count.value)),
+                target_multiplier=float(str(self.targets.value).replace(",", ".")),
+                money_multiplier=float(str(self.money_mult.value).replace(",", ".")),
+                daily_progression_xp=int(str(self.daily_xp.value)), weekly_progression_xp=int(str(self.weekly_xp.value)),
+            )
+        except ValueError as exc:
+            return await interaction.response.send_message(f"❌ {exc}", ephemeral=True)
+        await interaction.response.edit_message(embed=await self.parent_view.cog.progression_settings_embed(interaction.guild), view=ProgressionSettingsView(self.parent_view.cog, self.parent_view.owner_id))
+
+
+class ProgressionTuningModal(discord.ui.Modal, title="Progression tuning"):
+    xp_mult = discord.ui.TextInput(label="Minden Progression XP szorzó (%)", placeholder="100", max_length=8)
+    invest_cd = discord.ui.TextInput(label="Invest cooldown (óra)", placeholder="4", max_length=8)
+    invest_min = discord.ui.TextInput(label="Invest minimum", placeholder="10k", max_length=24)
+
+    def __init__(self, view: "ProgressionSettingsView", config) -> None:
+        super().__init__(); self.parent_view = view
+        self.xp_mult.default = f"{config.xp_multiplier * 100:g}"; self.invest_cd.default = f"{config.invest_cooldown_hours:g}"; self.invest_min.default = str(config.invest_min_amount)
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        try:
+            await self.parent_view.cog.gameplay.set_progression(
+                interaction.guild_id, xp_multiplier_percent=int(float(str(self.xp_mult.value).replace(",", "."))),
+                invest_cooldown_hours=float(str(self.invest_cd.value).replace(",", ".")),
+                invest_min_amount=parse_amount(str(self.invest_min.value)),
+            )
+        except ValueError as exc:
+            return await interaction.response.send_message(f"❌ {exc}", ephemeral=True)
+        await interaction.response.edit_message(embed=await self.parent_view.cog.progression_settings_embed(interaction.guild), view=ProgressionSettingsView(self.parent_view.cog, self.parent_view.owner_id))
+
+
+class ProgressionSettingsView(OwnedView):
+    async def refresh(self, interaction: discord.Interaction) -> None:
+        await self.cog.show_progression_settings(interaction, self.owner_id)
+
+    @discord.ui.button(label="Prestige", emoji="🌌", style=discord.ButtonStyle.primary, row=0)
+    async def prestige_toggle(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        cfg = await self.cog.gameplay.prestige(interaction.guild_id); await self.cog.gameplay.set_prestige(interaction.guild_id, enabled=not cfg.enabled); await self.refresh(interaction)
+
+    @discord.ui.button(label="Prestige követelmények", emoji="🎯", style=discord.ButtonStyle.secondary, row=0)
+    async def prestige_requirements(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        await interaction.response.send_modal(PrestigeRequirementsModal(self, await self.cog.gameplay.prestige(interaction.guild_id)))
+
+    @discord.ui.button(label="Prestige bónusz", emoji="🚀", style=discord.ButtonStyle.secondary, row=0)
+    async def prestige_bonus(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        await interaction.response.send_modal(PrestigeBonusModal(self, await self.cog.gameplay.prestige(interaction.guild_id)))
+
+    @discord.ui.button(label="Quest rendszer", emoji="📜", style=discord.ButtonStyle.primary, row=1)
+    async def quests_toggle(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        cfg = await self.cog.gameplay.quests(interaction.guild_id); await self.cog.gameplay.set_quests(interaction.guild_id, enabled=not cfg.enabled); await self.refresh(interaction)
+
+    @discord.ui.button(label="Daily Quest", emoji="☀️", style=discord.ButtonStyle.secondary, row=1)
+    async def daily_toggle(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        cfg = await self.cog.gameplay.quests(interaction.guild_id); await self.cog.gameplay.set_quests(interaction.guild_id, daily_enabled=not cfg.daily_enabled); await self.refresh(interaction)
+
+    @discord.ui.button(label="Weekly Quest", emoji="📅", style=discord.ButtonStyle.secondary, row=1)
+    async def weekly_toggle(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        cfg = await self.cog.gameplay.quests(interaction.guild_id); await self.cog.gameplay.set_quests(interaction.guild_id, weekly_enabled=not cfg.weekly_enabled); await self.refresh(interaction)
+
+    @discord.ui.button(label="Quest tuning", emoji="🎚️", style=discord.ButtonStyle.secondary, row=1)
+    async def quest_tuning(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        await interaction.response.send_modal(QuestTuningModal(self, await self.cog.gameplay.quests(interaction.guild_id)))
+
+    @discord.ui.button(label="Invest", emoji="📈", style=discord.ButtonStyle.primary, row=2)
+    async def invest_toggle(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        cfg = await self.cog.gameplay.progression(interaction.guild_id); await self.cog.gameplay.set_progression(interaction.guild_id, invest_enabled=not cfg.invest_enabled); await self.refresh(interaction)
+
+    @discord.ui.button(label="XP / Invest tuning", emoji="⚙️", style=discord.ButtonStyle.secondary, row=2)
+    async def progression_tuning(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        await interaction.response.send_modal(ProgressionTuningModal(self, await self.cog.gameplay.progression(interaction.guild_id)))
+
+    @discord.ui.button(label="Progression reset", emoji="♻️", style=discord.ButtonStyle.danger, row=3)
+    async def reset(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        await self.cog.gameplay.reset_prestige(interaction.guild_id); await self.cog.gameplay.reset_quests(interaction.guild_id); await self.cog.gameplay.reset_progression(interaction.guild_id); await self.refresh(interaction)
+
+    @discord.ui.button(label="Vissza", emoji="⬅️", style=discord.ButtonStyle.secondary, row=3)
+    async def back(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         await self.cog.show_home(interaction, self.owner_id)
 
 
@@ -1967,6 +2236,7 @@ class SettingsCog(commands.Cog):
         self.bot = bot
         self.db = db
         self.settings = ServerSettingsService(db)
+        self.gameplay = GameplaySettingsService(db)
 
     async def home_embed(self, guild: discord.Guild) -> discord.Embed:
         automod = await self.settings.get_automod_enabled(guild.id)
@@ -2055,6 +2325,18 @@ class SettingsCog(commands.Cog):
             if jobs_cog is not None and hasattr(jobs_cog, "home_status")
             else "⚪ Nem elérhető"
         )
+        betting_cog = self.bot.get_cog("BettingCog")
+        betting_status = (
+            await betting_cog.home_status(guild)
+            if betting_cog is not None and hasattr(betting_cog, "home_status")
+            else "⚪ Nem elérhető"
+        )
+        live_cog = self.bot.get_cog("LiveWorldCog")
+        live_status = (
+            await live_cog.home_status(guild)
+            if live_cog is not None and hasattr(live_cog, "home_status")
+            else "⚪ Nem elérhető"
+        )
         embed = base_embed(
             "⚙️ Yoru • Szerver beállítások",
             "Innen lehet a Yoru szerverfunkcióit interaktívan konfigurálni. A beállítások szerverenként az adatbázisban maradnak meg.",
@@ -2076,10 +2358,28 @@ class SettingsCog(commands.Cog):
         embed.add_field(name="🏢 Biznisz", value=business_status, inline=True)
         embed.add_field(name="🎯 Nagy Meló", value=heist_status, inline=True)
         embed.add_field(name="🧰 Interactive Jobs", value=jobs_status, inline=True)
+        embed.add_field(name="🏟️ Fogadás", value=betting_status, inline=True)
+        embed.add_field(name="🌆 Live World", value=live_status, inline=True)
+        prestige_cfg = await self.gameplay.prestige(guild.id); quest_cfg = await self.gameplay.quests(guild.id); prog_cfg = await self.gameplay.progression(guild.id)
+        embed.add_field(name="🌌 Progression", value=f"{'🟢' if prestige_cfg.enabled else '⚪'} Prestige • {'🟢' if quest_cfg.enabled else '⚪'} Quests • XP {prog_cfg.xp_multiplier:.2f}×", inline=True)
         embed.add_field(name="📚 Tutorial", value=tutorial_status, inline=True)
         embed.add_field(name="🩺 Diagnosztika", value="Jogosultságok • DB • slash budget • runtime", inline=True)
         embed.set_footer(text="Yoru • Settings • Csak Manage Server jogosultsággal")
         return embed
+
+    async def progression_settings_embed(self, guild: discord.Guild) -> discord.Embed:
+        prestige = await self.gameplay.prestige(guild.id); quests = await self.gameplay.quests(guild.id); progression = await self.gameplay.progression(guild.id)
+        embed = base_embed("🌌 Progression • Settings", "Yoru DB settings az elsődleges source of truth; a kódbeli balance csak fallback default.", GOLD)
+        embed.add_field(name="🌌 Prestige", value=f"{'🟢 ON' if prestige.enabled else '🔴 OFF'}\nPrestige 1: **Lv.{prestige.level_base} + {money(prestige.wealth_base)}**\nLevel step **+{prestige.level_step}** • wealth **{prestige.wealth_growth:.2f}× / rank**\nIncome **+{prestige.income_bonus_per_rank*100:g}%/rank**, cap **{prestige.income_bonus_cap*100:g}%**", inline=False)
+        embed.add_field(name="📜 Questek", value=f"{'🟢 ON' if quests.enabled else '🔴 OFF'} • Daily {'ON' if quests.daily_enabled else 'OFF'} • Weekly {'ON' if quests.weekly_enabled else 'OFF'}\n**{quests.count_per_period}** quest/periódus • target **{quests.target_multiplier:.2f}×** • pénz **{quests.money_multiplier:.2f}×**\nProgression XP: Daily **{quests.daily_progression_xp}** • Weekly **{quests.weekly_progression_xp}**", inline=False)
+        embed.add_field(name="⭐ Progression / Invest", value=f"Minden Progression XP: **{progression.xp_multiplier:.2f}×**\nInvest: **{'ON' if progression.invest_enabled else 'OFF'}** • cooldown **{progression.invest_cooldown_hours:g}h** • minimum **{money(progression.invest_min_amount)}**", inline=False)
+        embed.set_footer(text="A módosítások azonnal életbe lépnek; meglévő quest assignment target/reward a periódus végéig fix marad.")
+        return embed
+
+    async def show_progression_settings(self, interaction: discord.Interaction, owner_id: int) -> None:
+        if not interaction.response.is_done():
+            await interaction.response.defer()
+        await interaction.edit_original_response(embed=await self.progression_settings_embed(interaction.guild), view=ProgressionSettingsView(self, owner_id), attachments=[])
 
     @staticmethod
     def _human_bytes(value: int) -> str:
@@ -2176,7 +2476,7 @@ class SettingsCog(commands.Cog):
         embed.set_footer(text="Yoru • Diagnosztika • Frissítés gombbal újramérhető")
         return embed
 
-    async def community_embed(self, guild: discord.Guild) -> tuple[discord.Embed, dict[str, bool]]:
+    async def community_embed(self, guild: discord.Guild):
         states = {
             "suggestions": await self.settings.get_suggestions_enabled(guild.id),
             "polls": await self.settings.get_polls_enabled(guild.id),
@@ -2196,6 +2496,7 @@ class SettingsCog(commands.Cog):
         giveaway_minutes = await self.settings.get_giveaway_default_duration_minutes(guild.id)
         sticky_every = await self.settings.get_sticky_every_messages(guild.id)
         stickies = await self.db.list_community_stickies(guild.id, active_only=True)
+        economy_balance = await self.gameplay.community_economy(guild.id)
 
         embed = base_embed(
             "🌙 Community Management",
@@ -2239,8 +2540,27 @@ class SettingsCog(commands.Cog):
             value="`/community suggest` • `/community poll` • `/community giveaway` • `/community afk` • `/community sticky`",
             inline=False,
         )
-        embed.set_footer(text="Yoru • Community Settings • A csatornaválasztók lapozhatók nagy szervereken is")
-        return embed, states
+        embed.add_field(
+            name="🎟️ Lottery balance",
+            value=(f"Jegy **{economy_balance.lottery_ticket_price:,}** • payout **{economy_balance.lottery_payout_share*100:.1f}%** • "
+                   f"min pot **{economy_balance.lottery_min_pot:,}** • max buy **{economy_balance.lottery_max_tickets_per_buy}**").replace(",", " "),
+            inline=False,
+        )
+        embed.add_field(
+            name="📈 Economy eventek",
+            value=(f"**{economy_balance.event_min_hours:g}–{economy_balance.event_max_hours:g}h** • időtartam **{economy_balance.event_duration_hours:g}h** • "
+                   f"Work **{economy_balance.work_multiplier:.2f}×** • Crime **{economy_balance.crime_multiplier:.2f}×** • Luck **{economy_balance.luck_multiplier:.2f}×**"),
+            inline=False,
+        )
+        embed.add_field(
+            name="🌑 Feketepiac",
+            value=(f"Ár **{economy_balance.black_market_price_min*100:.0f}–{economy_balance.black_market_price_max*100:.0f}%** • "
+                   f"**{economy_balance.black_market_duration_minutes} perc** • {economy_balance.black_market_item_count} item • "
+                   f"stock {economy_balance.black_market_stock_min}–{economy_balance.black_market_stock_max}"),
+            inline=False,
+        )
+        embed.set_footer(text="Yoru • Community • DB Settings az elsődleges; a kódbeli balance csak fallback")
+        return embed, states, economy_balance
 
     async def automod_embed(self, guild: discord.Guild) -> discord.Embed:
         enabled = await self.settings.get_automod_enabled(guild.id)
@@ -2678,19 +2998,28 @@ class SettingsCog(commands.Cog):
         owner_id: int,
         existing: CommunitySettingsView | None = None,
     ) -> None:
-        embed, states = await self.community_embed(interaction.guild)
+        if not interaction.response.is_done():
+            await interaction.response.defer()
+        embed, states, economy_balance = await self.community_embed(interaction.guild)
         view = CommunitySettingsView(
             self,
             owner_id,
             interaction.guild,
             states,
+            economy_balance,
             suggestion_channel_page=existing.suggestion_channel_page if existing else 0,
             starboard_channel_page=existing.starboard_channel_page if existing else 0,
         )
-        await interaction.response.edit_message(embed=embed, view=view)
+        await interaction.edit_original_response(embed=embed, view=view)
 
     async def show_home(self, interaction: discord.Interaction, owner_id: int) -> None:
-        await interaction.response.edit_message(embed=await self.home_embed(interaction.guild), view=HomeView(self, owner_id))
+        if interaction.guild is None:
+            return
+        # A settings főoldal sok modultól kér státuszt; lassabb SQLite/host mellett
+        # ezért mindig azonnal acknowledge-oljuk a component interactiont.
+        if not interaction.response.is_done():
+            await interaction.response.defer()
+        await interaction.edit_original_response(embed=await self.home_embed(interaction.guild), view=HomeView(self, owner_id), attachments=[])
 
     async def show_diagnostics(self, interaction: discord.Interaction, owner_id: int) -> None:
         await interaction.response.edit_message(embed=await self.diagnostics_embed(interaction.guild), view=DiagnosticsView(self, owner_id))
@@ -2776,7 +3105,8 @@ class SettingsCog(commands.Cog):
     async def settings_slash(self, interaction: discord.Interaction) -> None:
         if interaction.guild is None:
             return
-        await interaction.response.send_message(embed=await self.home_embed(interaction.guild), view=HomeView(self, interaction.user.id), ephemeral=True)
+        await interaction.response.defer(ephemeral=True)
+        await interaction.edit_original_response(embed=await self.home_embed(interaction.guild), view=HomeView(self, interaction.user.id))
 
     @commands.command(name="settings", aliases=["configpanel", "panel"])
     @commands.has_permissions(manage_guild=True)

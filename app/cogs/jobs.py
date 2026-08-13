@@ -15,13 +15,14 @@ from app.activity_visuals import (
     render_job_final,
     render_job_lobby,
     render_route_animation,
+    render_scenario_state,
     render_transport_state,
     render_warehouse,
     render_warehouse_transition,
 )
 from app.cogs.access_utils import handle_wrong_economy_channel
 from app.cogs.settings import OwnedView, PagedGuildChannelSelect
-from app.services.jobs import JobBusyError, JobsService
+from app.services.jobs import JobBusyError, JobCooldownError, JobsService
 from app.ui import BRAND, GOLD, SUCCESS, base_embed, error_embed, money, progress_bar
 
 
@@ -44,6 +45,34 @@ def _board_tokens(session: dict) -> list[str]:
     return [str(cells[i]["emoji"]) if i in revealed else "?" for i in range(min(25, len(cells)))]
 
 
+def _session_timing(session: dict, key: str, default: float) -> float:
+    try:
+        return float(session.get("data", {}).get("timing", {}).get(key, default))
+    except (TypeError, ValueError):
+        return float(default)
+
+
+def _cooldown_text(seconds: float) -> str:
+    total = max(0, int(seconds))
+    if total <= 0:
+        return "✅ Kész"
+    hours, rem = divmod(total, 3600)
+    minutes = rem // 60
+    if hours:
+        return f"⏳ {hours}ó {minutes:02d}p"
+    return f"⏳ {max(1, minutes)}p"
+
+
+# v3.24.3: the two single-player robberies live in the Jobs launcher, but
+# retain their own Live World cooldown/balance model. They intentionally do
+# not pretend to have Jobs Mastery/history until that progression is designed.
+RISKY_JOB_OPTIONS = {
+    "shoprob": ("Boltrablás", "🏪", "Interaktív rablás • 2ó alap cooldown • nincs tét."),
+    "bankrob": ("Bankrablás", "🏦", "Interaktív rablás • 4ó alap cooldown • magasabb kockázat."),
+}
+JOB_LAUNCH_KEYS = set(cfg.JOB_BY_KEY) | set(RISKY_JOB_OPTIONS)
+
+
 class JobOwnedView(discord.ui.View):
     def __init__(self, cog: "JobsCog", owner_id: int, *, session_id: str | None = None, timeout: float = cfg.SESSION_TIMEOUT_SECONDS) -> None:
         super().__init__(timeout=timeout)
@@ -61,7 +90,7 @@ class JobOwnedView(discord.ui.View):
     async def on_timeout(self) -> None:
         if self.session_id:
             try:
-                await self.cog.service.cancel(self.session_id)
+                await self.cog.service.abandon(self.session_id)
             except Exception:
                 pass
         if self.message:
@@ -81,6 +110,10 @@ class JobsSelect(discord.ui.Select):
             discord.SelectOption(label=j.name, value=j.key, emoji=j.emoji, description=j.description[:100], default=j.key == view.selected)
             for j in cfg.JOBS
         ]
+        options.extend(
+            discord.SelectOption(label=name,value=key,emoji=emoji,description=description[:100],default=key==view.selected)
+            for key,(name,emoji,description) in RISKY_JOB_OPTIONS.items()
+        )
         super().__init__(placeholder="Válassz interaktív munkát…", min_values=1, max_values=1, options=options, row=0)
 
     async def callback(self, interaction: discord.Interaction) -> None:
@@ -89,10 +122,30 @@ class JobsSelect(discord.ui.Select):
 
 
 class JobsLobbyView(JobOwnedView):
-    def __init__(self, cog: "JobsCog", owner_id: int, *, selected: str = "warehouse") -> None:
+    def __init__(
+        self,
+        cog: "JobsCog",
+        owner_id: int,
+        *,
+        selected: str = "warehouse",
+        cooldown_remaining: float = 0.0,
+        abandoned: bool = False,
+    ) -> None:
         super().__init__(cog, owner_id, timeout=600)
-        self.selected = selected if selected in cfg.JOB_BY_KEY else "warehouse"
+        self.selected = selected if selected in JOB_LAUNCH_KEYS else "warehouse"
+        self.cooldown_remaining = max(0.0, float(cooldown_remaining))
+        self.abandoned = bool(abandoned)
         self.add_item(JobsSelect(self))
+        if self.selected in RISKY_JOB_OPTIONS:
+            self.start.label = "Rablás indítása"
+            self.start.emoji = "🎭"
+            self.start.style = discord.ButtonStyle.danger
+        elif self.cooldown_remaining > 0:
+            self.start.disabled = True
+            self.start.style = discord.ButtonStyle.secondary
+            short = _cooldown_text(self.cooldown_remaining).replace("⏳ ", "")
+            self.start.label = f"Cooldown • {short}"
+            self.start.emoji = "⏳"
 
     @discord.ui.button(label="Műszak indítása", emoji="▶️", style=discord.ButtonStyle.success, row=1)
     async def start(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
@@ -118,12 +171,13 @@ class WarehouseChoiceButton(discord.ui.Button):
         self.choice = index
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        self.parent_view.stop()
         await self.parent_view.cog.warehouse_answer(interaction, self.parent_view.session_id, self.choice)
 
 
 class WarehouseView(JobOwnedView):
     def __init__(self, cog: "JobsCog", owner_id: int, session: dict) -> None:
-        super().__init__(cog, owner_id, session_id=session["session_id"])
+        super().__init__(cog, owner_id, session_id=session["session_id"], timeout=_session_timing(session, "warehouse_decision_timeout_seconds", cfg.WAREHOUSE_DECISION_TIMEOUT_SECONDS))
         for idx, sequence in enumerate(session["data"]["candidates"]):
             self.add_item(WarehouseChoiceButton(self, idx, " → ".join(sequence)))
 
@@ -136,32 +190,80 @@ class BorsodCellButton(discord.ui.Button):
         self.index = index
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        self.parent_view.stop()
         await self.parent_view.cog.borsod_pick(interaction, self.parent_view.session_id, self.index)
 
 
 class BorsodView(JobOwnedView):
     def __init__(self, cog: "JobsCog", owner_id: int, session: dict) -> None:
-        super().__init__(cog, owner_id, session_id=session["session_id"])
+        super().__init__(cog, owner_id, session_id=session["session_id"], timeout=_session_timing(session, "session_timeout_seconds", cfg.SESSION_TIMEOUT_SECONDS))
         for idx, token in enumerate(_board_tokens(session)):
             self.add_item(BorsodCellButton(self, idx, token))
 
 
 class TransportView(JobOwnedView):
     def __init__(self, cog: "JobsCog", owner_id: int, session: dict) -> None:
-        super().__init__(cog, owner_id, session_id=session["session_id"])
+        super().__init__(cog, owner_id, session_id=session["session_id"], timeout=_session_timing(session, "scenario_decision_timeout_seconds", cfg.TRANSPORT_DECISION_TIMEOUT_SECONDS))
         self.job = str(session["job"])
 
     @discord.ui.button(label="Rövid / biztos", emoji="🟢", style=discord.ButtonStyle.success, row=0)
     async def safe(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
+        self.stop()
         await self.cog.transport_choose(interaction, self.session_id, "safe")
 
     @discord.ui.button(label="Hosszabb / jobb", emoji="🟡", style=discord.ButtonStyle.primary, row=0)
     async def long(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
+        self.stop()
         await self.cog.transport_choose(interaction, self.session_id, "long")
 
     @discord.ui.button(label="Problémás / magas reward", emoji="🔴", style=discord.ButtonStyle.danger, row=0)
     async def risky(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
+        self.stop()
         await self.cog.transport_choose(interaction, self.session_id, "risky")
+
+
+class ScenarioChoiceButton(discord.ui.Button):
+    def __init__(self, parent: "JobScenarioView", index: int, choice: dict) -> None:
+        style = discord.ButtonStyle.success if choice.get("default") else (discord.ButtonStyle.danger if index >= 2 else discord.ButtonStyle.primary)
+        super().__init__(
+            label=str(choice.get("label", "Döntés"))[:80],
+            emoji=str(choice.get("emoji") or "🎯"),
+            style=style,
+            row=index // 3,
+        )
+        self.parent_view = parent
+        self.choice_key = str(choice.get("key", ""))
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        self.parent_view.resolved = True
+        self.parent_view.stop()
+        if self.parent_view.kind == "borsod":
+            await self.parent_view.cog.borsod_scenario_choose(interaction, self.parent_view.session_id, self.choice_key)
+        else:
+            await self.parent_view.cog.transport_scenario_choose(interaction, self.parent_view.session_id, self.choice_key)
+
+
+class JobScenarioView(JobOwnedView):
+    def __init__(self, cog: "JobsCog", owner_id: int, session: dict, scenario: dict, *, kind: str) -> None:
+        timeout = _session_timing(session, "scenario_decision_timeout_seconds", cfg.DECISION_TIMEOUT_SECONDS)
+        super().__init__(cog, owner_id, session_id=session["session_id"], timeout=timeout)
+        self.kind = kind
+        self.scenario = scenario
+        self.resolved = False
+        for idx, choice in enumerate(scenario.get("choices", [])):
+            self.add_item(ScenarioChoiceButton(self, idx, choice))
+
+    async def on_timeout(self) -> None:
+        if self.resolved or not self.message or not self.session_id:
+            return
+        self.resolved = True
+        try:
+            await self.cog.resolve_scenario_timeout(self.message, self.owner_id, self.session_id, self.kind)
+        except Exception:
+            try:
+                await self.cog.service.cancel(self.session_id)
+            except Exception:
+                pass
 
 
 class JobsRewardModal(discord.ui.Modal, title="Interactive Jobs • Reward tuning"):
@@ -180,6 +282,54 @@ class JobsRewardModal(discord.ui.Modal, title="Interactive Jobs • Reward tunin
         if not 50 <= percent <= 200:
             return await interaction.response.send_message("❌ 50 és 200 közötti százalékot adj meg.", ephemeral=True)
         await self.parent_view.cog.service.settings.set_int(interaction.guild_id, cfg.JOB_REWARD_MULTIPLIER_KEY, percent * 100)
+        await self.parent_view.refresh(interaction)
+
+
+class JobsCooldownModal(discord.ui.Modal, title="Jobs • Cooldown / timeout"):
+    cooldown_minutes = discord.ui.TextInput(label="Közös cooldown (perc)", max_length=10)
+    abandon_minutes = discord.ui.TextInput(label="Félbehagyás cooldown (perc)", max_length=10)
+    session_minutes = discord.ui.TextInput(label="Általános idle timeout (perc)", max_length=10)
+
+    def __init__(self, view: "JobsSettingsView", runtime) -> None:
+        super().__init__(timeout=300); self.parent_view=view
+        self.cooldown_minutes.default=f"{runtime.cooldown_seconds/60:g}"
+        self.abandon_minutes.default=f"{runtime.abandon_cooldown_seconds/60:g}"
+        self.session_minutes.default=f"{runtime.session_timeout_seconds/60:g}"
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        try:
+            await self.parent_view.cog.service.gameplay.set_jobs(
+                interaction.guild_id,
+                cooldown_seconds=round(float(str(self.cooldown_minutes.value).replace(",","."))*60),
+                abandon_cooldown_seconds=round(float(str(self.abandon_minutes.value).replace(",","."))*60),
+                session_timeout_seconds=round(float(str(self.session_minutes.value).replace(",","."))*60),
+            )
+        except ValueError as exc:
+            return await interaction.response.send_message(f"❌ {exc}", ephemeral=True)
+        await self.parent_view.refresh(interaction)
+
+
+class JobsDecisionModal(discord.ui.Modal, title="Jobs • Döntési idők"):
+    memorize = discord.ui.TextInput(label="Raktáros memóriaidő (mp)", max_length=10)
+    warehouse_choice = discord.ui.TextInput(label="Raktáros választási idő (mp)", max_length=10)
+    scenario_choice = discord.ui.TextInput(label="Scenario választási idő (mp)", max_length=10)
+
+    def __init__(self, view: "JobsSettingsView", runtime) -> None:
+        super().__init__(timeout=300); self.parent_view=view
+        self.memorize.default=f"{runtime.warehouse_memorize_seconds:g}"
+        self.warehouse_choice.default=f"{runtime.warehouse_decision_timeout_seconds:g}"
+        self.scenario_choice.default=f"{runtime.scenario_decision_timeout_seconds:g}"
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        try:
+            await self.parent_view.cog.service.gameplay.set_jobs(
+                interaction.guild_id,
+                warehouse_memorize_seconds=float(str(self.memorize.value).replace(",",".")),
+                warehouse_decision_timeout_seconds=float(str(self.warehouse_choice.value).replace(",",".")),
+                scenario_decision_timeout_seconds=float(str(self.scenario_choice.value).replace(",",".")),
+            )
+        except ValueError as exc:
+            return await interaction.response.send_message(f"❌ {exc}", ephemeral=True)
         await self.parent_view.refresh(interaction)
 
 
@@ -242,12 +392,27 @@ class JobsSettingsView(OwnedView):
         current = await self.cog.service.settings.get_int(interaction.guild_id, cfg.JOB_REWARD_MULTIPLIER_KEY)
         await interaction.response.send_modal(JobsRewardModal(self, current or cfg.DEFAULT_REWARD_MULTIPLIER_BP))
 
+    @discord.ui.button(label="Cooldown / timeout", emoji="⏱️", style=discord.ButtonStyle.primary, row=3)
+    async def cooldown_tuning(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
+        runtime=await self.cog.service.gameplay.jobs(interaction.guild_id)
+        await interaction.response.send_modal(JobsCooldownModal(self,runtime))
+
+    @discord.ui.button(label="Döntési idők", emoji="🎯", style=discord.ButtonStyle.primary, row=3)
+    async def decision_tuning(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
+        runtime=await self.cog.service.gameplay.jobs(interaction.guild_id)
+        await interaction.response.send_modal(JobsDecisionModal(self,runtime))
+
+    @discord.ui.button(label="Timing default", emoji="♻️", style=discord.ButtonStyle.secondary, row=3)
+    async def timing_reset(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
+        await self.cog.service.gameplay.reset_jobs(interaction.guild_id)
+        await self.refresh(interaction)
+
     @discord.ui.button(label="Log kikapcsolása", emoji="🧹", style=discord.ButtonStyle.secondary, row=1)
     async def clear_log(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
         await self.cog.service.settings.set_int(interaction.guild_id, cfg.JOBS_LOG_CHANNEL_KEY, None)
         await self.refresh(interaction)
 
-    @discord.ui.button(label="Vissza", emoji="⬅️", style=discord.ButtonStyle.secondary, row=3)
+    @discord.ui.button(label="Vissza", emoji="⬅️", style=discord.ButtonStyle.secondary, row=4)
     async def back(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
         settings_cog = self.cog.bot.get_cog("SettingsCog")
         if settings_cog is None:
@@ -291,19 +456,49 @@ class JobsCog(commands.GroupCog, group_name="jobs", group_description="Yoru Inte
             return False
         return True
 
-    async def lobby_embed(self, guild_id: int, user: discord.abc.User) -> tuple[discord.Embed, discord.File]:
+    async def lobby_embed(self, guild_id: int, user: discord.abc.User) -> tuple[discord.Embed, discord.File, dict]:
         rows = await self.service.mastery_summary(guild_id, user.id)
+        cooldown = await self.service.cooldown_state(guild_id, user.id)
+        runtime = await self.service.gameplay.jobs(guild_id)
+        remaining = float(cooldown["remaining"])
         lines=[]
         for job, mastery in zip(cfg.JOBS, rows):
             lv, current, need = cfg.mastery_progress(int(mastery["xp"]))
-            lines.append((job.name, f"{int(mastery['shifts'])} műszak • rekord {mastery['best_rating']}", f"Mastery Lv.{lv} • {current}/{need} XP"))
-        fp=await self._render(render_job_lobby,user.display_name,lines)
-        embed=base_embed("🧰 YORU INTERACTIVE JOBS", "Aktív, tét nélküli pénzkeresés. **Nincs AFK payout:** a műszakhoz dönteni/kattintani kell.", BRAND)
+            lines.append((
+                job.name,
+                f"{int(mastery['shifts'])} műszak • rekord {mastery['best_rating']}",
+                f"Mastery Lv.{lv} • {current}/{need} XP",
+            ))
+        if remaining > 0:
+            if bool(cooldown["abandoned"]):
+                status=f"FÉLBEMARADT MŰSZAK • {_cooldown_text(remaining)}"
+                cooldown_text=f"**{_cooldown_text(remaining)}** • {_cooldown_text(runtime.abandon_cooldown_seconds).replace('⏳ ','')} anti-reroll cooldown egy félbehagyott műszak után."
+            else:
+                status=f"KÖZÖS COOLDOWN • {_cooldown_text(remaining)}"
+                cooldown_text=f"**{_cooldown_text(remaining)}** • bármelyik befejezett job után az összes munka {_cooldown_text(runtime.cooldown_seconds).replace('⏳ ','')} időre lezár."
+        else:
+            status="MŰSZAK ELÉRHETŐ • VÁLASSZ MUNKÁT"
+            cooldown_text=f"✅ **Műszak elérhető.** Válassz egy munkát; teljesítés után az egész Jobs rendszer {_cooldown_text(runtime.cooldown_seconds).replace('⏳ ','')} cooldownra kerül."
+        fp=await self._render(render_job_lobby,user.display_name,lines,status=status)
+        embed=base_embed("🧰 YORU INTERACTIVE JOBS", "Aktív, tét nélküli pénzkeresés. **Egy műszakot választasz**, majd a teljes Jobs pool közös cooldownra kerül.", BRAND)
         embed.set_author(name=user.display_name,icon_url=getattr(user.display_avatar,"url",None))
         embed.set_image(url="attachment://jobs_lobby.png")
-        embed.add_field(name="💡 Loop",value="Játssz → teljesíts jobot → építs Masteryt → növeld a rekordod + kapj kis, plafonozott income bónuszt.",inline=False)
-        embed.set_footer(text="Yoru • Jobs • egy aktív Interactive Job / játékos / szerver")
-        return embed,discord.File(fp=fp,filename="jobs_lobby.png")
+        embed.add_field(name="⏱️ Közös Jobs cooldown", value=cooldown_text, inline=False)
+        embed.add_field(
+            name="🎭 Kockázatos melók",
+            value="🏪 **Boltrablás** és 🏦 **Bankrablás** is a választóban van. Interaktívak, de a saját Live cooldownjukat használják; nincs közös Jobs Mastery-bónuszuk.",
+            inline=False,
+        )
+        embed.add_field(name="💡 Loop",value=f"Válassz munkát → reagálj a scenario-kra → építs Masteryt → {_cooldown_text(runtime.cooldown_seconds).replace('⏳ ','')} múlva választhatsz új műszakot.",inline=False)
+        embed.set_footer(text="Yoru • Jobs • kényelmes döntési ablakok • egy aktív műszak / játékos / szerver")
+        return embed,discord.File(fp=fp,filename="jobs_lobby.png"),cooldown
+
+    def _lobby_view(self, owner_id: int, cooldown: dict, *, selected: str = "warehouse") -> JobsLobbyView:
+        return JobsLobbyView(
+            self,owner_id,selected=selected,
+            cooldown_remaining=float(cooldown.get("remaining",0.0)),
+            abandoned=bool(cooldown.get("abandoned",False)),
+        )
 
     async def mastery_embed(self, guild_id: int, user: discord.abc.User) -> discord.Embed:
         rows=await self.service.mastery_summary(guild_id,user.id)
@@ -325,8 +520,8 @@ class JobsCog(commands.GroupCog, group_name="jobs", group_description="Yoru Inte
         return base_embed("🧾 Jobs History", "\n".join(desc) if desc else "Még nincs lezárt Interactive Job műszakod.", BRAND)
 
     async def refresh_lobby(self, interaction: discord.Interaction, view: JobsLobbyView) -> None:
-        embed,file=await self.lobby_embed(interaction.guild_id,interaction.user)
-        new=JobsLobbyView(self,view.owner_id,selected=view.selected)
+        embed,file,cooldown=await self.lobby_embed(interaction.guild_id,interaction.user)
+        new=self._lobby_view(view.owner_id,cooldown,selected=view.selected)
         await interaction.response.edit_message(embed=embed,attachments=[file],view=new)
         new.message=interaction.message
 
@@ -353,16 +548,23 @@ class JobsCog(commands.GroupCog, group_name="jobs", group_description="Yoru Inte
         embed.set_footer(text="Yoru • belső Jobs audit")
         await channel.send(embed=embed,allowed_mentions=discord.AllowedMentions.none())
 
-    async def _final_embed_file(self,user:discord.abc.User,result):
+    async def _final_embed_file(self,user:discord.abc.User,result,guild_id:int):
         job=cfg.JOB_BY_KEY[result.job]
         fp=await self._render(render_job_final,user.display_name,job.name,accent=job.accent,rating=result.rating,score=result.score,reward=result.reward,mastery_level=result.mastery_level,mastery_xp=result.mastery_xp)
         embed=base_embed(f"{job.emoji} {job.name} • {result.rating} rating",f"Műszak kész. **+{money(result.reward)}** került a walletedbe.",SUCCESS)
         embed.set_author(name=user.display_name,icon_url=getattr(user.display_avatar,"url",None)); embed.set_image(url="attachment://job_final.png")
         embed.add_field(name="Performance",value=f"**{result.score}/100**",inline=True); embed.add_field(name="Mastery",value=f"**Lv.{result.mastery_level}** • +{result.mastery_xp} XP",inline=True); embed.add_field(name="Wallet",value=f"**{money(result.wallet)}**",inline=True)
+        runtime=await self.service.gameplay.jobs(guild_id)
+        embed.add_field(name="⏱️ Következő Jobs műszak",value=f"**{_cooldown_text(runtime.cooldown_seconds).replace('⏳ ','')} múlva** • addig mind a négy munka cooldownon van.",inline=False)
         return embed,discord.File(fp=fp,filename="job_final.png")
 
     async def start_job_interaction(self, interaction: discord.Interaction, job: str) -> None:
         if not await self._guard_interaction(interaction): return
+        if job in RISKY_JOB_OPTIONS:
+            live=self.bot.get_cog("LiveWorldCog")
+            if live is None or not hasattr(live,"start_robbery_ui"):
+                return await interaction.response.send_message(embed=error_embed(interaction.user,"A Live World modul jelenleg nem elérhető."),ephemeral=True)
+            return await live.start_robbery_ui(interaction,job)
         if job not in cfg.JOB_BY_KEY:
             return await interaction.response.send_message(embed=error_embed(interaction.user,"Ismeretlen munka."),ephemeral=True)
         await interaction.response.defer()
@@ -375,72 +577,298 @@ class JobsCog(commands.GroupCog, group_name="jobs", group_description="Yoru Inte
             if interaction.message is not None: await interaction.followup.send(embed=embed,ephemeral=True)
             else: await interaction.edit_original_response(embed=embed,attachments=[],view=None)
 
+    async def _finish_job_message(self, message: discord.Message, user: discord.abc.User, guild_id: int, result) -> None:
+        embed,file=await self._final_embed_file(user,result,guild_id)
+        await message.edit(embed=embed,attachments=[file],view=None)
+        await self._log_result(guild_id,user.id,result)
+
+    async def _show_warehouse_memory(self, message: discord.Message, user: discord.abc.User, session: dict, *, intro: str) -> None:
+        data=session["data"]
+        anim=await self._render(render_warehouse_transition,user.display_name,data["sequence"],int(data["round"]))
+        embed=base_embed("📦 Raktáros",intro,BRAND)
+        embed.set_image(url="attachment://warehouse_shift.gif")
+        await message.edit(embed=embed,attachments=[discord.File(fp=anim,filename="warehouse_shift.gif")],view=None)
+        await asyncio.sleep(cfg.WAREHOUSE_ANIMATION_SECONDS)
+        latest=await self.service.get_session(session["session_id"])
+        if latest["status"]!="active":
+            return
+        data=latest["data"]
+        memorize=await self._render(
+            render_warehouse,user.display_name,data["sequence"],phase="memorize",
+            round_no=int(data["round"]),correct=int(data["correct"]),combo=int(data["combo"]),
+        )
+        memorize_seconds=_session_timing(session,"warehouse_memorize_seconds",cfg.WAREHOUSE_MEMORIZE_SECONDS)
+        embed=base_embed("📦 Raktáros",f"Jegyezd meg. **{memorize_seconds:g} másodperced van**, ez nem reflexjáték.",BRAND)
+        embed.set_image(url="attachment://warehouse_memory.png")
+        await message.edit(embed=embed,attachments=[discord.File(fp=memorize,filename="warehouse_memory.png")],view=None)
+        await asyncio.sleep(memorize_seconds)
+        latest=await self.service.get_session(session["session_id"])
+        if latest["status"]!="active":
+            return
+        data=latest["data"]
+        fp=await self._render(
+            render_warehouse,user.display_name,data["sequence"],phase="choose",
+            round_no=int(data["round"]),correct=int(data["correct"]),combo=int(data["combo"]),
+        )
+        view=WarehouseView(self,user.id,latest)
+        decision_seconds=_session_timing(latest,"warehouse_decision_timeout_seconds",cfg.WAREHOUSE_DECISION_TIMEOUT_SECONDS)
+        embed=base_embed("📦 Raktáros",f"Válaszd ki a helyes sorrendet. **{int(decision_seconds)} mp** áll rendelkezésedre.",BRAND)
+        embed.set_image(url="attachment://warehouse_state.png")
+        await message.edit(embed=embed,attachments=[discord.File(fp=fp,filename="warehouse_state.png")],view=view)
+        view.message=message
+
     async def _start_warehouse_ui(self, interaction: discord.Interaction, session: dict) -> None:
         data=session["data"]
-        anim=await self._render(render_warehouse_transition,interaction.user.display_name,data["sequence"],int(data["round"])); embed=base_embed("📦 Raktáros", "Jegyezd meg a sorrendet. A kép rövidesen eltűnik.", BRAND); embed.set_image(url="attachment://warehouse_shift.gif")
+        anim=await self._render(render_warehouse_transition,interaction.user.display_name,data["sequence"],int(data["round"]))
+        embed=base_embed("📦 Raktáros","A polcsor mozog, utána külön időt kapsz a megjegyzésre.",BRAND)
+        embed.set_image(url="attachment://warehouse_shift.gif")
         msg=await self._edit_after_defer(interaction,embed=embed,file=discord.File(fp=anim,filename="warehouse_shift.gif"),view=None)
-        await asyncio.sleep(2.4)
-        try:
-            latest=await self.service.get_session(session["session_id"])
-            if latest["status"]!="active": return
-            fp=await self._render(render_warehouse,interaction.user.display_name,latest["data"]["sequence"],phase="choose",round_no=int(latest["data"]["round"]),correct=int(latest["data"]["correct"]),combo=int(latest["data"]["combo"])); view=WarehouseView(self,interaction.user.id,latest)
-            embed=base_embed("📦 Raktáros", "Válaszd ki a helyes sorrendet.", BRAND); embed.set_image(url="attachment://warehouse_state.png")
-            await msg.edit(embed=embed,attachments=[discord.File(fp=fp,filename="warehouse_state.png")],view=view); view.message=msg
-        except (discord.NotFound,discord.Forbidden,discord.HTTPException): pass
+        await asyncio.sleep(cfg.WAREHOUSE_ANIMATION_SECONDS)
+        latest=await self.service.get_session(session["session_id"])
+        if latest["status"]!="active":
+            return
+        data=latest["data"]
+        memorize=await self._render(render_warehouse,interaction.user.display_name,data["sequence"],phase="memorize",round_no=int(data["round"]),correct=int(data["correct"]),combo=int(data["combo"]))
+        memorize_seconds=_session_timing(latest,"warehouse_memorize_seconds",cfg.WAREHOUSE_MEMORIZE_SECONDS)
+        embed=base_embed("📦 Raktáros",f"Jegyezd meg. **{memorize_seconds:g} másodperced van**.",BRAND)
+        embed.set_image(url="attachment://warehouse_memory.png")
+        await msg.edit(embed=embed,attachments=[discord.File(fp=memorize,filename="warehouse_memory.png")],view=None)
+        await asyncio.sleep(memorize_seconds)
+        latest=await self.service.get_session(session["session_id"])
+        if latest["status"]!="active":
+            return
+        data=latest["data"]
+        fp=await self._render(render_warehouse,interaction.user.display_name,data["sequence"],phase="choose",round_no=int(data["round"]),correct=int(data["correct"]),combo=int(data["combo"]))
+        view=WarehouseView(self,interaction.user.id,latest)
+        decision_seconds=_session_timing(latest,"warehouse_decision_timeout_seconds",cfg.WAREHOUSE_DECISION_TIMEOUT_SECONDS)
+        embed=base_embed("📦 Raktáros",f"Válaszd ki a helyes sorrendet. **{int(decision_seconds)} mp** áll rendelkezésedre.",BRAND)
+        embed.set_image(url="attachment://warehouse_state.png")
+        await msg.edit(embed=embed,attachments=[discord.File(fp=fp,filename="warehouse_state.png")],view=view)
+        view.message=msg
 
     async def warehouse_answer(self, interaction: discord.Interaction, session_id: str, choice: int) -> None:
         await interaction.response.defer()
-        try: session,correct,done=await self.service.warehouse_answer(session_id,choice)
-        except ValueError as exc: return await interaction.followup.send(embed=error_embed(interaction.user,str(exc)),ephemeral=True)
+        try:
+            session,correct,done=await self.service.warehouse_answer(session_id,choice)
+        except ValueError as exc:
+            return await interaction.followup.send(embed=error_embed(interaction.user,str(exc)),ephemeral=True)
         if done:
-            result=await self.service.finish(session_id); embed,file=await self._final_embed_file(interaction.user,result); await interaction.message.edit(embed=embed,attachments=[file],view=None); await self._log_result(interaction.guild_id,interaction.user.id,result); return
+            result=await self.service.finish(session_id)
+            await self._finish_job_message(interaction.message,interaction.user,interaction.guild_id,result)
+            return
+        await self._show_warehouse_memory(
+            interaction.message,interaction.user,session,
+            intro=f"{'✅ Helyes' if correct else '❌ Hibás'} • következő kör. Nézd végig, aztán kapsz külön memóriaidőt.",
+        )
+
+    async def _show_borsod_board(self, message: discord.Message, user: discord.abc.User, session: dict, *, description: str | None=None) -> None:
         data=session["data"]
-        anim=await self._render(render_warehouse_transition,interaction.user.display_name,data["sequence"],int(data["round"])); embed=base_embed("📦 Raktáros",f"{'✅ Helyes' if correct else '❌ Hibás'} • következő kör: jegyezd meg a sorrendet.",SUCCESS if correct else GOLD); embed.set_image(url="attachment://warehouse_shift.gif")
-        await interaction.message.edit(embed=embed,attachments=[discord.File(fp=anim,filename="warehouse_shift.gif")],view=None)
-        await asyncio.sleep(2.4)
-        latest=await self.service.get_session(session_id); fp=await self._render(render_warehouse,interaction.user.display_name,latest["data"]["sequence"],phase="choose",round_no=int(latest["data"]["round"]),correct=int(latest["data"]["correct"]),combo=int(latest["data"]["combo"])); view=WarehouseView(self,interaction.user.id,latest); embed=base_embed("📦 Raktáros","Válaszd ki a helyes sorrendet.",BRAND); embed.set_image(url="attachment://warehouse_state.png"); await interaction.message.edit(embed=embed,attachments=[discord.File(fp=fp,filename="warehouse_state.png")],view=view); view.message=interaction.message
+        board=_board_tokens(session)
+        fp=await self._render(render_borsod,user.display_name,board,int(data["attempts_left"]),int(session["reward"]),event=str(data["event"]))
+        view=BorsodView(self,user.id,session)
+        embed=base_embed("🔌 Borsodi Lopkodás",description or str(data["event"]),BRAND)
+        embed.set_image(url="attachment://borsod_state.png")
+        await message.edit(embed=embed,attachments=[discord.File(fp=fp,filename="borsod_state.png")],view=view)
+        view.message=message
+
+    async def _show_scenario(self, message: discord.Message, user: discord.abc.User, session: dict, scenario: dict, *, kind: str) -> None:
+        job=str(session["job"])
+        definition=cfg.JOB_BY_KEY[job]
+        data=session["data"]
+        seconds=int(_session_timing(session,"scenario_decision_timeout_seconds",cfg.DECISION_TIMEOUT_SECONDS))
+        if kind=="borsod":
+            stage=max(1,7-int(data.get("attempts_left",7)))
+            total=7
+        else:
+            stage=int(session["stage"])
+            total=int(data["total"])
+        fp=await self._render(
+            render_scenario_state,user.display_name,definition.name,accent=definition.accent,
+            stage=stage,total=total,score=int(session["score"]),reward=int(session["reward"]),
+            scenario_title=str(scenario["title"]),prompt=str(scenario["prompt"]),choices=list(scenario.get("choices",[])),seconds=seconds,
+        )
+        view=JobScenarioView(self,user.id,session,scenario,kind=kind)
+        embed=base_embed(
+            f"{definition.emoji} {definition.name} • {scenario['title']}",
+            f"{scenario['prompt']}\n\n**{seconds} másodperced van dönteni.** Ha kifut az idő, Yoru a biztonságos alapválasztást használja.",
+            GOLD,
+        )
+        embed.set_image(url="attachment://job_scenario.png")
+        await message.edit(embed=embed,attachments=[discord.File(fp=fp,filename="job_scenario.png")],view=view)
+        view.message=message
 
     async def _start_borsod_ui(self, interaction: discord.Interaction, session: dict) -> None:
-        data=session["data"]; board=_board_tokens(session); fp=await self._render(render_borsod,interaction.user.display_name,board,int(data["attempts_left"]),int(session["reward"]),event=str(data["event"])); embed=base_embed("🔌 Borsodi Lopkodás","5×5 grid • **7 keresés** • nincs tét. A 🚓 járőr korán lezárhatja a runt, de a meglévő loot 70%-át megtartod.",GOLD); embed.set_image(url="attachment://borsod_state.png"); view=BorsodView(self,interaction.user.id,session); await self._edit_after_defer(interaction,embed=embed,file=discord.File(fp=fp,filename="borsod_state.png"),view=view)
+        data=session["data"]
+        board=_board_tokens(session)
+        fp=await self._render(render_borsod,interaction.user.display_name,board,int(data["attempts_left"]),int(session["reward"]),event=str(data["event"]))
+        embed=base_embed("🔌 Borsodi Lopkodás","5×5 grid • **7 keresés** • nincs tét. A 🚓 most **döntési scenario-t** nyit, nem automatikusan zárja le a műszakot.",GOLD)
+        embed.set_image(url="attachment://borsod_state.png")
+        view=BorsodView(self,interaction.user.id,session)
+        await self._edit_after_defer(interaction,embed=embed,file=discord.File(fp=fp,filename="borsod_state.png"),view=view)
 
     async def borsod_pick(self, interaction: discord.Interaction, session_id: str, index: int) -> None:
-        await interaction.response.defer(); before=await self.service.get_session(session_id); board_before=_board_tokens(before)
-        try: session,cell,done=await self.service.borsod_pick(session_id,index)
-        except ValueError as exc: return await interaction.followup.send(embed=error_embed(interaction.user,str(exc)),ephemeral=True)
-        data=session["data"]; anim=await self._render(render_borsod_reveal_animation,interaction.user.display_name,board_before,index,str(cell["emoji"]),int(data["attempts_left"]),int(session["reward"])); embed=base_embed("🔌 Borsodi Lopkodás",str(data["event"]),GOLD if not cell["hazard"] else discord.Color.red()); embed.set_image(url="attachment://borsod_reveal.gif"); await interaction.message.edit(embed=embed,attachments=[discord.File(fp=anim,filename="borsod_reveal.gif")],view=None); await asyncio.sleep(1.35)
+        await interaction.response.defer()
+        before=await self.service.get_session(session_id)
+        board_before=_board_tokens(before)
+        try:
+            session,cell,done=await self.service.borsod_pick(session_id,index)
+        except ValueError as exc:
+            return await interaction.followup.send(embed=error_embed(interaction.user,str(exc)),ephemeral=True)
+        data=session["data"]
+        anim=await self._render(render_borsod_reveal_animation,interaction.user.display_name,board_before,index,str(cell["emoji"]),int(data["attempts_left"]),int(session["reward"]))
+        embed=base_embed("🔌 Borsodi Lopkodás",str(data["event"]),GOLD if not cell["hazard"] else discord.Color.red())
+        embed.set_image(url="attachment://borsod_reveal.gif")
+        await interaction.message.edit(embed=embed,attachments=[discord.File(fp=anim,filename="borsod_reveal.gif")],view=None)
+        await asyncio.sleep(cfg.BORSOD_REVEAL_HOLD_SECONDS)
+        scenario=cell.get("scenario")
+        if scenario:
+            await self._show_scenario(interaction.message,interaction.user,session,scenario,kind="borsod")
+            return
         if done:
-            result=await self.service.finish(session_id); embed,file=await self._final_embed_file(interaction.user,result); await interaction.message.edit(embed=embed,attachments=[file],view=None); await self._log_result(interaction.guild_id,interaction.user.id,result); return
-        board=_board_tokens(session); fp=await self._render(render_borsod,interaction.user.display_name,board,int(data["attempts_left"]),int(session["reward"]),event=str(data["event"])); view=BorsodView(self,interaction.user.id,session); embed=base_embed("🔌 Borsodi Lopkodás",str(data["event"]),BRAND); embed.set_image(url="attachment://borsod_state.png"); await interaction.message.edit(embed=embed,attachments=[discord.File(fp=fp,filename="borsod_state.png")],view=view); view.message=interaction.message
+            result=await self.service.finish(session_id)
+            await self._finish_job_message(interaction.message,interaction.user,interaction.guild_id,result)
+            return
+        await self._show_borsod_board(interaction.message,interaction.user,session)
+
+    async def borsod_scenario_choose(self, interaction: discord.Interaction, session_id: str, choice_key: str) -> None:
+        await interaction.response.defer()
+        try:
+            session,outcome,done=await self.service.resolve_borsod_scenario(session_id,choice_key)
+        except ValueError as exc:
+            return await interaction.followup.send(embed=error_embed(interaction.user,str(exc)),ephemeral=True)
+        if done:
+            result=await self.service.finish(session_id)
+            await self._finish_job_message(interaction.message,interaction.user,interaction.guild_id,result)
+            return
+        await self._show_borsod_board(interaction.message,interaction.user,session,description=str(outcome["event"]))
+
+    async def _show_transport_next(self, message: discord.Message, user: discord.abc.User, session: dict, *, previous: str | None=None) -> None:
+        job=str(session["job"])
+        definition=cfg.JOB_BY_KEY[job]
+        data=session["data"]
+        fp=await self._render(
+            render_transport_state,user.display_name,definition.name,accent=definition.accent,
+            stage=int(session["stage"]),total=int(data["total"]),score=int(session["score"]),reward=int(session["reward"]),event=str(data["current"]),
+        )
+        view=TransportView(self,user.id,session)
+        description="Válassz útvonalat. Ez csak az első döntés: menet közben külön scenario is jön."
+        if previous:
+            description=f"{previous}\n\nKövetkező fuvar: válassz útvonalat, utána reagálnod kell az eseményre."
+        embed=base_embed(f"{definition.emoji} {definition.name}",description,BRAND)
+        embed.set_image(url="attachment://transport_state.png")
+        await message.edit(embed=embed,attachments=[discord.File(fp=fp,filename="transport_state.png")],view=view)
+        view.message=message
 
     async def _start_transport_ui(self, interaction: discord.Interaction, session: dict) -> None:
-        job=str(session["job"]); definition=cfg.JOB_BY_KEY[job]; data=session["data"]; fp=await self._render(render_transport_state,interaction.user.display_name,definition.name,accent=definition.accent,stage=int(session["stage"]),total=int(data["total"]),score=int(session["score"]),reward=int(session["reward"]),event=str(data["current"])); embed=base_embed(f"{definition.emoji} {definition.name}","Válassz útvonalat. A biztosabb opció kevesebbet fizet, a problémás út magasabb potenciált és több event-risket ad.",BRAND); embed.set_image(url="attachment://transport_state.png"); view=TransportView(self,interaction.user.id,session); await self._edit_after_defer(interaction,embed=embed,file=discord.File(fp=fp,filename="transport_state.png"),view=view)
+        job=str(session["job"])
+        definition=cfg.JOB_BY_KEY[job]
+        data=session["data"]
+        fp=await self._render(render_transport_state,interaction.user.display_name,definition.name,accent=definition.accent,stage=int(session["stage"]),total=int(data["total"]),score=int(session["score"]),reward=int(session["reward"]),event=str(data["current"]))
+        embed=base_embed(f"{definition.emoji} {definition.name}","Válassz útvonalat. **Nem fut le automatikusan:** az út közben scenario jelenik meg, ahol külön döntened kell.",BRAND)
+        embed.set_image(url="attachment://transport_state.png")
+        view=TransportView(self,interaction.user.id,session)
+        await self._edit_after_defer(interaction,embed=embed,file=discord.File(fp=fp,filename="transport_state.png"),view=view)
 
     async def transport_choose(self, interaction: discord.Interaction, session_id: str, route: str) -> None:
         await interaction.response.defer()
-        try: session,event,done=await self.service.transport_choose(session_id,route)
-        except ValueError as exc: return await interaction.followup.send(embed=error_embed(interaction.user,str(exc)),ephemeral=True)
-        job=str(session["job"]); definition=cfg.JOB_BY_KEY[job]; vehicle="FUTÁR" if job=="courier" else "TAXI"; anim=await self._render(render_route_animation,interaction.user.display_name,definition.name,vehicle,accent=definition.accent,event=str(event["event"]),success=not bool(event["bad"])); embed=base_embed(f"{definition.emoji} {definition.name}",f"**{event['event']}** • run +{money(int(event['reward']))}",SUCCESS if not event["bad"] else GOLD); embed.set_image(url="attachment://route.gif"); await interaction.message.edit(embed=embed,attachments=[discord.File(fp=anim,filename="route.gif")],view=None); await asyncio.sleep(2.45)
+        try:
+            session,scenario=await self.service.prepare_transport_scenario(session_id,route)
+        except ValueError as exc:
+            return await interaction.followup.send(embed=error_embed(interaction.user,str(exc)),ephemeral=True)
+        job=str(session["job"])
+        definition=cfg.JOB_BY_KEY[job]
+        vehicle="FUTÁR" if job=="courier" else "TAXI"
+        anim=await self._render(
+            render_route_animation,interaction.user.display_name,definition.name,vehicle,
+            accent=definition.accent,event=str(scenario["title"]),success=True,
+        )
+        embed=base_embed(f"{definition.emoji} {definition.name}",f"**{scenario['route_label']}** • úton vagy… figyeld, mi történik.",BRAND)
+        embed.set_image(url="attachment://route.gif")
+        await interaction.message.edit(embed=embed,attachments=[discord.File(fp=anim,filename="route.gif")],view=None)
+        await asyncio.sleep(cfg.ROUTE_ANIMATION_HOLD_SECONDS)
+        latest=await self.service.get_session(session_id)
+        if latest["status"]!="active":
+            return
+        await self._show_scenario(interaction.message,interaction.user,latest,scenario,kind="transport")
+
+    async def _after_transport_scenario(self, message: discord.Message, user: discord.abc.User, guild_id: int, session: dict, outcome: dict, done: bool) -> None:
+        job=str(session["job"])
+        definition=cfg.JOB_BY_KEY[job]
+        vehicle="FUTÁR" if job=="courier" else "TAXI"
+        anim=await self._render(
+            render_route_animation,user.display_name,definition.name,vehicle,
+            accent=definition.accent,event=str(outcome["event"]),success=bool(outcome["success"]),
+        )
+        result_line=f"{'✅' if outcome['success'] else '❌'} {outcome['choice']} • +{money(int(outcome['reward']))}"
+        embed=base_embed(f"{definition.emoji} {definition.name}",result_line,SUCCESS if outcome["success"] else GOLD)
+        embed.set_image(url="attachment://route.gif")
+        await message.edit(embed=embed,attachments=[discord.File(fp=anim,filename="route.gif")],view=None)
+        await asyncio.sleep(cfg.ROUTE_ANIMATION_HOLD_SECONDS)
         if done:
-            result=await self.service.finish(session_id); embed,file=await self._final_embed_file(interaction.user,result); await interaction.message.edit(embed=embed,attachments=[file],view=None); await self._log_result(interaction.guild_id,interaction.user.id,result); return
-        data=session["data"]; fp=await self._render(render_transport_state,interaction.user.display_name,definition.name,accent=definition.accent,stage=int(session["stage"]),total=int(data["total"]),score=int(session["score"]),reward=int(session["reward"]),event=str(data["current"])); view=TransportView(self,interaction.user.id,session); embed=base_embed(f"{definition.emoji} {definition.name}",f"Előző esemény: **{event['event']}**. Következő fuvarhoz válassz útvonalat.",BRAND); embed.set_image(url="attachment://transport_state.png"); await interaction.message.edit(embed=embed,attachments=[discord.File(fp=fp,filename="transport_state.png")],view=view); view.message=interaction.message
+            result=await self.service.finish(session["session_id"])
+            await self._finish_job_message(message,user,guild_id,result)
+            return
+        latest=await self.service.get_session(session["session_id"])
+        await self._show_transport_next(message,user,latest,previous=str(outcome["event"]))
+
+    async def transport_scenario_choose(self, interaction: discord.Interaction, session_id: str, choice_key: str) -> None:
+        await interaction.response.defer()
+        try:
+            session,outcome,done=await self.service.resolve_transport_scenario(session_id,choice_key)
+        except ValueError as exc:
+            return await interaction.followup.send(embed=error_embed(interaction.user,str(exc)),ephemeral=True)
+        await self._after_transport_scenario(interaction.message,interaction.user,interaction.guild_id,session,outcome,done)
+
+    async def resolve_scenario_timeout(self, message: discord.Message, owner_id: int, session_id: str, kind: str) -> None:
+        guild=message.guild
+        if guild is None:
+            await self.service.cancel(session_id)
+            return
+        user=guild.get_member(owner_id) or self.bot.get_user(owner_id)
+        if user is None:
+            await self.service.cancel(session_id)
+            return
+        if kind=="borsod":
+            session,outcome,done=await self.service.resolve_borsod_scenario(session_id,timeout=True)
+            if done:
+                result=await self.service.finish(session_id)
+                await self._finish_job_message(message,user,guild.id,result)
+            else:
+                await self._show_borsod_board(message,user,session,description=str(outcome["event"]))
+            return
+        session,outcome,done=await self.service.resolve_transport_scenario(session_id,timeout=True)
+        await self._after_transport_scenario(message,user,guild.id,session,outcome,done)
 
     async def show_settings(self, interaction: discord.Interaction, owner_id: int, existing: JobsSettingsView | None=None) -> None:
         if interaction.guild is None: return
+        if not interaction.response.is_done(): await interaction.response.defer()
         states={"enabled":await self.service.is_enabled(interaction.guild_id)}
         for job in cfg.JOBS: states[job.key]=await self.service.job_enabled(interaction.guild_id,job.key)
         bp=await self.service.settings.get_int(interaction.guild_id,cfg.JOB_REWARD_MULTIPLIER_KEY) or cfg.DEFAULT_REWARD_MULTIPLIER_BP; channel_id=await self.service.settings.get_int(interaction.guild_id,cfg.JOBS_LOG_CHANNEL_KEY); channel=interaction.guild.get_channel(channel_id) if channel_id else None
-        embed=base_embed("🧰 Interactive Jobs beállítások","Minden Jobs beállítás DB-ben marad, release ZIP nem írja felül.",BRAND); embed.add_field(name="Állapot",value="🟢 Aktív" if states["enabled"] else "🔴 Kikapcsolva",inline=True); embed.add_field(name="Reward",value=f"**{bp/100:.0f}%**",inline=True); embed.add_field(name="Log",value=channel.mention if isinstance(channel,discord.abc.GuildChannel) else "Nincs",inline=True); embed.add_field(name="Munkák",value="\n".join(f"{'🟢' if states[j.key] else '⚪'} {j.emoji} {j.name}" for j in cfg.JOBS),inline=False); embed.set_footer(text="Yoru • Settings • Jobs")
+        runtime=await self.service.gameplay.jobs(interaction.guild_id)
+        embed=base_embed("🧰 Interactive Jobs beállítások","A Yoru DB settings az elsődleges source of truth; a kódbeli Jobs értékek fallback defaultok.",BRAND)
+        embed.add_field(name="Állapot",value="🟢 Aktív" if states["enabled"] else "🔴 Kikapcsolva",inline=True)
+        embed.add_field(name="Reward",value=f"**{bp/100:.0f}%**",inline=True)
+        embed.add_field(name="Log",value=channel.mention if isinstance(channel,discord.abc.GuildChannel) else "Nincs",inline=True)
+        embed.add_field(name="⏱️ Cooldown / timeout",value=f"Közös cooldown **{runtime.cooldown_seconds/60:g}p** • abandon **{runtime.abandon_cooldown_seconds/60:g}p** • idle **{runtime.session_timeout_seconds/60:g}p**",inline=False)
+        embed.add_field(name="🎯 Döntési idők",value=f"Raktáros memória **{runtime.warehouse_memorize_seconds:g}s** • választás **{runtime.warehouse_decision_timeout_seconds:g}s** • scenario **{runtime.scenario_decision_timeout_seconds:g}s**",inline=False)
+        embed.add_field(name="Munkák",value="\n".join(f"{'🟢' if states[j.key] else '⚪'} {j.emoji} {j.name}" for j in cfg.JOBS),inline=False)
+        embed.set_footer(text="Yoru • Settings • Jobs")
         view=JobsSettingsView(self,owner_id,interaction.guild,states,channel_page=(existing.channel_page if existing else 0))
-        if interaction.response.is_done(): await interaction.edit_original_response(embed=embed,view=view,attachments=[])
-        else: await interaction.response.edit_message(embed=embed,view=view,attachments=[])
+        await interaction.edit_original_response(embed=embed,view=view,attachments=[])
 
     async def home_status(self, guild: discord.Guild) -> str:
-        enabled=await self.service.is_enabled(guild.id); active=sum(1 for j in cfg.JOBS if await self.service.job_enabled(guild.id,j.key)); return f"{'🟢' if enabled else '⚪'} {active}/{len(cfg.JOBS)} job aktív"
+        enabled = await self.service.is_enabled(guild.id)
+        active = 0
+        for job in cfg.JOBS:
+            if await self.service.job_enabled(guild.id, job.key):
+                active += 1
+        return f"{'🟢' if enabled else '⚪'} {active}/{len(cfg.JOBS)} job aktív"
 
     @app_commands.command(name="panel",description="Megnyitja az Interactive Jobs lobby-t.")
     async def panel(self, interaction: discord.Interaction) -> None:
         if not await self._guard_interaction(interaction): return
-        embed,file=await self.lobby_embed(interaction.guild_id,interaction.user); view=JobsLobbyView(self,interaction.user.id); await interaction.response.send_message(embed=embed,file=file,view=view); view.message=await interaction.original_response()
+        embed,file,cooldown=await self.lobby_embed(interaction.guild_id,interaction.user); view=self._lobby_view(interaction.user.id,cooldown); await interaction.response.send_message(embed=embed,file=file,view=view); view.message=await interaction.original_response()
 
     @app_commands.command(name="warehouse",description="Raktáros memória/sequence műszak indítása.")
     async def warehouse(self, interaction: discord.Interaction) -> None: await self.start_job_interaction(interaction,"warehouse")
@@ -450,6 +878,12 @@ class JobsCog(commands.GroupCog, group_name="jobs", group_description="Yoru Inte
 
     @app_commands.command(name="courier",description="Futár interaktív műszak indítása.")
     async def courier(self, interaction: discord.Interaction) -> None: await self.start_job_interaction(interaction,"courier")
+
+    @app_commands.command(name="shoprob",description="Boltrablás indítása a Jobs rendszerből.")
+    async def shoprob_job(self, interaction: discord.Interaction) -> None: await self.start_job_interaction(interaction,"shoprob")
+
+    @app_commands.command(name="bankrob",description="Bankrablás indítása a Jobs rendszerből.")
+    async def bankrob_job(self, interaction: discord.Interaction) -> None: await self.start_job_interaction(interaction,"bankrob")
 
     @app_commands.command(name="taxi",description="Taxi interaktív műszak indítása.")
     async def taxi_job(self, interaction: discord.Interaction) -> None: await self.start_job_interaction(interaction,"taxi")
@@ -476,15 +910,37 @@ class JobsCog(commands.GroupCog, group_name="jobs", group_description="Yoru Inte
     @commands.guild_only()
     async def jobs_prefix(self, ctx: commands.Context) -> None:
         if not await self._guard_prefix(ctx): return
-        embed,file=await self.lobby_embed(ctx.guild.id,ctx.author); view=JobsLobbyView(self,ctx.author.id); msg=await ctx.send(embed=embed,file=file,view=view); view.message=msg
+        embed,file,cooldown=await self.lobby_embed(ctx.guild.id,ctx.author); view=self._lobby_view(ctx.author.id,cooldown); msg=await ctx.send(embed=embed,file=file,view=view); view.message=msg
 
     async def _prefix_start(self, ctx: commands.Context, job: str) -> None:
-        if not await self._guard_prefix(ctx): return
+        if not await self._guard_prefix(ctx):
+            return
         try:
-            if job=="warehouse": session=await self.service.start_warehouse(ctx.guild.id,ctx.author.id); data=session["data"]; anim=await self._render(render_warehouse_transition,ctx.author.display_name,data["sequence"],int(data["round"])); embed=base_embed("📦 Raktáros","Jegyezd meg a sorrendet. A kép rövidesen eltűnik."); embed.set_image(url="attachment://warehouse_shift.gif"); msg=await ctx.send(embed=embed,file=discord.File(fp=anim,filename="warehouse_shift.gif")); await asyncio.sleep(2.4); latest=await self.service.get_session(session["session_id"]); fp=await self._render(render_warehouse,ctx.author.display_name,latest["data"]["sequence"],phase="choose",round_no=int(latest["data"]["round"]),correct=0,combo=0); view=WarehouseView(self,ctx.author.id,latest); embed=base_embed("📦 Raktáros","Válaszd ki a helyes sorrendet."); embed.set_image(url="attachment://warehouse_state.png"); await msg.edit(embed=embed,attachments=[discord.File(fp=fp,filename="warehouse_state.png")],view=view); view.message=msg
-            elif job=="borsod": session=await self.service.start_borsod(ctx.guild.id,ctx.author.id); data=session["data"]; fp=await self._render(render_borsod,ctx.author.display_name,_board_tokens(session),int(data["attempts_left"]),0,event=str(data["event"])); view=BorsodView(self,ctx.author.id,session); embed=base_embed("🔌 Borsodi Lopkodás","5×5 grid • 7 keresés • nincs tét.",GOLD); embed.set_image(url="attachment://borsod_state.png"); msg=await ctx.send(embed=embed,file=discord.File(fp=fp,filename="borsod_state.png"),view=view); view.message=msg
-            else: session=await self.service.start_transport(ctx.guild.id,ctx.author.id,job); definition=cfg.JOB_BY_KEY[job]; data=session["data"]; fp=await self._render(render_transport_state,ctx.author.display_name,definition.name,accent=definition.accent,stage=1,total=int(data["total"]),score=50,reward=0,event=str(data["current"])); view=TransportView(self,ctx.author.id,session); embed=base_embed(f"{definition.emoji} {definition.name}","Válassz útvonalat."); embed.set_image(url="attachment://transport_state.png"); msg=await ctx.send(embed=embed,file=discord.File(fp=fp,filename="transport_state.png"),view=view); view.message=msg
-        except (JobBusyError,ValueError) as exc: await ctx.send(embed=error_embed(ctx.author,str(exc)))
+            if job=="warehouse":
+                session=await self.service.start_warehouse(ctx.guild.id,ctx.author.id)
+                msg=await ctx.send(embed=base_embed("📦 Raktáros","Műszak indul…"))
+                await self._show_warehouse_memory(msg,ctx.author,session,intro="A polcsor mozog, utána külön időt kapsz a megjegyzésre.")
+            elif job=="borsod":
+                session=await self.service.start_borsod(ctx.guild.id,ctx.author.id)
+                data=session["data"]
+                fp=await self._render(render_borsod,ctx.author.display_name,_board_tokens(session),int(data["attempts_left"]),0,event=str(data["event"]))
+                view=BorsodView(self,ctx.author.id,session)
+                embed=base_embed("🔌 Borsodi Lopkodás","5×5 grid • 7 keresés • a járőr külön döntési scenario-t nyit.",GOLD)
+                embed.set_image(url="attachment://borsod_state.png")
+                msg=await ctx.send(embed=embed,file=discord.File(fp=fp,filename="borsod_state.png"),view=view)
+                view.message=msg
+            else:
+                session=await self.service.start_transport(ctx.guild.id,ctx.author.id,job)
+                definition=cfg.JOB_BY_KEY[job]
+                data=session["data"]
+                fp=await self._render(render_transport_state,ctx.author.display_name,definition.name,accent=definition.accent,stage=1,total=int(data["total"]),score=50,reward=0,event=str(data["current"]))
+                view=TransportView(self,ctx.author.id,session)
+                embed=base_embed(f"{definition.emoji} {definition.name}","Válassz útvonalat. Utána menet közben külön scenario-döntés jön.")
+                embed.set_image(url="attachment://transport_state.png")
+                msg=await ctx.send(embed=embed,file=discord.File(fp=fp,filename="transport_state.png"),view=view)
+                view.message=msg
+        except (JobBusyError,JobCooldownError,ValueError) as exc:
+            await ctx.send(embed=error_embed(ctx.author,str(exc)))
 
     @commands.command(name="raktaros",aliases=["raktáros"])
     @commands.guild_only()

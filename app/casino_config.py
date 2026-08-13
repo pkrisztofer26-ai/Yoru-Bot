@@ -154,9 +154,14 @@ GAME_ID_PREFIXES = {
     "highlow": "HL",
     "rps": "RPS",
     "chickenfight": "CHK",
+    "mines": "MN",
+    "chickenroad": "CRD",
+    "plinko": "PLK",
+    "candyrush": "CDY",
 }
 
 HOUSE_GAMES = frozenset({
     "blackjack", "coinflip", "dice", "slots", "roulette",
     "highlow", "rps", "chickenfight",
+    "mines", "chickenroad", "plinko", "candyrush",
 })

@@ -324,13 +324,15 @@ class MusicCog(commands.GroupCog, group_name="music", group_description="Yoru ze
         return embed
 
     async def show_settings(self, interaction: discord.Interaction, owner_id: int, existing: "MusicSettingsView | None" = None) -> None:
+        if not interaction.response.is_done():
+            await interaction.response.defer()
         view = MusicSettingsView(
             self, owner_id, interaction.guild,
             enabled=await self.is_enabled(interaction.guild_id),
             channel_page=existing.channel_page if existing else 0,
             role_page=existing.role_page if existing else 0,
         )
-        await interaction.response.edit_message(embed=await self.settings_embed(interaction.guild), view=view)
+        await interaction.edit_original_response(embed=await self.settings_embed(interaction.guild), view=view)
 
     async def back_to_settings(self, interaction: discord.Interaction, owner_id: int) -> None:
         settings_cog = self.bot.get_cog("SettingsCog")

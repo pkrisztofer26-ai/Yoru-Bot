@@ -38,8 +38,8 @@ def _game_label(game: str) -> str:
 
 
 class DuelChallengeView(discord.ui.View):
-    def __init__(self, cog: "SocialEconomyCog", duel: Duel) -> None:
-        super().__init__(timeout=cfg.PVP_CHALLENGE_SECONDS)
+    def __init__(self, cog: "SocialEconomyCog", duel: Duel, *, timeout: float = cfg.PVP_CHALLENGE_SECONDS) -> None:
+        super().__init__(timeout=timeout)
         self.cog = cog
         self.duel = duel
         self.message: discord.Message | None = None
@@ -65,7 +65,8 @@ class DuelChallengeView(discord.ui.View):
             if duel.game == "rps":
                 fp = await self.cog._render_pvp(render_pvp_rps_wait, left_name, right_name, duel.stake)
                 embed = self.cog._rps_wait_embed(duel, image_filename="pvp_rps_wait.png")
-                view = RPSDuelView(self.cog, duel)
+                runtime = await self.cog.social.gameplay.social(duel.guild_id)
+                view = RPSDuelView(self.cog, duel, timeout=runtime.pvp_rps_seconds)
                 view.message = interaction.message
                 await interaction.message.edit(embed=embed, attachments=[discord.File(fp=fp, filename="pvp_rps_wait.png")], view=view)
                 self.stop()
@@ -117,8 +118,8 @@ class DuelChallengeView(discord.ui.View):
 
 
 class RPSDuelView(discord.ui.View):
-    def __init__(self, cog: "SocialEconomyCog", duel: Duel) -> None:
-        super().__init__(timeout=cfg.PVP_RPS_SECONDS)
+    def __init__(self, cog: "SocialEconomyCog", duel: Duel, *, timeout: float = cfg.PVP_RPS_SECONDS) -> None:
+        super().__init__(timeout=timeout)
         self.cog = cog
         self.duel = duel
         self.message: discord.Message | None = None
@@ -451,8 +452,9 @@ class PlayerMarketView(SocialOwnedView):
                 inline=False,
             )
         filter_text = f" • keresés: {self.search}" if self.search else ""
+        runtime=await self.cog.social.gameplay.social(self.guild_id)
         embed.set_footer(
-            text=f"Yoru • Player Market • oldal {self.page + 1}{filter_text} • {int(cfg.PLAYER_MARKET_TAX_RATE * 100)}% tranzakciós adó"
+            text=f"Yoru • Player Market • oldal {self.page + 1}{filter_text} • {runtime.market_tax_rate*100:g}% tranzakciós adó"
         )
         return embed
 
@@ -696,6 +698,65 @@ class ServerShopView(SocialOwnedView):
         await self.refresh(interaction)
 
 
+class SocialMarketTuningModal(discord.ui.Modal, title="Social • Player Market"):
+    tax = discord.ui.TextInput(label="Tranzakciós adó %", max_length=10)
+    listing_hours = discord.ui.TextInput(label="Listing idő (óra)", max_length=10)
+    max_active = discord.ui.TextInput(label="Max aktív listing / user", max_length=10)
+    max_quantity = discord.ui.TextInput(label="Max quantity / listing", max_length=12)
+    min_price = discord.ui.TextInput(label="Minimum egységár", max_length=30)
+
+    def __init__(self, view: "SocialSettingsHomeView", runtime) -> None:
+        super().__init__(timeout=300); self.parent_view=view
+        self.tax.default=f"{runtime.market_tax_rate*100:g}"
+        self.listing_hours.default=str(runtime.market_listing_hours)
+        self.max_active.default=str(runtime.market_max_active_per_user)
+        self.max_quantity.default=str(runtime.market_max_quantity)
+        self.min_price.default=str(runtime.market_min_unit_price)
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        try:
+            await self.parent_view.cog.social.gameplay.set_social(
+                interaction.guild_id,
+                market_tax_rate=float(str(self.tax.value).replace(",","."))/100.0,
+                market_listing_hours=int(str(self.listing_hours.value).strip()),
+                market_max_active_per_user=int(str(self.max_active.value).strip()),
+                market_max_quantity=int(str(self.max_quantity.value).strip()),
+                market_min_unit_price=parse_amount(str(self.min_price.value)),
+            )
+        except ValueError as exc:
+            return await interaction.response.send_message(f"❌ {exc}", ephemeral=True)
+        await interaction.response.defer()
+        await self.parent_view.cog.show_settings_after_defer(interaction,self.parent_view.owner_id)
+
+
+class SocialPvpShopTuningModal(discord.ui.Modal, title="Social • PvP / Server Shop"):
+    shop_max = discord.ui.TextInput(label="Server Shop max aktív reward", max_length=10)
+    pvp_min = discord.ui.TextInput(label="PvP minimum tét", max_length=30)
+    challenge = discord.ui.TextInput(label="Duel elfogadási idő (mp)", max_length=10)
+    rps = discord.ui.TextInput(label="RPS döntési idő (mp)", max_length=10)
+
+    def __init__(self, view: "SocialSettingsHomeView", runtime) -> None:
+        super().__init__(timeout=300); self.parent_view=view
+        self.shop_max.default=str(runtime.server_shop_max_items)
+        self.pvp_min.default=str(runtime.pvp_min_stake)
+        self.challenge.default=str(runtime.pvp_challenge_seconds)
+        self.rps.default=str(runtime.pvp_rps_seconds)
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        try:
+            await self.parent_view.cog.social.gameplay.set_social(
+                interaction.guild_id,
+                server_shop_max_items=int(str(self.shop_max.value).strip()),
+                pvp_min_stake=parse_amount(str(self.pvp_min.value)),
+                pvp_challenge_seconds=int(str(self.challenge.value).strip()),
+                pvp_rps_seconds=int(str(self.rps.value).strip()),
+            )
+        except ValueError as exc:
+            return await interaction.response.send_message(f"❌ {exc}", ephemeral=True)
+        await interaction.response.defer()
+        await self.parent_view.cog.show_settings_after_defer(interaction,self.parent_view.owner_id)
+
+
 class SocialSettingsHomeView(SocialOwnedView):
     def __init__(self, cog: "SocialEconomyCog", owner_id: int) -> None:
         super().__init__(cog, owner_id, admin=True, timeout=600)
@@ -708,7 +769,23 @@ class SocialSettingsHomeView(SocialOwnedView):
     async def analytics(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
         await self.cog.show_analytics_settings(interaction, self.owner_id, 24)
 
-    @discord.ui.button(label="Vissza", emoji="↩️", style=discord.ButtonStyle.secondary, row=1)
+    @discord.ui.button(label="Market balance", emoji="🛒", style=discord.ButtonStyle.primary, row=1)
+    async def market_balance(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
+        runtime=await self.cog.social.gameplay.social(interaction.guild_id)
+        await interaction.response.send_modal(SocialMarketTuningModal(self,runtime))
+
+    @discord.ui.button(label="PvP / Shop", emoji="⚔️", style=discord.ButtonStyle.primary, row=1)
+    async def pvp_shop(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
+        runtime=await self.cog.social.gameplay.social(interaction.guild_id)
+        await interaction.response.send_modal(SocialPvpShopTuningModal(self,runtime))
+
+    @discord.ui.button(label="Balance default", emoji="♻️", style=discord.ButtonStyle.secondary, row=1)
+    async def reset_balance(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
+        await interaction.response.defer()
+        await self.cog.social.gameplay.reset_social(interaction.guild_id)
+        await self.cog.show_settings_after_defer(interaction,self.owner_id)
+
+    @discord.ui.button(label="Vissza", emoji="↩️", style=discord.ButtonStyle.secondary, row=2)
     async def back(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
         await self.cog.back_to_settings(interaction, self.owner_id)
 
@@ -1091,21 +1168,30 @@ class SocialEconomyCog(commands.GroupCog, group_name="social", group_description
         rewards = await self.social.list_server_shop(guild.id)
         market_rows = await self.social.list_market(guild.id, limit=1)
         claims = await self.social.list_pending_claims(guild.id, limit=1)
+        runtime = await self.social.gameplay.social(guild.id)
         embed = base_embed(
             "🛒 Yoru • Social Economy",
-            "A Social Economy adminfelülete. A Server Shop teljesen Discordon belül szerkeszthető, az Analytics pedig interaktív időtávokkal érhető el.",
+            "A Yoru DB settings az elsődleges Social balance source; a kódbeli értékek fallback defaultok.",
         )
-        embed.add_field(name="🛒 Player Market", value=f"🟢 Aktív • {int(cfg.PLAYER_MARKET_TAX_RATE*100)}% adó" + (" • van aktív listing" if market_rows else " • nincs listing"), inline=True)
-        embed.add_field(name="🏪 Server Shop", value=f"**{len(rewards)}** aktív reward", inline=True)
+        embed.add_field(name="🛒 Player Market", value=f"🟢 Aktív • **{runtime.market_tax_rate*100:g}% adó** • **{runtime.market_listing_hours}h** listing\nMax **{runtime.market_max_active_per_user}/user** • max qty **{runtime.market_max_quantity}** • min ár **{money(runtime.market_min_unit_price)}**" + (" • van aktív listing" if market_rows else " • nincs listing"), inline=False)
+        embed.add_field(name="🏪 Server Shop", value=f"**{len(rewards)}** aktív reward • max **{runtime.server_shop_max_items}**", inline=True)
+        embed.add_field(name="⚔️ PvP", value=f"Min tét **{money(runtime.pvp_min_stake)}** • accept **{runtime.pvp_challenge_seconds}s** • RPS **{runtime.pvp_rps_seconds}s**", inline=False)
         embed.add_field(name="📨 Pending claims", value="Van függő claim" if claims else "Nincs", inline=True)
         embed.add_field(name="📊 Analytics", value="24h / 7 nap / 30 nap • supply, source/sink, koncentráció, Social volume", inline=False)
         embed.set_footer(text="Yoru • Settings • Social Economy")
         return embed
 
     async def show_settings(self, interaction: discord.Interaction, owner_id: int) -> None:
+        if not interaction.response.is_done():
+            await interaction.response.defer()
         view = SocialSettingsHomeView(self, owner_id)
         view.message = interaction.message
-        await interaction.response.edit_message(embed=await self.settings_embed(interaction.guild), view=view)
+        await interaction.edit_original_response(embed=await self.settings_embed(interaction.guild), view=view)
+
+    async def show_settings_after_defer(self, interaction: discord.Interaction, owner_id: int) -> None:
+        view = SocialSettingsHomeView(self, owner_id)
+        view.message = interaction.message
+        await interaction.edit_original_response(embed=await self.settings_embed(interaction.guild), view=view, attachments=[])
 
     async def show_server_shop_admin(self, interaction: discord.Interaction, owner_id: int) -> None:
         view = ServerShopAdminView(self, owner_id, interaction.guild_id)
@@ -1215,7 +1301,8 @@ class SocialEconomyCog(commands.GroupCog, group_name="social", group_description
         ]
         embed = base_embed("🛒 Player Marketplace", "\n".join(lines))
         filter_text=f" • keresés: {search}" if search else ""
-        embed.set_footer(text=f"Yoru • Player Market • oldal {page}{filter_text} • {int(cfg.PLAYER_MARKET_TAX_RATE*100)}% tranzakciós adó")
+        runtime=await self.social.gameplay.social(guild_id)
+        embed.set_footer(text=f"Yoru • Player Market • oldal {page}{filter_text} • {runtime.market_tax_rate*100:g}% tranzakciós adó")
         return embed
 
     async def _server_shop_embed(self, guild_id: int) -> discord.Embed:
@@ -1530,7 +1617,8 @@ class SocialEconomyCog(commands.GroupCog, group_name="social", group_description
             left_name, right_name = self._duel_names(duel)
             fp = await self._render_pvp(render_duel_challenge, duel.game, left_name, right_name, duel.stake)
         except ValueError as exc: return await interaction.response.send_message(f"❌ {exc}",ephemeral=True)
-        view=DuelChallengeView(self,duel)
+        runtime=await self.social.gameplay.social(interaction.guild_id)
+        view=DuelChallengeView(self,duel,timeout=runtime.pvp_challenge_seconds)
         await interaction.response.send_message(content=ellenfel.mention,embed=self._duel_challenge_embed(duel),file=discord.File(fp=fp,filename="pvp_challenge.png"),view=view,allowed_mentions=discord.AllowedMentions(users=True,roles=False,everyone=False))
         msg=await interaction.original_response(); view.message=msg; await self.social.set_duel_message(duel.id,msg.id)
 
@@ -1665,7 +1753,7 @@ class SocialEconomyCog(commands.GroupCog, group_name="social", group_description
             wallet,_=await self.economy.balance(ctx.guild.id,ctx.author.id);stake=parse_amount(stake_raw,maximum=wallet);duel=await self.social.create_duel(ctx.guild.id,ctx.author.id,target.id,game,stake,ctx.channel.id)
             left_name,right_name=self._duel_names(duel);fp=await self._render_pvp(render_duel_challenge,duel.game,left_name,right_name,duel.stake)
         except ValueError as exc:return await ctx.send(embed=error_embed(ctx.author,str(exc)))
-        view=DuelChallengeView(self,duel);msg=await ctx.send(content=target.mention,embed=self._duel_challenge_embed(duel),file=discord.File(fp=fp,filename="pvp_challenge.png"),view=view,allowed_mentions=discord.AllowedMentions(users=True,roles=False,everyone=False));view.message=msg;await self.social.set_duel_message(duel.id,msg.id)
+        runtime=await self.social.gameplay.social(ctx.guild.id);view=DuelChallengeView(self,duel,timeout=runtime.pvp_challenge_seconds);msg=await ctx.send(content=target.mention,embed=self._duel_challenge_embed(duel),file=discord.File(fp=fp,filename="pvp_challenge.png"),view=view,allowed_mentions=discord.AllowedMentions(users=True,roles=False,everyone=False));view.message=msg;await self.social.set_duel_message(duel.id,msg.id)
 
     @commands.command(name="duelstats",aliases=["pvpstats"])
     async def duel_stats_prefix(self,ctx:commands.Context,target:discord.Member|None=None)->None:

@@ -63,11 +63,11 @@ class ActivityService:
         return hashlib.blake2b(normalized.encode("utf-8"), digest_size=12).hexdigest()
 
     @staticmethod
-    def _valid_message(content: str) -> bool:
-        stripped = content.strip()
+    def _valid_message(content: str, *, min_alnum: int = cfg.ACTIVITY_MIN_MESSAGE_ALNUM) -> bool:
+        stripped = str(content or "").strip()
         if not stripped or stripped.startswith("!"):
             return False
-        return sum(1 for char in stripped if char.isalnum()) >= cfg.ACTIVITY_MIN_MESSAGE_ALNUM
+        return sum(1 for char in stripped if char.isalnum()) >= max(1, int(min_alnum))
 
     async def is_enabled(self, guild_id: int) -> bool:
         return await self.settings.get_bool(guild_id, cfg.ACTIVITY_ENABLED_KEY, cfg.ACTIVITY_DEFAULT_ENABLED)
@@ -103,6 +103,16 @@ class ActivityService:
         value = cfg.ACTIVITY_DEFAULT_MESSAGE_MIN_INTERVAL_SECONDS if value is None else value
         return max(cfg.ACTIVITY_MESSAGE_INTERVAL_MIN, min(cfg.ACTIVITY_MESSAGE_INTERVAL_MAX, int(value)))
 
+    async def duplicate_window(self, guild_id: int) -> int:
+        value = await self.settings.get_int(guild_id, cfg.ACTIVITY_DUPLICATE_WINDOW_KEY)
+        value = cfg.ACTIVITY_DUPLICATE_WINDOW_SECONDS if value is None else value
+        return max(cfg.ACTIVITY_DUPLICATE_WINDOW_MIN, min(cfg.ACTIVITY_DUPLICATE_WINDOW_MAX, int(value)))
+
+    async def min_message_alnum(self, guild_id: int) -> int:
+        value = await self.settings.get_int(guild_id, cfg.ACTIVITY_MIN_MESSAGE_ALNUM_KEY)
+        value = cfg.ACTIVITY_MIN_MESSAGE_ALNUM if value is None else value
+        return max(cfg.ACTIVITY_MIN_MESSAGE_ALNUM_MIN, min(cfg.ACTIVITY_MIN_MESSAGE_ALNUM_MAX, int(value)))
+
     async def voice_xp_per_minute(self, guild_id: int) -> int:
         value = await self.settings.get_int(guild_id, cfg.ACTIVITY_VOICE_XP_PER_MINUTE_KEY)
         value = cfg.ACTIVITY_DEFAULT_VOICE_XP_PER_MINUTE if value is None else value
@@ -113,7 +123,10 @@ class ActivityService:
         return ActivityProfile(**row)
 
     async def record_message(self, guild_id: int, user_id: int, content: str, *, now: datetime | None = None) -> ActivityUpdate | None:
-        if not await self.is_enabled(guild_id) or not await self.chat_enabled(guild_id) or not self._valid_message(content):
+        if not await self.is_enabled(guild_id) or not await self.chat_enabled(guild_id):
+            return None
+        min_alnum = await self.min_message_alnum(guild_id)
+        if not self._valid_message(content, min_alnum=min_alnum):
             return None
         now = now or datetime.now(timezone.utc)
         if now.tzinfo is None:
@@ -128,9 +141,11 @@ class ActivityService:
                 return ActivityUpdate(False, 0, before.level, before.level, before)
 
             message_hash = self._hash_message(content)
-            duplicate_since = (now - timedelta(seconds=cfg.ACTIVITY_DUPLICATE_WINDOW_SECONDS)).isoformat()
-            if await self.db.activity_message_hash_seen_since(guild_id, user_id, message_hash, duplicate_since):
-                return ActivityUpdate(False, 0, before.level, before.level, before)
+            duplicate_window = await self.duplicate_window(guild_id)
+            if duplicate_window > 0:
+                duplicate_since = (now - timedelta(seconds=duplicate_window)).isoformat()
+                if await self.db.activity_message_hash_seen_since(guild_id, user_id, message_hash, duplicate_since):
+                    return ActivityUpdate(False, 0, before.level, before.level, before)
 
             award = 0
             last_xp = self._dt(before.last_chat_xp_at)
@@ -517,6 +532,14 @@ class ActivityService:
         await self.settings.set_int(guild_id, cfg.ACTIVITY_CHAT_XP_MAX_KEY, xp_max)
         await self.settings.set_int(guild_id, cfg.ACTIVITY_CHAT_XP_COOLDOWN_KEY, cooldown)
         await self.settings.set_int(guild_id, cfg.ACTIVITY_MESSAGE_MIN_INTERVAL_KEY, min_interval)
+
+    async def set_antifarm_tuning(self, guild_id: int, *, duplicate_window: int, min_alnum: int) -> None:
+        if not (cfg.ACTIVITY_DUPLICATE_WINDOW_MIN <= int(duplicate_window) <= cfg.ACTIVITY_DUPLICATE_WINDOW_MAX):
+            raise ValueError(f"A duplicate védelem {cfg.ACTIVITY_DUPLICATE_WINDOW_MIN}–{cfg.ACTIVITY_DUPLICATE_WINDOW_MAX} mp között legyen.")
+        if not (cfg.ACTIVITY_MIN_MESSAGE_ALNUM_MIN <= int(min_alnum) <= cfg.ACTIVITY_MIN_MESSAGE_ALNUM_MAX):
+            raise ValueError(f"A minimum alfanumerikus karakterszám {cfg.ACTIVITY_MIN_MESSAGE_ALNUM_MIN}–{cfg.ACTIVITY_MIN_MESSAGE_ALNUM_MAX} között legyen.")
+        await self.settings.set_int(guild_id, cfg.ACTIVITY_DUPLICATE_WINDOW_KEY, int(duplicate_window))
+        await self.settings.set_int(guild_id, cfg.ACTIVITY_MIN_MESSAGE_ALNUM_KEY, int(min_alnum))
 
     async def set_voice_tuning(self, guild_id: int, *, xp_per_minute: int) -> None:
         if not (cfg.ACTIVITY_VOICE_XP_MIN <= xp_per_minute <= cfg.ACTIVITY_VOICE_XP_MAX):

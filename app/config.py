@@ -49,8 +49,8 @@ def load_settings() -> Settings:
     event_channel_raw = os.getenv("EVENT_CHANNEL_ID", "").strip()
     event_channel_id = int(event_channel_raw) if event_channel_raw.isdigit() else None
 
-    # Economy balance: egyetlen forrás az app/economy_config.py.
-    # A régi STARTING_BALANCE env értéket v3.5-től szándékosan nem használjuk.
+    # Install-level fallback only. Per-guild `/settings` values in guild_state
+    # are authoritative at runtime; the old STARTING_BALANCE env is ignored.
     starting_balance = eco.STARTING_BALANCE
 
     min_hours = float(os.getenv("AUTO_EVENT_MIN_HOURS", str(eco.AUTO_EVENT_MIN_SECONDS / 3600)))
@@ -58,8 +58,8 @@ def load_settings() -> Settings:
     if min_hours <= 0 or max_hours < min_hours:
         raise RuntimeError("Az automatikus event időintervalluma érvénytelen.")
 
-    # A pénzügyi event balance is központilag az economy_config.py-ból jön.
-    # Az .env továbbra is csak időzítéshez / csatornához / activity gate-hez kell.
+    # These remain install-level fallbacks. Runtime per-guild Event settings
+    # override them through Yoru's DB-backed settings panel.
     safe_min = eco.AUTO_SAFE_MIN_REWARD
     safe_max = eco.AUTO_SAFE_MAX_REWARD
     bomb_min = eco.AUTO_BOMB_MIN_ENTRY

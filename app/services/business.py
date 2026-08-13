@@ -25,6 +25,10 @@ class BusinessSettings:
     city_cap: int
     income_multiplier_percent: int
     worker_contract_days: int
+    property_offer_hours: int
+    transfer_tax_percent: int
+    faction_bonus_percent: int
+    faction_xp_per_claim: int
 
 
 class BusinessService:
@@ -66,6 +70,10 @@ class BusinessService:
         city_cap = await get_int(guild_id, cfg.BUSINESS_CITY_CAP_KEY)
         multiplier = await get_int(guild_id, cfg.BUSINESS_INCOME_MULTIPLIER_KEY)
         worker_days = await get_int(guild_id, cfg.BUSINESS_WORKER_DAYS_KEY)
+        offer_hours = await get_int(guild_id, cfg.BUSINESS_OFFER_HOURS_KEY)
+        transfer_tax = await get_int(guild_id, cfg.BUSINESS_TRANSFER_TAX_KEY)
+        faction_bonus = await get_int(guild_id, cfg.BUSINESS_FACTION_BONUS_KEY)
+        faction_xp = await get_int(guild_id, cfg.BUSINESS_FACTION_XP_KEY)
         return BusinessSettings(
             enabled=await self.settings.get_bool(guild_id, cfg.BUSINESS_ENABLED_KEY, cfg.DEFAULT_ENABLED),
             required_activity_level=cfg.DEFAULT_REQUIRED_ACTIVITY_LEVEL if required_activity is None else max(0, min(500, int(required_activity))),
@@ -79,6 +87,10 @@ class BusinessService:
             city_cap=cfg.DEFAULT_CITY_CAP if city_cap is None else max(1, min(cfg.MAX_PROPERTY_CAP, int(city_cap))),
             income_multiplier_percent=cfg.DEFAULT_INCOME_MULTIPLIER_PERCENT if multiplier is None else max(cfg.MIN_INCOME_MULTIPLIER_PERCENT, min(cfg.MAX_INCOME_MULTIPLIER_PERCENT, int(multiplier))),
             worker_contract_days=cfg.DEFAULT_WORKER_CONTRACT_DAYS if worker_days is None else max(cfg.MIN_WORKER_CONTRACT_DAYS, min(cfg.MAX_WORKER_CONTRACT_DAYS, int(worker_days))),
+            property_offer_hours=cfg.PROPERTY_OFFER_HOURS if offer_hours is None else max(1,min(168,int(offer_hours))),
+            transfer_tax_percent=cfg.PROPERTY_TRANSFER_TAX_PERCENT if transfer_tax is None else max(0,min(50,int(transfer_tax))),
+            faction_bonus_percent=cfg.FACTION_BONUS_PERCENT if faction_bonus is None else max(0,min(50,int(faction_bonus))),
+            faction_xp_per_claim=cfg.FACTION_XP_PER_CLAIM if faction_xp is None else max(0,min(100000,int(faction_xp))),
         )
 
     async def set_enabled(self, guild_id: int, enabled: bool) -> None:
@@ -121,6 +133,16 @@ class BusinessService:
         await self.settings.set_int(guild_id, cfg.BUSINESS_PRESTIGE_STEP_KEY, int(prestige_step))
         await self.settings.set_int(guild_id, cfg.BUSINESS_ABSOLUTE_CAP_KEY, int(absolute_cap))
         await self.settings.set_int(guild_id, cfg.BUSINESS_CITY_CAP_KEY, int(city_cap))
+
+    async def set_market_settings(self,guild_id:int,*,offer_hours:int,transfer_tax_percent:int,faction_bonus_percent:int,faction_xp_per_claim:int)->None:
+        if not 1<=int(offer_hours)<=168: raise ValueError("Offer idő: 1–168 óra.")
+        if not 0<=int(transfer_tax_percent)<=50: raise ValueError("Transfer tax: 0–50%.")
+        if not 0<=int(faction_bonus_percent)<=50: raise ValueError("Frakció bonus: 0–50%.")
+        if not 0<=int(faction_xp_per_claim)<=100000: raise ValueError("Frakció XP/claim: 0–100000.")
+        await self.settings.set_int(guild_id,cfg.BUSINESS_OFFER_HOURS_KEY,int(offer_hours))
+        await self.settings.set_int(guild_id,cfg.BUSINESS_TRANSFER_TAX_KEY,int(transfer_tax_percent))
+        await self.settings.set_int(guild_id,cfg.BUSINESS_FACTION_BONUS_KEY,int(faction_bonus_percent))
+        await self.settings.set_int(guild_id,cfg.BUSINESS_FACTION_XP_KEY,int(faction_xp_per_claim))
 
     async def ensure_catalog(self, guild_id: int) -> None:
         now = self._now().isoformat()
@@ -361,7 +383,7 @@ class BusinessService:
         faction_bonus = 0
         membership = await self.crew.get_membership(guild_id, user_id)
         if membership is not None and net > 0:
-            faction_bonus = int(net * cfg.FACTION_BONUS_PERCENT / 100)
+            faction_bonus = int(net * settings.faction_bonus_percent / 100)
         return {
             "property": prop,
             "elapsed_hours": elapsed_hours,
@@ -410,7 +432,7 @@ class BusinessService:
             await self.stats.add(guild_id, user_id, "business.earned", payout)
             await self.stats.increment(guild_id, user_id, "business.claims")
         if await self.crew.get_membership(guild_id, user_id) is not None:
-            await self.factions.add_xp_for_member(guild_id, user_id, cfg.FACTION_XP_PER_CLAIM, source="business")
+            await self.factions.add_xp_for_member(guild_id, user_id, preview["settings"].faction_xp_per_claim, source="business")
         preview["reputation_gain"] = rep_gain
         preview["new_reputation"] = min(cfg.MAX_REPUTATION, int(preview["property"]["reputation"]) + rep_gain)
         return preview
@@ -493,7 +515,7 @@ class BusinessService:
             cur = await conn.execute(
                 """INSERT INTO business_offers(guild_id,property_id,seller_id,buyer_id,amount,status,created_at,expires_at)
                    VALUES(?,?,?,?,?,'pending',?,?)""",
-                (guild_id, property_id, seller_id, buyer_id, amount, now.isoformat(), (now + timedelta(hours=cfg.PROPERTY_OFFER_HOURS)).isoformat()),
+                (guild_id, property_id, seller_id, buyer_id, amount, now.isoformat(), (now + timedelta(hours=settings.property_offer_hours)).isoformat()),
             )
             offer_id = int(cur.lastrowid)
             await conn.execute("INSERT INTO transactions(guild_id,user_id,amount,reason,created_at) VALUES(?,?,?,?,?)", (guild_id, buyer_id, -amount, f"business_offer_escrow:{offer_id}", now.isoformat()))
@@ -544,7 +566,7 @@ class BusinessService:
                 await self._check_owner_caps_tx(conn, guild_id, buyer_id, city, settings)
             except ValueError:
                 await conn.rollback(); raise
-            transfer_tax = max(1, amount * cfg.PROPERTY_TRANSFER_TAX_PERCENT // 100)
+            transfer_tax = max(0, amount * settings.transfer_tax_percent // 100)
             seller_net = amount - transfer_tax
             await conn.execute("UPDATE users SET wallet=wallet+?,money_earned=money_earned+? WHERE guild_id=? AND user_id=?", (seller_net, seller_net, guild_id, seller_id))
             # A property teljes üzleti állapota együtt kerül átadásra: level, reputation

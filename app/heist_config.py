@@ -10,6 +10,8 @@ HEIST_JAIL_MINUTES_KEY = "heist_jail_minutes"
 HEIST_FINE_PERCENT_KEY = "heist_fine_percent"
 HEIST_GEAR_LOSS_PERCENT_KEY = "heist_gear_loss_percent"
 HEIST_REWARD_MULTIPLIER_KEY = "heist_reward_multiplier_percent"
+HEIST_LOBBY_EXPIRE_KEY = "heist_lobby_expire_minutes"
+HEIST_MAX_PARTY_KEY = "heist_max_party_size"
 
 DEFAULT_ENABLED = True
 DEFAULT_REQUIRED_ACTIVITY_LEVEL = 25

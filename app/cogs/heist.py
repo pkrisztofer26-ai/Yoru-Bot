@@ -382,6 +382,17 @@ class RiskSettingsModal(discord.ui.Modal, title="Nagy Meló • Balance"):
         await self.cog.show_settings(interaction, self.owner_id)
 
 
+class LobbySettingsModal(discord.ui.Modal, title="Nagy Meló • Lobby"):
+    expire=discord.ui.TextInput(label="Lobby lejárat (perc)",max_length=5)
+    party=discord.ui.TextInput(label="Globális max party",max_length=2)
+    def __init__(self,cog:"HeistCog",owner_id:int,settings)->None:
+        super().__init__();self.cog,self.owner_id=cog,owner_id;self.expire.default=str(settings.lobby_expire_minutes);self.party.default=str(settings.max_party_size)
+    async def on_submit(self,interaction:discord.Interaction)->None:
+        try:await self.cog.service.set_lobby_settings(interaction.guild_id,lobby_expire_minutes=int(str(self.expire.value)),max_party_size=int(str(self.party.value)))
+        except ValueError as exc:return await interaction.response.send_message(f"❌ {exc}",ephemeral=True)
+        await self.cog.show_settings(interaction,self.owner_id)
+
+
 class HeistAdminView(discord.ui.View):
     def __init__(self, cog: "HeistCog", owner_id: int, enabled: bool) -> None:
         super().__init__(timeout=600); self.cog = cog; self.owner_id = owner_id; self.enabled = enabled
@@ -408,7 +419,11 @@ class HeistAdminView(discord.ui.View):
     async def balance(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
         await interaction.response.send_modal(RiskSettingsModal(self.cog, self.owner_id, await self.cog.service.get_settings(interaction.guild_id)))
 
-    @discord.ui.button(label="Vissza", emoji="⬅️", style=discord.ButtonStyle.secondary, row=1)
+    @discord.ui.button(label="Lobby", emoji="👥", style=discord.ButtonStyle.secondary, row=1)
+    async def lobby_tuning(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
+        await interaction.response.send_modal(LobbySettingsModal(self.cog,self.owner_id,await self.cog.service.get_settings(interaction.guild_id)))
+
+    @discord.ui.button(label="Vissza", emoji="⬅️", style=discord.ButtonStyle.secondary, row=2)
     async def back(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
         settings_cog = self.cog.bot.get_cog("SettingsCog")
         if settings_cog is None:
@@ -548,7 +563,9 @@ class HeistCog(commands.Cog):
             gear = cfg.GEAR_BY_KEY.get(str(m["gear_key"])) if m.get("gear_key") else None
             cut_ok = "✅" if m["cut_accepted"] else "⚠️"
             lines.append(f"{status_icon} <@{m['user_id']}> • {role.emoji if role else '🤝'} {role.name if role else m['role_key']} • {gear.emoji if gear else '➖'} • **{m['cut_percent']}%** {cut_ok}")
-        embed.add_field(name=f"👥 Party ({len(accepted)}/{target.max_party if target else cfg.MAX_PARTY_SIZE})", value="\n".join(lines) or "—", inline=False)
+        runtime_settings=await self.service.get_settings(guild.id)
+        party_limit=min(runtime_settings.max_party_size,target.max_party if target else runtime_settings.max_party_size)
+        embed.add_field(name=f"👥 Party ({len(accepted)}/{party_limit})", value="\n".join(lines) or "—", inline=False)
         cut_total = sum(int(m["cut_percent"]) for m in accepted)
         embed.add_field(name="💸 Részesedés", value=f"Összesen: **{cut_total}%** • Minden tagnak külön el kell fogadnia.", inline=False)
         if active["status"] == "running":
@@ -606,6 +623,8 @@ class HeistCog(commands.Cog):
         return embed
 
     async def show_settings(self, interaction: discord.Interaction, owner_id: int) -> None:
+        if not interaction.response.is_done():
+            await interaction.response.defer()
         settings = await self.service.get_settings(interaction.guild_id)
         embed = base_embed("🎯 Settings • Nagy Meló", "A rendszer minden paramétere Discordon belül állítható.")
         embed.add_field(name="Állapot", value="✅ ON" if settings.enabled else "❌ OFF", inline=True)
@@ -613,11 +632,9 @@ class HeistCog(commands.Cog):
         embed.add_field(name="Cooldown", value=f"{settings.cooldown_hours} óra", inline=True)
         embed.add_field(name="Bukás", value=f"Jail {settings.jail_minutes} perc\nBírság {settings.fine_percent}%\nGear loss {settings.gear_loss_percent}%", inline=True)
         embed.add_field(name="Reward", value=f"{settings.reward_multiplier_percent}%", inline=True)
+        embed.add_field(name="Lobby", value=f"Lejárat **{settings.lobby_expire_minutes} perc** • globális max **{settings.max_party_size} fő** (target limit továbbra is érvényes)", inline=False)
         view = HeistAdminView(self, owner_id, settings.enabled)
-        if interaction.response.is_done():
-            await interaction.edit_original_response(embed=embed, view=view)
-        else:
-            await interaction.response.edit_message(embed=embed, view=view)
+        await interaction.edit_original_response(embed=embed, view=view)
 
     @commands.command(name="heist", aliases=["nagymelo", "nagymeló", "melo", "meló"])
     @commands.guild_only()

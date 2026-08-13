@@ -80,7 +80,11 @@ class EconomyService:
 
     async def withdraw(self, guild_id: int, user_id: int, amount: int) -> tuple[int, int]:
         await self.guild_settings.require_feature(guild_id, "bank")
-        return await self.db.move_bank_to_wallet(guild_id, user_id, amount)
+        balances = await self.db.move_bank_to_wallet(guild_id, user_id, amount)
+        # A bankból frissen kivett pénz a szerveren beállított ideig nem válhat azonnali Rob-zsákmánnyá.
+        # Csak sikeres withdraw után indul a védelem; belső event bankterhelés nem triggereli.
+        await self.db.set_timestamp(guild_id, user_id, "last_withdraw", datetime.now(timezone.utc))
+        return balances
 
     async def pay(self, guild_id: int, sender_id: int, receiver_id: int, amount: int) -> tuple[int, int]:
         await self.guild_settings.require_feature(guild_id, "economy")
@@ -133,12 +137,15 @@ class EconomyService:
         profile = await self.db.get_profile(guild_id, user_id)
         previous = await self.db.get_timestamp(guild_id, user_id, "last_daily")
         current_streak = int(profile.get("daily_streak", 0))
-        if previous and now <= previous + timedelta(hours=eco.DAILY_STREAK_GRACE_HOURS):
+        streak_grace_hours = await self.guild_settings.get_daily_streak_grace_hours(guild_id)
+        streak_bonus_days = await self.guild_settings.get_daily_streak_bonus_max_days(guild_id)
+        streak_bonus_amount = await self.guild_settings.get_daily_streak_bonus(guild_id)
+        if previous and now <= previous + timedelta(hours=streak_grace_hours):
             streak = current_streak + 1
         else:
             streak = 1
         base = random.randint(*(await self.guild_settings.get_reward_range(guild_id, "daily")))
-        bonus = min(streak - 1, eco.DAILY_STREAK_BONUS_MAX_DAYS) * eco.DAILY_STREAK_BONUS
+        bonus = min(streak - 1, streak_bonus_days) * streak_bonus_amount
         reward = base + bonus
         reward = await self.apply_prestige_bonus(guild_id, user_id, reward, "daily")
         await self.db.add_wallet(guild_id, user_id, reward, f"daily:streak_{streak}")
@@ -292,8 +299,10 @@ class EconomyService:
             await self.stats.set_max(guild_id, user_id, "crime.biggest_loss", amount)
         await self.stats.increment(guild_id, user_id, "crime.attempts")
         jail_until = None
-        if not success and random.random() < eco.CRIME_JAIL_CHANCE:
-            jail_until = now + timedelta(minutes=random.randint(eco.CRIME_JAIL_MIN_MINUTES, eco.CRIME_JAIL_MAX_MINUTES))
+        crime_jail_chance = await self.guild_settings.get_crime_jail_chance(guild_id)
+        crime_jail_min, crime_jail_max = await self.guild_settings.get_crime_jail_minutes(guild_id)
+        if not success and random.random() < crime_jail_chance:
+            jail_until = now + timedelta(minutes=random.randint(crime_jail_min, crime_jail_max))
             await self.db.set_jail_until(guild_id, user_id, jail_until)
             await self.stats.increment(guild_id, user_id, "crime.jailed")
         await self._award_activity_xp(guild_id, user_id, "crime")
@@ -304,21 +313,40 @@ class EconomyService:
         await self.guild_settings.require_feature(guild_id, "rob")
         await self.require_not_jailed(guild_id, robber_id)
         if robber_id == victim_id: raise ValueError("Saját magadat nem rabolhatod ki.")
+        # A MÁV stake már le van foglalva a walletből. Aktív kör közben sem a
+        # játékos, sem a célpont walletje nem lehet Rob által módosítva.
+        if await self.db.has_active_live_session(guild_id, robber_id, "mav"):
+            raise ValueError("Aktív MÁV Crash kör közben nem rabolhatsz.")
+        if await self.db.has_active_live_session(guild_id, victim_id, "mav"):
+            raise ValueError("A célpont aktív MÁV Crash körben van, ezért ideiglenes Rob-védelem alatt áll.")
         cooldown = await self.guild_settings.get_cooldown(guild_id, "rob")
         now = await self._check_cooldown(guild_id, robber_id, "last_rob", cooldown)
+        last_withdraw = await self.db.get_timestamp(guild_id, victim_id, "last_withdraw")
+        if last_withdraw is not None:
+            protection_seconds = await self.guild_settings.get_withdraw_rob_protection_seconds(guild_id)
+            protected_until = last_withdraw + timedelta(seconds=protection_seconds)
+            if now < protected_until:
+                raise ValueError(
+                    f"A célpont friss banki kifizetés miatt Rob-védelem alatt áll még: "
+                    f"<t:{int(protected_until.timestamp())}:R>."
+                )
         victim_wallet, _ = await self.db.get_balance(guild_id, victim_id)
         robber_wallet, _ = await self.db.get_balance(guild_id, robber_id)
-        if victim_wallet < eco.ROB_MIN_VICTIM_WALLET:
-            raise ValueError(f"A célpont tárcájában nincs legalább {money(eco.ROB_MIN_VICTIM_WALLET)}.")
-        required_cover = max(eco.ROB_MIN_ATTEMPT_WALLET, int(victim_wallet * eco.ROB_MIN_COVERAGE_SHARE))
+        min_victim_wallet = await self.guild_settings.get_rob_min_victim_wallet(guild_id)
+        min_attempt_wallet = await self.guild_settings.get_rob_min_attempt_wallet(guild_id)
+        min_coverage_share = await self.guild_settings.get_rob_min_coverage_share(guild_id)
+        if victim_wallet < min_victim_wallet:
+            raise ValueError(f"A célpont tárcájában nincs legalább {money(min_victim_wallet)}.")
+        required_cover = max(min_attempt_wallet, int(victim_wallet * min_coverage_share))
         if robber_wallet < required_cover:
             raise ValueError(
                 f"Ehhez a rabláshoz legalább {money(required_cover)} kell a saját tárcádban kockázati fedezetként."
             )
-        rob_chance = eco.ROB_SUCCESS_CHANCE
+        rob_chance = await self.guild_settings.get_rob_success_chance(guild_id)
+        boosted_max_chance = await self.guild_settings.get_rob_boosted_max_chance(guild_id)
         rob_booster = await self.db.get_active_booster(guild_id, robber_id, "rob_booster")
         if rob_booster:
-            rob_chance = min(eco.ROB_BOOSTED_MAX_CHANCE, rob_chance * rob_booster[0])
+            rob_chance = min(boosted_max_chance, rob_chance * rob_booster[0])
         success = random.random() < rob_chance
         if success and await self.db.consume_item(guild_id, victim_id, "rob_shield", 1):
             success = False
@@ -342,8 +370,10 @@ class EconomyService:
             await self.stats.add(guild_id, victim_id, "rob.lost_as_victim", stolen)
             amount = stolen
         else:
-            flat_fine = random.randint(*eco.ROB_FAIL_FINE)
-            proportional_fine = int(victim_wallet * random.uniform(*eco.ROB_FAIL_FINE_SHARE))
+            fail_flat_range = await self.guild_settings.get_rob_fail_flat_range(guild_id)
+            fail_share_range = await self.guild_settings.get_rob_fail_share_range(guild_id)
+            flat_fine = random.randint(*fail_flat_range)
+            proportional_fine = int(victim_wallet * random.uniform(*fail_share_range))
             amount = max(flat_fine, proportional_fine)
             amount = await self.db.pay_rob_fine(guild_id, robber_id, victim_id, amount)
             await self.db.increment_stat(guild_id, robber_id, "rob_failed")
@@ -359,7 +389,7 @@ class EconomyService:
         await self.require_not_jailed(guild_id, user_id)
         cooldown = await self.guild_settings.get_cooldown(guild_id, "slut")
         now = await self._check_cooldown(guild_id, user_id, "last_slut", cooldown)
-        success = random.random() < eco.SLUT_SUCCESS_CHANCE
+        success = random.random() < await self.guild_settings.get_slut_success_chance(guild_id)
         if success:
             amount = random.randint(*(await self.guild_settings.get_reward_range(guild_id, "slut_reward")))
             amount = await self.apply_prestige_bonus(guild_id, user_id, amount, "slut")
@@ -399,13 +429,15 @@ class EconomyService:
         # Discordon a hierarchikus rangok gyakran együtt vannak egy játékoson.
         # Alapból ezért nem stackeljük az összes Role Income-ot, mert az könnyen
         # többszörözné a passzív bevételt. Configból visszakapcsolható, ha kell.
-        hourly = sum(eligible_rates) if eco.ROLE_INCOME_STACKING else max(eligible_rates)
+        stacking = await self.guild_settings.get_role_income_stacking(guild_id)
+        first_claim_hours = await self.guild_settings.get_role_income_first_claim_hours(guild_id)
+        max_accumulation_hours = await self.guild_settings.get_role_income_max_accumulation_hours(guild_id)
+        hourly = sum(eligible_rates) if stacking else max(eligible_rates)
         last = await self.db.get_timestamp(guild_id, user_id, "last_role_income")
         if last is None:
-            # Első használatkor azonnal jár egy teljes claim-ciklusnyi income.
-            # Így egy új játékost nem büntetünk egy 4 órás várakozással.
-            last = now - timedelta(hours=self.ROLE_INCOME_FIRST_CLAIM_HOURS)
-        elapsed = min(now - last, self.ROLE_INCOME_MAX_ACCUMULATION)
+            # Első használatkor a szerver által konfigurált induló időablak jár.
+            last = now - timedelta(hours=first_claim_hours)
+        elapsed = min(now - last, timedelta(hours=max_accumulation_hours))
         full_hours = int(elapsed.total_seconds() // 3600)
         if elapsed < cooldown:
             raise CooldownError(last + cooldown)

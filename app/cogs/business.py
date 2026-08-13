@@ -257,6 +257,20 @@ class LimitSettingsModal(discord.ui.Modal, title="Biznisz anti-monopoly"):
         await self.cog.show_settings(interaction, self.owner_id)
 
 
+class MarketSettingsModal(discord.ui.Modal, title="Biznisz market / Frakció"):
+    offer_hours=discord.ui.TextInput(label="Property offer lejárat (óra)",max_length=5)
+    transfer_tax=discord.ui.TextInput(label="Property transfer tax %",max_length=3)
+    faction_bonus=discord.ui.TextInput(label="Frakció payout bonus %",max_length=3)
+    faction_xp=discord.ui.TextInput(label="Frakció XP / claim",max_length=10)
+    def __init__(self,cog:"BusinessCog",owner_id:int,settings)->None:
+        super().__init__();self.cog,self.owner_id=cog,owner_id
+        self.offer_hours.default=str(settings.property_offer_hours);self.transfer_tax.default=str(settings.transfer_tax_percent);self.faction_bonus.default=str(settings.faction_bonus_percent);self.faction_xp.default=str(settings.faction_xp_per_claim)
+    async def on_submit(self,interaction:discord.Interaction)->None:
+        try:await self.cog.service.set_market_settings(interaction.guild_id,offer_hours=int(str(self.offer_hours.value)),transfer_tax_percent=int(str(self.transfer_tax.value)),faction_bonus_percent=int(str(self.faction_bonus.value)),faction_xp_per_claim=int(str(self.faction_xp.value)))
+        except ValueError as exc:return await interaction.response.send_message(f"❌ {exc}",ephemeral=True)
+        await self.cog.show_settings(interaction,self.owner_id)
+
+
 class BusinessAdminView(discord.ui.View):
     def __init__(self, cog: "BusinessCog", owner_id: int, enabled: bool) -> None:
         super().__init__(timeout=600); self.cog = cog; self.owner_id = owner_id; self.enabled = enabled
@@ -287,7 +301,11 @@ class BusinessAdminView(discord.ui.View):
     async def limits(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
         await interaction.response.send_modal(LimitSettingsModal(self.cog, self.owner_id, await self.cog.service.get_settings(interaction.guild_id)))
 
-    @discord.ui.button(label="Vissza", emoji="⬅️", style=discord.ButtonStyle.secondary, row=1)
+    @discord.ui.button(label="Market / Frakció", emoji="🤝", style=discord.ButtonStyle.secondary, row=1)
+    async def market_tuning(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
+        await interaction.response.send_modal(MarketSettingsModal(self.cog,self.owner_id,await self.cog.service.get_settings(interaction.guild_id)))
+
+    @discord.ui.button(label="Vissza", emoji="⬅️", style=discord.ButtonStyle.secondary, row=2)
     async def back(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
         settings_cog = self.cog.bot.get_cog("SettingsCog")
         if settings_cog is None:
@@ -590,16 +608,16 @@ class BusinessCog(commands.Cog):
         embed.add_field(name="Unlock", value=f"Activity **{settings.required_activity_level}** • Prestige **{settings.required_prestige}**\nLicense: **{money(settings.license_price)}**", inline=True)
         embed.add_field(name="Economy", value=f"Adó **{settings.tax_percent}%** • Income **{settings.income_multiplier_percent}%**\nOffline cap **{settings.offline_cap_hours}h** • Worker **{settings.worker_contract_days} nap**", inline=True)
         embed.add_field(name="Anti-monopoly", value=f"Alap **{settings.base_property_cap}** • +1 / **{settings.prestige_step} Prestige**\nMax **{settings.absolute_cap}** • Városonként **{settings.city_cap}**", inline=False)
-        embed.add_field(name="Game-world", value=f"**{len(cfg.PROPERTY_TEMPLATES)}** egyedi, fikciós property • magyar város/negyed/utca címkékkel. Player-to-player sale escrow + {cfg.PROPERTY_TRANSFER_TAX_PERCENT}% transfer tax.", inline=False)
+        embed.add_field(name="Market / Frakció", value=f"Offer **{settings.property_offer_hours}h** • transfer tax **{settings.transfer_tax_percent}%** • Frakció bonus **{settings.faction_bonus_percent}%** • **{settings.faction_xp_per_claim} XP/claim**", inline=False)
+        embed.add_field(name="Game-world", value=f"**{len(cfg.PROPERTY_TEMPLATES)}** egyedi, fikciós property • magyar város/negyed/utca címkékkel.", inline=False)
         embed.set_footer(text="Yoru • Settings • Biznisz Empire")
         return embed
 
     async def show_settings(self, interaction: discord.Interaction, owner_id: int) -> None:
         if interaction.guild is None: return
+        if not interaction.response.is_done():
+            await interaction.response.defer()
         settings = await self.service.get_settings(interaction.guild.id)
         embed = await self.settings_embed(interaction.guild)
         view = BusinessAdminView(self, owner_id, settings.enabled)
-        if interaction.response.is_done():
-            await interaction.edit_original_response(embed=embed, view=view)
-        else:
-            await interaction.response.edit_message(embed=embed, view=view)
+        await interaction.edit_original_response(embed=embed, view=view)

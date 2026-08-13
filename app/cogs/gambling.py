@@ -13,6 +13,7 @@ from app.amounts import parse_amount
 from app.casino_games import RouletteBet, parse_roulette_choice, roulette_result_emoji
 from app.casino_visuals import render_slots, render_slots_animation, render_roulette, render_roulette_animation
 from app.casino_quick_visuals import render_coinflip, render_coinflip_animation, render_dice, render_dice_animation
+from app.gamble_rooms import is_gamble_room
 from app.services.gambling import GambleResult, GamblingService, QuickGameResult, RouletteRound, SlotsGameResult
 from app.services.casino import CasinoSession
 from app.ui import DANGER, GOLD, SUCCESS, BRAND, error_embed, gambling_result_embed, money, player_embed
@@ -885,7 +886,10 @@ class GamblingCog(commands.Cog):
         try:
             await self.gambling.guild_settings.prepare_currency(interaction.guild_id)
             await self.gambling.guild_settings.require_feature(interaction.guild_id, "gambling")
-            await self.gambling.guild_settings.require_channel(interaction.guild_id, interaction.channel_id, getattr(interaction.channel, "category_id", None))
+            if not is_gamble_room(interaction.channel):
+                await self.gambling.guild_settings.require_channel(
+                    interaction.guild_id, interaction.channel_id, getattr(interaction.channel, "category_id", None)
+                )
         except ValueError as error:
             await interaction.response.send_message(embed=error_embed(interaction.user, str(error)), ephemeral=True)
             return False
@@ -1043,19 +1047,22 @@ class GamblingCog(commands.Cog):
         await self.run_dice_interaction(interaction, mod.value, bet, int(tipped) if tipped is not None else None)
 
     # ---------------------------------------------------------------- Slots
-    async def _slots_animation_file(self, result: SlotsGameResult, user: discord.abc.User) -> discord.File:
-        base_spin = result.spins[0]
+    async def _slots_animation_file(self, result: SlotsGameResult, user: discord.abc.User, *, spin_index: int = 0) -> discord.File:
+        spin = result.spins[min(max(0, int(spin_index)), len(result.spins) - 1)]
+        free_total = max(0, len(result.spins) - 1)
+        label = "SPIN" if not spin.is_free_spin else f"FREE SPIN {spin.spin_number}/{free_total}"
         fp = await self._render_visual(
             render_slots_animation,
-            base_spin.grid,
-            winning_positions=_slot_winning_positions(base_spin),
-            spin_label="SPIN",
+            spin.grid,
+            winning_positions=_slot_winning_positions(spin),
+            spin_label=label,
             player_name=user.display_name,
         )
         return discord.File(fp=fp, filename="slots.gif")
 
-    async def _slots_final_file(self, result: SlotsGameResult, user: discord.abc.User) -> discord.File:
-        spin = result.spins[-1]
+    async def _slots_final_file(self, result: SlotsGameResult, user: discord.abc.User, *, spin_index: int | None = None) -> discord.File:
+        index = len(result.spins) - 1 if spin_index is None else min(max(0, int(spin_index)), len(result.spins) - 1)
+        spin = result.spins[index]
         free_total = max(0, len(result.spins) - 1)
         label = "SPIN" if not spin.is_free_spin else f"FREE SPIN {spin.spin_number}/{free_total}"
         fp = await self._render_visual(
@@ -1122,11 +1129,23 @@ class GamblingCog(commands.Cog):
                 await self.gambling.casino.release_player_game(result.game_id)
 
     async def _animate_slots_message(self, message: discord.Message, user: discord.abc.User, result: SlotsGameResult) -> None:
-        """Play the GIF once, then replace it with a static final PNG."""
+        """Play every generated spin, including each individual Free Spin, then show one final summary."""
         try:
+            # The base spin GIF is already attached by the caller. Let it finish first.
             await asyncio.sleep(casino_cfg.SLOTS_V2_ANIMATION_SECONDS)
+            free_total = max(0, len(result.spins) - 1)
+            for spin_index in range(1, len(result.spins)):
+                animation = await self._slots_animation_file(result, user, spin_index=spin_index)
+                embed = slots_embed(
+                    user, result, spin_index=spin_index, stopped_columns=0,
+                    final=False, image_filename="slots.gif",
+                )
+                embed.description = f"🎁 **Free Spin {spin_index}/{free_total}** • a tárcsák újra pörögnek…"
+                await message.edit(embed=embed, attachments=[animation])
+                await asyncio.sleep(casino_cfg.SLOTS_V2_ANIMATION_SECONDS)
+
             final_index = len(result.spins) - 1
-            final_file = await self._slots_final_file(result, user)
+            final_file = await self._slots_final_file(result, user, spin_index=final_index)
             await message.edit(
                 embed=slots_embed(
                     user, result, spin_index=final_index, stopped_columns=5,

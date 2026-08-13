@@ -32,6 +32,8 @@ from app.services.activity import ActivityService
 from app.services.business import BusinessService
 from app.services.heist import HeistService
 from app.services.jobs import JobsService
+from app.services.betting import BettingService
+from app.services.live_world import LiveWorldService
 from app.cogs.progression import ProgressionCog
 from app.cogs.community import CommunityCog
 from app.cogs.admin import AdminCog
@@ -52,6 +54,8 @@ from app.cogs.social_economy import SocialEconomyCog
 from app.cogs.business import BusinessCog
 from app.cogs.heist import HeistCog
 from app.cogs.jobs import JobsCog
+from app.cogs.betting import BettingCog
+from app.cogs.live_world import LiveWorldCog
 from app.cogs.tutorial import TutorialCog
 from app import economy_config as eco
 
@@ -101,6 +105,8 @@ STAFF_PREFIX_PERMISSIONS = {
     "sticky": "manage_messages", "stickyoff": "manage_messages", "unsticky": "manage_messages",
     "kincseslada": "manage_guild", "lada": "manage_guild", "chest": "manage_guild",
     "hirtelenhalal": "manage_guild", "bomb": "manage_guild", "hh": "manage_guild", "sd": "manage_guild",
+    "gamblepanel": "manage_guild", "gpanel": "manage_guild", "gamblingpanel": "manage_guild",
+    "bettingpanel": "manage_guild", "betpanel": "manage_guild", "fogadaspanel": "manage_guild", "fogadáspanel": "manage_guild",
 }
 
 
@@ -135,6 +141,7 @@ RATE_LIMITED_PREFIX_COMMANDS = {
     "biznisz", "business", "empire", "biz",
     "heist", "nagymelo", "nagymeló", "melo", "meló", "heisttop", "melotop", "nagymelotop",
     "jobs", "job", "munka", "munkak", "munkák", "raktaros", "raktáros", "lopkodas", "lopkodás", "borsod", "futar", "futár", "taxi",
+    "betting", "fogadas", "fogadás", "tippmix", "boltrablas", "boltrablás", "shoprob", "bankrablas", "bankrablás", "bankrob", "mav", "máv", "crash", "poker", "pokerhand", "lapjaim", "kezem",
 }
 
 ADMIN_HIDDEN_PREFIX_COMMANDS = {
@@ -168,6 +175,8 @@ class VaultBot(commands.Bot):
         self.businesses = BusinessService(self.database, self.statistics, self.prestige, self.activity_service, self.crew, self.factions)
         self.heists = HeistService(self.database, self.statistics, self.prestige, self.activity_service, self.crew, self.factions)
         self.jobs = JobsService(self.database, self.economy, self.statistics)
+        self.betting = BettingService(self.database, self.statistics)
+        self.live_world = LiveWorldService(self.database, self.economy, self.statistics)
         self._prefix_action_times: dict[tuple[int, int], float] = {}
         self._suppressed_delete_log_ids: set[int] = set()
 
@@ -188,6 +197,9 @@ class VaultBot(commands.Bot):
         recovered_jobs = await self.jobs.recover_after_restart()
         if recovered_jobs:
             logger.warning("Jobs restart recovery: %s nyitott műszak lezárva.", recovered_jobs)
+        recovered_live = await self.live_world.recover_after_restart()
+        if recovered_live.get("sessions") or recovered_live.get("poker_refunded"):
+            logger.warning("Live World restart recovery: %s", recovered_live)
         await self.add_cog(EconomyCog(self, self.economy))
         await self.add_cog(ShopCog(self, self.shop))
         await self.add_cog(EventCog(self, self.economy))
@@ -216,6 +228,8 @@ class VaultBot(commands.Bot):
         await self.add_cog(BusinessCog(self, self.database, self.economy, self.businesses))
         await self.add_cog(HeistCog(self, self.database, self.economy, self.heists))
         await self.add_cog(JobsCog(self, self.jobs))
+        await self.add_cog(BettingCog(self, self.betting))
+        await self.add_cog(LiveWorldCog(self, self.live_world))
         await self.add_cog(TutorialCog(self, self.database))
 
         @self.tree.command(name="ping", description="Megmutatja, hogy működik-e a bot.")

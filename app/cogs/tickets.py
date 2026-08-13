@@ -927,6 +927,8 @@ class TicketCog(commands.Cog):
     ) -> None:
         if interaction.guild is None:
             return
+        if not interaction.response.is_done():
+            await interaction.response.defer()
         view = TicketSettingsView(
             self,
             owner_id,
@@ -938,7 +940,7 @@ class TicketCog(commands.Cog):
             log_page=existing.log_page if existing else 0,
             staff_page=existing.staff_page if existing else 0,
         )
-        await interaction.response.edit_message(embed=await self.settings_embed(interaction.guild), view=view)
+        await interaction.edit_original_response(embed=await self.settings_embed(interaction.guild), view=view)
 
     async def back_to_settings(self, interaction: discord.Interaction, owner_id: int) -> None:
         settings_cog = self.bot.get_cog("SettingsCog")

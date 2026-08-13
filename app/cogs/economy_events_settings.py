@@ -58,6 +58,38 @@ def _parse_duration(raw: str) -> int:
     return seconds
 
 
+def _parse_amount_range(raw: str) -> tuple[int, int]:
+    parts = re.split(r"\s*[-–—:]\s*", raw.strip(), maxsplit=1)
+    if len(parts) != 2:
+        raise ValueError("Range formátum: `15k-80k`.")
+    minimum, maximum = parse_amount(parts[0]), parse_amount(parts[1])
+    if minimum < 0 or maximum < minimum:
+        raise ValueError("A range minimuma nem lehet negatív és nem lehet nagyobb a maximumnál.")
+    return minimum, maximum
+
+
+def _parse_percent_range(raw: str) -> tuple[float, float]:
+    parts = re.split(r"\s*[-–—:]\s*", raw.strip().replace("%", ""), maxsplit=1)
+    if len(parts) != 2:
+        raise ValueError("Százalék range formátum: `15-25`.")
+    minimum = float(parts[0].replace(",", ".")) / 100.0
+    maximum = float(parts[1].replace(",", ".")) / 100.0
+    if not 0 <= minimum <= maximum <= 1:
+        raise ValueError("A százalék range 0–100% között legyen, min ≤ max.")
+    return minimum, maximum
+
+
+def _parse_pair_percent(raw: str) -> tuple[float, float]:
+    parts = re.split(r"\s*[/|:]\s*", raw.strip().replace("%", ""), maxsplit=1)
+    if len(parts) != 2:
+        raise ValueError("Használd ezt: `100/100` (rate%/cap%).")
+    first = float(parts[0].replace(",", ".")) / 100.0
+    second = float(parts[1].replace(",", ".")) / 100.0
+    if not 0 <= first <= 10 or not 0 <= second <= 10:
+        raise ValueError("Interest rate/cap: 0–1000%.")
+    return first, second
+
+
 class OwnedSettingsView(discord.ui.View):
     def __init__(self, cog: "EconomyEventsSettingsCog", owner_id: int, *, timeout: float = 600) -> None:
         super().__init__(timeout=timeout)
@@ -284,10 +316,127 @@ class AdvancedView(OwnedSettingsView):
     async def payout(self,i,_): await i.response.send_modal(PayoutModal(self.cog,self.owner_id))
     @discord.ui.button(label="Pénznem",emoji="💱",style=discord.ButtonStyle.primary,row=0)
     async def currency(self,i,_): await i.response.send_modal(CurrencyModal(self.cog,self.owner_id))
-    @discord.ui.button(label="Advanced reset",emoji="♻️",style=discord.ButtonStyle.danger,row=1)
+    @discord.ui.button(label="Kezdő egyenleg",emoji="💵",style=discord.ButtonStyle.primary,row=0)
+    async def starting_balance(self,i,_): await i.response.send_modal(StartingBalanceModal(self.cog,self.owner_id,await self.cog.service.get_starting_balance(i.guild_id)))
+    @discord.ui.button(label="Rob szabályok",emoji="🛡️",style=discord.ButtonStyle.secondary,row=1)
+    async def rob_rules(self,i,_): await i.response.send_modal(RobRulesModal(self.cog,self.owner_id,await self.cog.rob_rules_values(i.guild_id)))
+    @discord.ui.button(label="Védelem / kor",emoji="🔐",style=discord.ButtonStyle.secondary,row=1)
+    async def access_rules(self,i,_): await i.response.send_modal(AccessRulesModal(self.cog,self.owner_id,await self.cog.access_rules_values(i.guild_id)))
+    @discord.ui.button(label="Role Income",emoji="🎭",style=discord.ButtonStyle.secondary,row=1)
+    async def role_rules(self,i,_): await i.response.send_modal(RoleIncomeRulesModal(self.cog,self.owner_id,await self.cog.role_income_values(i.guild_id)))
+    @discord.ui.button(label="Daily / Crime",emoji="🗓️",style=discord.ButtonStyle.secondary,row=2)
+    async def daily_crime(self,i,_): await i.response.send_modal(DailyCrimeRulesModal(self.cog,self.owner_id,await self.cog.daily_crime_values(i.guild_id)))
+    @discord.ui.button(label="Risk / Interest",emoji="🎲",style=discord.ButtonStyle.secondary,row=2)
+    async def risk_interest(self,i,_): await i.response.send_modal(RiskInterestRulesModal(self.cog,self.owner_id,await self.cog.risk_interest_values(i.guild_id)))
+    @discord.ui.button(label="Advanced reset",emoji="♻️",style=discord.ButtonStyle.danger,row=3)
     async def reset(self,i,_): await self.cog.service.reset_economy_advanced(i.guild_id); await self.cog.show_advanced(i,self.owner_id)
-    @discord.ui.button(label="Vissza",emoji="⬅️",style=discord.ButtonStyle.secondary,row=1)
+    @discord.ui.button(label="Vissza",emoji="⬅️",style=discord.ButtonStyle.secondary,row=3)
     async def back(self,i,_): await self.cog.show_economy(i,self.owner_id)
+
+
+
+class StartingBalanceModal(discord.ui.Modal,title="Economy • Kezdő egyenleg"):
+    amount=discord.ui.TextInput(label="Új játékos kezdő wallet",placeholder="25k",max_length=24)
+    def __init__(self,cog,owner,current):
+        super().__init__(); self.cog=cog; self.owner=owner; self.amount.default=str(current)
+    async def on_submit(self,i):
+        try: await self.cog.service.set_starting_balance(i.guild_id,parse_amount(str(self.amount.value)))
+        except ValueError as e: return await i.response.send_message(f"❌ {e}",ephemeral=True)
+        await i.response.edit_message(embed=await self.cog.advanced_embed(i.guild),view=AdvancedView(self.cog,self.owner))
+
+
+class RobRulesModal(discord.ui.Modal,title="Rob szabályok"):
+    success=discord.ui.TextInput(label="Alap siker %",placeholder="25",max_length=8)
+    boosted=discord.ui.TextInput(label="Booster max siker %",placeholder="35",max_length=8)
+    victim=discord.ui.TextInput(label="Minimum célpont wallet",placeholder="50k",max_length=24)
+    own=discord.ui.TextInput(label="Minimum saját wallet",placeholder="25k",max_length=24)
+    coverage=discord.ui.TextInput(label="Kockázati fedezet %",placeholder="5",max_length=8)
+    def __init__(self,cog,owner,values):
+        super().__init__(); self.cog=cog; self.owner=owner
+        self.success.default=f"{values[0]*100:g}"; self.boosted.default=f"{values[1]*100:g}"
+        self.victim.default=str(values[2]); self.own.default=str(values[3]); self.coverage.default=f"{values[4]*100:g}"
+    async def on_submit(self,i):
+        try:
+            success=float(str(self.success.value).replace(",","."))/100; boosted=float(str(self.boosted.value).replace(",","."))/100
+            victim=parse_amount(str(self.victim.value)); own=parse_amount(str(self.own.value)); coverage=float(str(self.coverage.value).replace(",","."))/100
+            await self.cog.service.set_rob_rules(i.guild_id,success_chance=success,boosted_max_chance=boosted,min_victim_wallet=victim,min_attempt_wallet=own,coverage_share=coverage)
+        except ValueError as e: return await i.response.send_message(f"❌ {e}",ephemeral=True)
+        await i.response.edit_message(embed=await self.cog.advanced_embed(i.guild),view=AdvancedView(self.cog,self.owner))
+
+
+class AccessRulesModal(discord.ui.Modal,title="Economy védelem / account age"):
+    protection=discord.ui.TextInput(label="Withdraw Rob-védelem",placeholder="5m",max_length=20)
+    interest=discord.ui.TextInput(label="Interest minimum bank",placeholder="100k",max_length=24)
+    weekly=discord.ui.TextInput(label="Weekly min account age (nap)",placeholder="7",max_length=8)
+    monthly=discord.ui.TextInput(label="Monthly min account age (nap)",placeholder="30",max_length=8)
+    def __init__(self,cog,owner,values):
+        super().__init__(); self.cog=cog; self.owner=owner
+        self.protection.default=_fmt_duration(values[0]); self.interest.default=str(values[1]); self.weekly.default=str(values[2]); self.monthly.default=str(values[3])
+    async def on_submit(self,i):
+        try:
+            seconds=_parse_duration(str(self.protection.value)) if str(self.protection.value).strip() not in {"0","0s","0m"} else 0
+            interest=parse_amount(str(self.interest.value)); weekly=int(str(self.weekly.value)); monthly=int(str(self.monthly.value))
+            await self.cog.service.set_withdraw_rob_protection_seconds(i.guild_id,seconds)
+            await self.cog.service.set_access_rules(i.guild_id,interest_min_bank=interest,weekly_age_days=weekly,monthly_age_days=monthly)
+        except ValueError as e: return await i.response.send_message(f"❌ {e}",ephemeral=True)
+        await i.response.edit_message(embed=await self.cog.advanced_embed(i.guild),view=AdvancedView(self.cog,self.owner))
+
+
+class RoleIncomeRulesModal(discord.ui.Modal,title="Role Income szabályok"):
+    first=discord.ui.TextInput(label="Első claim jóváírás (óra)",placeholder="4",max_length=8)
+    accumulation=discord.ui.TextInput(label="Max felhalmozás (óra)",placeholder="24",max_length=8)
+    stacking=discord.ui.TextInput(label="Rangok stackelnek? igen/nem",placeholder="nem",max_length=8)
+    def __init__(self,cog,owner,values):
+        super().__init__(); self.cog=cog; self.owner=owner
+        self.first.default=str(values[0]); self.accumulation.default=str(values[1]); self.stacking.default="igen" if values[2] else "nem"
+    async def on_submit(self,i):
+        try:
+            first=int(str(self.first.value)); accumulation=int(str(self.accumulation.value)); raw=str(self.stacking.value).strip().lower()
+            if raw not in {"igen","nem","yes","no","true","false","1","0","on","off"}: raise ValueError("Stacking: igen vagy nem.")
+            stacking=raw in {"igen","yes","true","1","on"}
+            await self.cog.service.set_role_income_rules(i.guild_id,first_claim_hours=first,max_accumulation_hours=accumulation,stacking=stacking)
+        except ValueError as e: return await i.response.send_message(f"❌ {e}",ephemeral=True)
+        await i.response.edit_message(embed=await self.cog.advanced_embed(i.guild),view=AdvancedView(self.cog,self.owner))
+
+class DailyCrimeRulesModal(discord.ui.Modal,title="Daily / Crime balance"):
+    daily_bonus=discord.ui.TextInput(label="Daily streak bónusz / nap",placeholder="2500",max_length=24)
+    daily_days=discord.ui.TextInput(label="Daily bonus max nap",placeholder="20",max_length=8)
+    daily_grace=discord.ui.TextInput(label="Daily streak grace (óra)",placeholder="48",max_length=8)
+    jail_chance=discord.ui.TextInput(label="Crime bukásnál jail esély %",placeholder="45",max_length=8)
+    jail_range=discord.ui.TextInput(label="Crime jail perc (min-max)",placeholder="5-15",max_length=20)
+    def __init__(self,cog,owner,values):
+        super().__init__(); self.cog=cog; self.owner=owner
+        self.daily_bonus.default=str(values[0]); self.daily_days.default=str(values[1]); self.daily_grace.default=str(values[2])
+        self.jail_chance.default=f"{values[3]*100:g}"; self.jail_range.default=f"{values[4]}-{values[5]}"
+    async def on_submit(self,i):
+        try:
+            bonus=parse_amount(str(self.daily_bonus.value)); days=int(str(self.daily_days.value)); grace=int(str(self.daily_grace.value))
+            chance=float(str(self.jail_chance.value).replace(",",".").replace("%",""))/100
+            jail_min,jail_max=_parse_amount_range(str(self.jail_range.value))
+            await self.cog.service.set_daily_crime_rules(i.guild_id,daily_bonus=bonus,daily_max_days=days,daily_grace_hours=grace,crime_jail_chance=chance,crime_jail_min_minutes=jail_min,crime_jail_max_minutes=jail_max)
+        except ValueError as e: return await i.response.send_message(f"❌ {e}",ephemeral=True)
+        await i.response.edit_message(embed=await self.cog.advanced_embed(i.guild),view=AdvancedView(self.cog,self.owner))
+
+
+class RiskInterestRulesModal(discord.ui.Modal,title="Risk / Interest balance"):
+    slut_chance=discord.ui.TextInput(label="Slut siker %",placeholder="56",max_length=8)
+    rob_flat=discord.ui.TextInput(label="Rob fail flat fine (min-max)",placeholder="15k-80k",max_length=40)
+    rob_share=discord.ui.TextInput(label="Rob fail célpont % (min-max)",placeholder="15-25",max_length=20)
+    interest_min=discord.ui.TextInput(label="Interest minimum reward",placeholder="250",max_length=24)
+    interest_mult=discord.ui.TextInput(label="Interest rate/cap %",placeholder="100/100",max_length=24)
+    def __init__(self,cog,owner,values):
+        super().__init__(); self.cog=cog; self.owner=owner
+        self.slut_chance.default=f"{values[0]*100:g}"; self.rob_flat.default=f"{values[1]}-{values[2]}"
+        self.rob_share.default=f"{values[3]*100:g}-{values[4]*100:g}"; self.interest_min.default=str(values[5])
+        self.interest_mult.default=f"{values[6]*100:g}/{values[7]*100:g}"
+    async def on_submit(self,i):
+        try:
+            slut=float(str(self.slut_chance.value).replace(",",".").replace("%",""))/100
+            flat_min,flat_max=_parse_amount_range(str(self.rob_flat.value)); share_min,share_max=_parse_percent_range(str(self.rob_share.value))
+            minimum=parse_amount(str(self.interest_min.value)); rate_mult,cap_mult=_parse_pair_percent(str(self.interest_mult.value))
+            await self.cog.service.set_risk_interest_rules(i.guild_id,slut_success_chance=slut,rob_flat_min=flat_min,rob_flat_max=flat_max,rob_share_min=share_min,rob_share_max=share_max,interest_min_reward=minimum,interest_rate_multiplier=rate_mult,interest_cap_multiplier=cap_mult)
+        except ValueError as e: return await i.response.send_message(f"❌ {e}",ephemeral=True)
+        await i.response.edit_message(embed=await self.cog.advanced_embed(i.guild),view=AdvancedView(self.cog,self.owner))
 
 
 class RobModal(discord.ui.Modal,title="Rob zsákmány"):
@@ -466,10 +615,31 @@ class EconomyEventsSettingsCog(commands.Cog):
         embed.add_field(name="Aktuális értékek",value="\n".join(lines),inline=False); return embed
     async def show_rewards(self,i,owner,selected="work"): await i.response.edit_message(embed=await self.reward_embed(i.guild,selected),view=RewardView(self,owner,selected))
 
+    async def rob_rules_values(self,guild_id):
+        return (await self.service.get_rob_success_chance(guild_id),await self.service.get_rob_boosted_max_chance(guild_id),await self.service.get_rob_min_victim_wallet(guild_id),await self.service.get_rob_min_attempt_wallet(guild_id),await self.service.get_rob_min_coverage_share(guild_id))
+    async def access_rules_values(self,guild_id):
+        return (await self.service.get_withdraw_rob_protection_seconds(guild_id),await self.service.get_interest_min_bank(guild_id),await self.service.get_weekly_min_account_age_days(guild_id),await self.service.get_monthly_min_account_age_days(guild_id))
+    async def role_income_values(self,guild_id):
+        return (await self.service.get_role_income_first_claim_hours(guild_id),await self.service.get_role_income_max_accumulation_hours(guild_id),await self.service.get_role_income_stacking(guild_id))
+    async def daily_crime_values(self,guild_id):
+        jail_min,jail_max=await self.service.get_crime_jail_minutes(guild_id)
+        return (await self.service.get_daily_streak_bonus(guild_id),await self.service.get_daily_streak_bonus_max_days(guild_id),await self.service.get_daily_streak_grace_hours(guild_id),await self.service.get_crime_jail_chance(guild_id),jail_min,jail_max)
+    async def risk_interest_values(self,guild_id):
+        flat_min,flat_max=await self.service.get_rob_fail_flat_range(guild_id); share_min,share_max=await self.service.get_rob_fail_share_range(guild_id)
+        return (await self.service.get_slut_success_chance(guild_id),flat_min,flat_max,share_min,share_max,await self.service.get_interest_min_reward(guild_id),await self.service.get_interest_rate_multiplier(guild_id),await self.service.get_interest_cap_multiplier(guild_id))
+
     async def advanced_embed(self,guild):
         await self.service.prepare_currency(guild.id); share=await self.service.get_rob_share(guild.id); mult=await self.service.get_gambling_payout_multiplier(guild.id); name=await self.service.get_currency_name(guild.id); symbol=await self.service.get_currency_symbol(guild.id)
-        embed=base_embed("⚙️ Economy • Advanced","A szorzó a gambling **nyereségrészét** skálázza; a tét visszaadása nem szorzódik.")
-        embed.add_field(name="🥷 Rob zsákmány",value=f"**{share*100:.1f}%** az áldozat walletjéből",inline=True); embed.add_field(name="🎰 Win-profit szorzó",value=f"**{mult:.2f}×**",inline=True); embed.add_field(name="💱 Pénznem",value=f"{symbol} • **{name}**",inline=True); return embed
+        rob=await self.rob_rules_values(guild.id); access=await self.access_rules_values(guild.id); role=await self.role_income_values(guild.id)
+        daily=await self.daily_crime_values(guild.id); risk=await self.risk_interest_values(guild.id); starting=await self.service.get_starting_balance(guild.id)
+        embed=base_embed("⚙️ Economy • Advanced","A DB-ben tárolt Yoru Settings az elsődleges; a kódbeli értékek csak fallback defaultok.")
+        embed.add_field(name="💵 Kezdő egyenleg",value=f"Új játékos wallet: **{money(starting)}**",inline=False)
+        embed.add_field(name="🥷 Rob",value=f"Loot **{share*100:.1f}%** • siker **{rob[0]*100:.1f}%** (boost max {rob[1]*100:.1f}%)\nCél min **{money(rob[2])}** • saját min **{money(rob[3])}** • fedezet **{rob[4]*100:.1f}%**",inline=False)
+        embed.add_field(name="🗓️ Daily / Crime",value=f"Streak +**{money(daily[0])}/nap** • max **{daily[1]} nap** • grace **{daily[2]}h**\nCrime jail **{daily[3]*100:.1f}%** • **{daily[4]}–{daily[5]} perc**",inline=False)
+        embed.add_field(name="🎲 Risk / Interest",value=f"Slut siker **{risk[0]*100:.1f}%** • Rob fail flat **{money(risk[1])}–{money(risk[2])}** • cél **{risk[3]*100:.1f}–{risk[4]*100:.1f}%**\nInterest min reward **{money(risk[5])}** • rate **{risk[6]:.2f}×** • cap **{risk[7]:.2f}×**",inline=False)
+        embed.add_field(name="🔐 Védelem",value=f"Withdraw: **{_fmt_duration(access[0])}** • Interest min **{money(access[1])}**\nWeekly age **{access[2]} nap** • Monthly age **{access[3]} nap**",inline=False)
+        embed.add_field(name="🎭 Role Income",value=f"Első claim **{role[0]}h** • max felhalmozás **{role[1]}h** • stacking **{'ON' if role[2] else 'OFF'}**",inline=False)
+        embed.add_field(name="🎰 Win-profit szorzó",value=f"**{mult:.2f}×**",inline=True); embed.add_field(name="💱 Pénznem",value=f"{symbol} • **{name}**",inline=True); return embed
     async def show_advanced(self,i,owner): await i.response.edit_message(embed=await self.advanced_embed(i.guild),view=AdvancedView(self,owner))
 
     async def events_embed(self,guild):

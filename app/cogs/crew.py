@@ -39,7 +39,9 @@ class CrewCog(commands.Cog):
     async def show_settings(self, interaction: discord.Interaction, owner_id: int) -> None:
         if interaction.guild is None:
             return
-        await interaction.response.edit_message(
+        if not interaction.response.is_done():
+            await interaction.response.defer()
+        await interaction.edit_original_response(
             embed=await build_faction_settings_embed(self, interaction.guild),
             view=FactionSettingsView(self, owner_id),
         )

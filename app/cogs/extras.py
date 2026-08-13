@@ -11,6 +11,7 @@ from app import casino_config as casino_cfg
 from app.services.economy import CooldownError, JailError
 from app.services.extras import ExtrasCasinoResult, ExtrasService
 from app.amounts import parse_amount
+from app.gamble_rooms import is_gamble_room
 from app.casino_quick_visuals import (
     render_chicken,
     render_chicken_animation,
@@ -235,7 +236,13 @@ class ExtrasCog(commands.Cog):
         if interaction.guild_id is None:
             return False
         try:
-            await self.extras.economy.require_access(interaction.guild_id, feature, interaction.channel_id, getattr(interaction.channel, "category_id", None))
+            if feature == "gambling" and is_gamble_room(interaction.channel):
+                await self.extras.economy.prepare_context(interaction.guild_id)
+                await self.extras.economy.guild_settings.require_feature(interaction.guild_id, "gambling")
+            else:
+                await self.extras.economy.require_access(
+                    interaction.guild_id, feature, interaction.channel_id, getattr(interaction.channel, "category_id", None)
+                )
         except ValueError as e:
             await interaction.response.send_message(embed=error_embed(interaction.user, str(e)), ephemeral=True)
             return False

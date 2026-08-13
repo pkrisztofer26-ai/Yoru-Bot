@@ -4,7 +4,6 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from app.prestige_config import PRESTIGE_INCOME_BONUS_CAP
 from app.services.prestige import PrestigeResult, PrestigeService, PrestigeState
 from app.ui import BRAND, GOLD, SUCCESS, error_embed, money, progress_bar
 
@@ -23,7 +22,7 @@ async def build_prestige_embed(service: PrestigeService, guild_id: int, user: di
     embed.description = (
         f"**Jelenlegi prestige:** {current_rank}\n"
         f"**Állandó income bónusz:** +{_percent(state.income_bonus)}\n"
-        f"-# Maximum bónusz: +{_percent(PRESTIGE_INCOME_BONUS_CAP)}"
+        f"-# Maximum bónusz: +{_percent(state.income_bonus_cap)}"
     )
 
     level_progress = progress_bar(state.current_level, state.required_level, 12)

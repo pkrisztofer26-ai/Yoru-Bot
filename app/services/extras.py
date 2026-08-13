@@ -55,7 +55,7 @@ class ExtrasService:
     async def weekly(self, guild_id: int, user_id: int) -> tuple[int, datetime]:
         await self.economy.prepare_context(guild_id)
         await self.economy.guild_settings.require_feature(guild_id, "weekly")
-        await self._require_account_age(guild_id, user_id, eco.WEEKLY_MIN_ACCOUNT_AGE_DAYS, "Weekly")
+        await self._require_account_age(guild_id, user_id, await self.economy.guild_settings.get_weekly_min_account_age_days(guild_id), "Weekly")
         cooldown = await self.economy.guild_settings.get_cooldown(guild_id, "weekly")
         now = await self._cooldown(guild_id, user_id, "last_weekly", cooldown)
         reward = random.randint(*(await self.economy.guild_settings.get_reward_range(guild_id, "weekly")))
@@ -71,7 +71,7 @@ class ExtrasService:
     async def monthly(self, guild_id: int, user_id: int) -> tuple[int, datetime]:
         await self.economy.prepare_context(guild_id)
         await self.economy.guild_settings.require_feature(guild_id, "monthly")
-        await self._require_account_age(guild_id, user_id, eco.MONTHLY_MIN_ACCOUNT_AGE_DAYS, "Monthly")
+        await self._require_account_age(guild_id, user_id, await self.economy.guild_settings.get_monthly_min_account_age_days(guild_id), "Monthly")
         cooldown = await self.economy.guild_settings.get_cooldown(guild_id, "monthly")
         now = await self._cooldown(guild_id, user_id, "last_monthly", cooldown)
         reward = random.randint(*(await self.economy.guild_settings.get_reward_range(guild_id, "monthly")))
@@ -91,20 +91,24 @@ class ExtrasService:
         cooldown = await self.economy.guild_settings.get_cooldown(guild_id, "interest")
         now = await self._cooldown(guild_id, user_id, "last_interest", cooldown)
         _, bank = await self.db.get_balance(guild_id, user_id)
-        if bank < eco.INTEREST_MIN_BANK:
-            raise ValueError(f"Legalább {money(eco.INTEREST_MIN_BANK)} kell a bankodban a kamathoz.")
+        interest_min_bank = await self.economy.guild_settings.get_interest_min_bank(guild_id)
+        if bank < interest_min_bank:
+            raise ValueError(f"Legalább {money(interest_min_bank)} kell a bankodban a kamathoz.")
         rate, cap = eco.INTEREST_TIERS[-1][1], eco.INTEREST_TIERS[-1][2]
         for minimum, tier_rate, tier_cap in eco.INTEREST_TIERS:
             if bank >= minimum:
                 rate, cap = tier_rate, tier_cap
                 break
+        rate *= await self.economy.guild_settings.get_interest_rate_multiplier(guild_id)
+        cap = int(cap * await self.economy.guild_settings.get_interest_cap_multiplier(guild_id))
         booster = await self.db.get_active_booster(guild_id, user_id, "interest_booster")
         if booster:
             # A booster a kamatlábat és a capet is emeli, különben a magasabb
             # bank tierben gyakorlatilag semmit sem érne.
             rate *= booster[0]
             cap = int(cap * booster[0])
-        reward = min(cap, max(eco.INTEREST_MIN_REWARD, int(bank * rate)))
+        min_reward = await self.economy.guild_settings.get_interest_min_reward(guild_id)
+        reward = min(cap, max(min_reward, int(bank * rate)))
         reward = await self.economy.apply_prestige_bonus(guild_id, user_id, reward, "interest")
         new_bank = await self.db.add_bank(guild_id, user_id, reward, "bank_interest")
         await self.economy.stats.increment(guild_id, user_id, "interest.claims")
@@ -160,8 +164,6 @@ class ExtrasService:
         player = aliases.get(choice.lower().strip())
         if player is None:
             raise ValueError("Válassz: `rock`, `paper` vagy `scissors`.")
-        if bet < casino_cfg.MIN_BET:
-            raise ValueError(f"A minimum tét {money(casino_cfg.MIN_BET)}.")
         session = await self.casino.begin(
             guild_id, user_id, "rps", bet,
             config={"base_total": casino_cfg.RPS_V2_TOTAL_PAYOUT, "defer_player_lock_release": True, "engine": "rps_visual"},
@@ -214,8 +216,6 @@ class ExtrasService:
         await self.economy.prepare_context(guild_id)
         await self.economy.guild_settings.require_feature(guild_id, "gambling")
         await self.economy.require_not_jailed(guild_id, user_id)
-        if bet < casino_cfg.MIN_BET:
-            raise ValueError(f"A minimum tét {money(casino_cfg.MIN_BET)}.")
         lock = self._chicken_locks.setdefault((guild_id, user_id), asyncio.Lock())
         async with lock:
             if await self.db.get_item_quantity(guild_id, user_id, "chicken") < 1:
@@ -252,8 +252,6 @@ class ExtrasService:
         await self.economy.prepare_context(guild_id)
         await self.economy.guild_settings.require_feature(guild_id, "gambling")
         await self.economy.require_not_jailed(guild_id, user_id)
-        if bet < casino_cfg.MIN_BET:
-            raise ValueError(f"A minimum tét {money(casino_cfg.MIN_BET)}.")
 
         lock = self._chicken_locks.setdefault((guild_id, user_id), asyncio.Lock())
         async with lock:
@@ -298,8 +296,6 @@ class ExtrasService:
         if normalized not in aliases:
             raise ValueError("Válassz: `high` vagy `low`.")
         normalized = aliases[normalized]
-        if bet < casino_cfg.MIN_BET:
-            raise ValueError(f"A minimum tét {money(casino_cfg.MIN_BET)}.")
         session = await self.casino.begin(guild_id, user_id, "highlow", bet, config={"base_total": casino_cfg.HIGHLOW_TOTAL_PAYOUT})
         try:
             card = random.randint(1, 13)
@@ -326,8 +322,6 @@ class ExtrasService:
         player = aliases.get(choice.lower().strip())
         if player is None:
             raise ValueError("Válassz: `rock`, `paper` vagy `scissors`.")
-        if bet < casino_cfg.MIN_BET:
-            raise ValueError(f"A minimum tét {money(casino_cfg.MIN_BET)}.")
         session = await self.casino.begin(guild_id, user_id, "rps", bet, config={"base_total": casino_cfg.RPS_TOTAL_PAYOUT})
         try:
             bot = random.choice(["rock", "paper", "scissors"])

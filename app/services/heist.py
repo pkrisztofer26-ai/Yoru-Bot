@@ -22,6 +22,8 @@ class HeistSettings:
     fine_percent: int
     gear_loss_percent: int
     reward_multiplier_percent: int
+    lobby_expire_minutes: int
+    max_party_size: int
 
 
 class HeistService:
@@ -61,6 +63,8 @@ class HeistService:
             fine_percent=await _int(cfg.HEIST_FINE_PERCENT_KEY, cfg.DEFAULT_FINE_PERCENT, cfg.MIN_FINE_PERCENT, cfg.MAX_FINE_PERCENT),
             gear_loss_percent=await _int(cfg.HEIST_GEAR_LOSS_PERCENT_KEY, cfg.DEFAULT_GEAR_LOSS_PERCENT, cfg.MIN_GEAR_LOSS_PERCENT, cfg.MAX_GEAR_LOSS_PERCENT),
             reward_multiplier_percent=await _int(cfg.HEIST_REWARD_MULTIPLIER_KEY, cfg.DEFAULT_REWARD_MULTIPLIER_PERCENT, cfg.MIN_REWARD_MULTIPLIER_PERCENT, cfg.MAX_REWARD_MULTIPLIER_PERCENT),
+            lobby_expire_minutes=await _int(cfg.HEIST_LOBBY_EXPIRE_KEY,cfg.LOBBY_EXPIRE_MINUTES,5,1440),
+            max_party_size=await _int(cfg.HEIST_MAX_PARTY_KEY,cfg.MAX_PARTY_SIZE,2,10),
         )
 
     async def set_enabled(self, guild_id: int, enabled: bool) -> None:
@@ -225,8 +229,9 @@ class HeistService:
             raise ValueError("Még tart a Nagy Meló cooldownod.")
         if await self.active_lobby_for_user(guild_id, leader_id):
             raise ValueError("Már van aktív Nagy Meló lobbyd.")
+        settings=await self.get_settings(guild_id)
         now = self._now()
-        expires = now + timedelta(minutes=cfg.LOBBY_EXPIRE_MINUTES)
+        expires = now + timedelta(minutes=settings.lobby_expire_minutes)
         async with aiosqlite.connect(self.db.path) as conn:
             await conn.execute("BEGIN IMMEDIATE")
             cur = await conn.execute(
@@ -252,8 +257,11 @@ class HeistService:
         if not lobby or int(lobby["leader_id"]) != leader_id or lobby["status"] != "forming":
             raise ValueError("Ezt a lobbyt már nem tudod szerkeszteni.")
         members = await self.lobby_members(guild_id, lobby_id)
-        if sum(1 for m in members if m["status"] in {"accepted", "pending"}) >= cfg.MAX_PARTY_SIZE:
-            raise ValueError(f"A party maximum {cfg.MAX_PARTY_SIZE} fős lehet.")
+        settings=await self.get_settings(guild_id)
+        target=cfg.TARGET_BY_KEY.get(str(lobby["target_key"]))
+        party_limit=min(settings.max_party_size,target.max_party if target else settings.max_party_size)
+        if sum(1 for m in members if m["status"] in {"accepted", "pending"}) >= party_limit:
+            raise ValueError(f"A party maximum {party_limit} fős lehet.")
         if await self.active_lobby_for_user(guild_id, user_id):
             raise ValueError("A játékos már másik aktív Nagy Melóban van.")
         target_key = str(lobby["target_key"])

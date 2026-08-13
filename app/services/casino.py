@@ -7,6 +7,7 @@ import secrets
 
 from app import casino_config as cfg
 from app.database import Database
+from app.services.gameplay_settings import GameplaySettingsService
 
 
 @dataclass(slots=True)
@@ -49,6 +50,7 @@ class CasinoService:
             from app.services.economy_events_settings import EconomyEventsSettingsService
             guild_settings = EconomyEventsSettingsService(database)
         self.guild_settings = guild_settings
+        self.gameplay_settings = GameplaySettingsService(database)
         self._settlement_listener = None
         # One active Casino game per player/guild. The in-memory guard covers
         # client-side animations that continue after the money settlement has
@@ -93,10 +95,10 @@ class CasinoService:
         if until and until > datetime.now(timezone.utc):
             raise ValueError(f"Börtönben vagy még: <t:{int(until.timestamp())}:R>")
 
-    @staticmethod
-    def validate_bet(bet: int) -> None:
-        if bet < cfg.MIN_BET:
-            raise ValueError(f"A minimum tét {cfg.MIN_BET:,}.".replace(",", " "))
+    async def validate_bet(self, guild_id: int, bet: int) -> None:
+        runtime = await self.gameplay_settings.casino(guild_id)
+        if int(bet) < runtime.min_bet:
+            raise ValueError(f"A minimum tét {runtime.min_bet:,}.".replace(",", " "))
 
     @staticmethod
     def game_prefix(game: str) -> str:
@@ -109,12 +111,13 @@ class CasinoService:
 
     async def begin(self, guild_id: int, user_id: int, game: str, bet: int, *, config: dict | None = None) -> CasinoSession:
         await self._ensure_available(guild_id, user_id)
-        self.validate_bet(bet)
+        await self.validate_bet(guild_id, bet)
+        runtime = await self.gameplay_settings.casino(guild_id)
         payout_scale = await self.guild_settings.get_gambling_payout_multiplier(guild_id)
         snapshot = {
             **(config or {}),
             "payout_scale": float(payout_scale),
-            "jackpot_rate": float(cfg.MONTHLY_JACKPOT_CONTRIBUTION_RATE),
+            "jackpot_rate": float(runtime.jackpot_contribution_rate),
         }
         last_error: Exception | None = None
         for _ in range(5):
@@ -143,6 +146,101 @@ class CasinoService:
         config = session.config if isinstance(session, CasinoSession) else dict(session.get("config", {}))
         scale = float(config.get("payout_scale", 1.0))
         return 1.0 + (float(base_total) - 1.0) * scale
+
+    async def settle_immediate_batch(
+        self,
+        guild_id: int,
+        user_id: int,
+        game: str,
+        bet: int,
+        *,
+        payouts: list[int],
+        results: list[str],
+        multipliers: list[float],
+        config: dict | None = None,
+    ) -> list[CasinoSettlement]:
+        """Atomically reserve + settle a fixed Casino batch in one DB transaction."""
+        if not payouts or len(payouts) != len(results) or len(payouts) != len(multipliers):
+            raise ValueError("Hibás Casino batch adatok.")
+        await self._ensure_available(guild_id, user_id)
+        await self.validate_bet(guild_id, bet)
+        runtime = await self.gameplay_settings.casino(guild_id)
+        payout_scale = await self.guild_settings.get_gambling_payout_multiplier(guild_id)
+        batch_token = f"{self.game_prefix(game)}B-{secrets.randbelow(90_000_000) + 10_000_000}"
+        snapshot = {
+            **(config or {}),
+            "payout_scale": float(payout_scale),
+            "jackpot_rate": float(runtime.jackpot_contribution_rate),
+            "batch_token": batch_token,
+            "batch_size": len(payouts),
+        }
+
+        await self._claim_player_game(guild_id, user_id, batch_token)
+        try:
+            last_error: Exception | None = None
+            data: list[dict] | None = None
+            for _ in range(5):
+                game_ids = [self.new_game_id(game) for _i in payouts]
+                entries = [
+                    {
+                        "game_id": game_id,
+                        "payout": int(payout),
+                        "result": str(result),
+                        "multiplier": float(multiplier),
+                    }
+                    for game_id, payout, result, multiplier in zip(game_ids, payouts, results, multipliers)
+                ]
+                try:
+                    data = await self.db.settle_casino_batch_immediate(
+                        guild_id=guild_id,
+                        user_id=user_id,
+                        game=game,
+                        bet=int(bet),
+                        entries=entries,
+                        config_snapshot=snapshot,
+                        jackpot_rate=float(snapshot.get("jackpot_rate", cfg.MONTHLY_JACKPOT_CONTRIBUTION_RATE)),
+                        house_loss_eligible=game in cfg.HOUSE_GAMES,
+                    )
+                    break
+                except ValueError as exc:
+                    last_error = exc
+                    if "Game ID" not in str(exc):
+                        raise
+            if data is None:
+                raise RuntimeError("Nem sikerült egyedi Casino Game ID-ket generálni a batchhez.") from last_error
+        finally:
+            await self.release_player_game(batch_token)
+
+        settlements = [
+            CasinoSettlement(
+                game_id=str(row["game_id"]),
+                game=str(row["game"]),
+                bet=int(row["bet"]),
+                payout=int(row["payout"]),
+                profit=int(row["profit"]),
+                multiplier=float(row["multiplier"]),
+                wallet=int(row["wallet_after"]),
+                result=str(row["result"]),
+                jackpot_contribution=int(row.get("jackpot_contribution", 0)),
+                idempotent=False,
+            )
+            for row in data
+        ]
+        if self._settlement_listener is not None:
+            listener = self._settlement_listener
+
+            async def _deliver_batch_logs() -> None:
+                for settlement in settlements:
+                    try:
+                        await listener(settlement)
+                    except Exception:
+                        pass
+
+            # Batch audit delivery is deliberately detached from gameplay
+            # latency. Money is already committed; logging must not make a
+            # 10-ball click wait on up to 10 Discord sends/settings lookups.
+            asyncio.create_task(_deliver_batch_logs())
+        return settlements
 
     async def reserve_extra(
         self,
@@ -246,15 +344,17 @@ class CasinoService:
         return await self.db.get_pending_casino_jackpot_months(guild_id, before_month)
 
     async def jackpot_eligible(self, guild_id: int, month: str) -> list[dict]:
+        runtime = await self.gameplay_settings.casino(guild_id)
         return await self.db.get_casino_jackpot_eligible(
-            guild_id, month, min_games=cfg.MONTHLY_JACKPOT_MIN_GAMES, min_wager=cfg.MONTHLY_JACKPOT_MIN_WAGER,
+            guild_id, month, min_games=runtime.jackpot_min_games, min_wager=runtime.jackpot_min_wager,
         )
 
     async def jackpot_history(self, guild_id: int, limit: int = cfg.MONTHLY_JACKPOT_HISTORY_LIMIT) -> list[dict]:
         return await self.db.get_casino_jackpot_history(guild_id, limit)
 
     async def finalize_jackpot(self, guild_id: int, month: str, *, winner_id: int | None, eligible_players: int, rollover_month: str) -> dict:
+        runtime = await self.gameplay_settings.casino(guild_id)
         return await self.db.finalize_monthly_casino_jackpot(
             guild_id, month, winner_id=winner_id, eligible_players=eligible_players,
-            payout_share=cfg.MONTHLY_JACKPOT_PAYOUT_SHARE, rollover_month=rollover_month,
+            payout_share=runtime.jackpot_payout_share, rollover_month=rollover_month,
         )

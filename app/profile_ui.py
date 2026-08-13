@@ -37,6 +37,10 @@ GAME_LABELS = {
     "highlow": "🃏 High/Low",
     "rps": "✂️ RPS",
     "chickenfight": "🐔 Chicken Fight",
+    "mines": "💣 Mines",
+    "chickenroad": "🐔 Chicken Road",
+    "plinko": "🔵 Plinko",
+    "candyrush": "🍬 Candy Rush",
 }
 
 

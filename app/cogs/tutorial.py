@@ -63,14 +63,14 @@ PLAYER_SECTIONS: tuple[TutorialSection, ...] = (
     ),
     TutorialSection(
         "interactive-jobs", "🧰", "Interactive Jobs • Aktív pénzkeresés",
-        "Ha a sima Work/Beg/Search cooldownon van, a Jobs rendszerben ténylegesen játszható műszakokkal építhetsz bankrollt. Nincs tét, és nincs AFK payout.",
+        "Ha a sima Work/Beg/Search cooldownon van, a Jobs rendszerben ténylegesen játszható műszakokkal építhetsz bankrollt. Nincs tét és nincs AFK payout; egy választott, befejezett műszak után az egész Jobs pool közös 2 órás cooldownra kerül.",
         (
             ("🧰 Jobs lobby", "`!jobs` vagy `/jobs panel` nyitja a központi panelt. Innen indul a Raktáros, Borsodi Lopkodás, Futár és Taxi."),
-            ("📦 Raktáros", "5 körös memória/sequence műszak. Jegyezd meg a röviden megjelenő polcsorrendet, majd válaszd ki a helyes kombinációt. Combo + performance alapján nő a jutalom."),
-            ("🔌 Borsodi Lopkodás", "5×5 grid, 7 keresés. A mezőkben scrap/elektronika/pénz/ritkább loot lehet. A járőr korán lezárhatja a runt, de az addigi loot 70%-a megmarad."),
-            ("🚚 Futár / 🚕 Taxi", "Több fuvaros műszak. Rövid-biztos, hosszabb-jobban fizető vagy problémás-magas reward útvonal közül választasz; eventek és döntések alakítják a performance ratinget."),
+            ("📦 Raktáros", "5 körös memória/sequence műszak. A mozgó GIF után külön memóriaidőt kapsz, majd bőven van időd kiválasztani a helyes kombinációt. Combo + performance alapján nő a jutalom."),
+            ("🔌 Borsodi Lopkodás", "5×5 grid, 7 keresés. A mezőkben scrap/elektronika/pénz/ritkább loot lehet. Járőrnél nem automatikus a bukás: scenario nyílik több döntéssel, eltérő risk/reward következménnyel."),
+            ("🚚 Futár / 🚕 Taxi", "Több fuvaros műszak. Az útvonal csak az első döntés: minden fuvar közben scenario jön (pl. ellenőrzés, sérült csomag, rosszul lévő utas), és kb. 30 másodperced van választani. A döntések alakítják a payoutot és a performance ratinget."),
             ("🏅 Job Mastery", "Minden munkának külön Mastery Levelje van. A fejlődés főleg progression/content; az income bónusz szándékosan kicsi és plafonozott, hogy ne törje szét az economy-t."),
-            ("🔒 Session safety", "Egy szerveren egyszerre egy aktív Interactive Job műszakod lehet. Timeout/restart után a session felszabadul; payout csak lezárt, aktívan végigjátszott műszak után jár."),
+            ("🔒 Session safety", "Egy szerveren egyszerre egy aktív Interactive Job műszakod lehet. Scenario timeoutnál a biztonságos alapdöntés fut le; restart után a session felszabadul. Befejezett műszak után közös 2 órás cooldown indul; félbehagyott normál műszaknál 15 perc anti-reroll lock jár."),
         ),
     ),
     TutorialSection(
@@ -127,6 +127,10 @@ PLAYER_SECTIONS: tuple[TutorialSection, ...] = (
             ("🃏 Blackjack", "`!bj <tét>` vagy `/casino blackjack`. Hit/Stand mellett Double, Split és dealer Ásznál Insurance is van. A natural Blackjack 3:2 profitot fizet; Splitből kapott 21 nem natural."),
             ("🎰 Slots", "`!sl <tét>` vagy `/casino slots`. Nagy 5×3 vizuális gép, 20 payline, ⭐ Wild, 💰 Scatter és Free Spins. A reel animáció kliensoldali GIF-ként fut, ezért több játékos mellett is simább; a végeredmény csak az animáció után jelenik meg a HUD-ban."),
             ("🎡 Roulette", "`!r` vagy `/casino roulette` megnyitja a saját európai roulette kerekedet. Egy körre több külön tétet is felrakhatsz pirosra, feketére, zöld/0-ra, párosra, páratlanra vagy konkrét 0–36 közötti számra, majd egyetlen Pörgetés gomb indítja a kereket."),
+            ("💣 Mines", "`!mines <tét> [3|5|7|9]` vagy `/casino mines`. 5×4 mezőn fedhetsz fel lapokat; minden biztonságos találat növeli a cashout szorzót. Bomba esetén a kör bukik, timeoutnál pedig legalább egy safe reveal után automatikus cashout történik."),
+            ("🐔 Chicken Road", "`!chickenroad <tét>` vagy `/casino chickenroad`. Sávonként döntesz: tovább mész vagy cashoutolsz. Minden sikeres átkelés növeli a szorzót; timeoutnál a már megszerzett szorzó automatikusan kifizetésre kerül."),
+            ("🔵 Plinko", "`!plinko <tét>` vagy `/casino plinko`. Interaktív panel: tét/labda állítás, 1/2/3/5/10 Ball batch, Fast és Auto. Egy standard 10 soros táblán a közép gyakori/kisebb, a ritka szélek adják a nagy payoutot; nincs Risk selector."),
+            ("🍬 Candy Rush", "`!candyrush <tét>` vagy `/casino candyrush`. 6×6 grid, valódi match-felismerés, eltűnő találatok, beeső új candy-k és egymásra épülő cascade szorzó."),
             ("🪙 Coinflip", "`!cf fej 10k` vagy `/casino coinflip`. Nagy, animált érmedobás fut; az eredmény után statikus final kép marad. Fej/írás választható."),
             ("🎲 Dice", "`!dice 4 10k` exact módhoz, vagy például `!dice odd 10k`, `!dice even 10k`, `!dice high 10k`, `!dice low 10k`, `!dice over7 10k`, `!dice under7 10k`, `!dice seven 10k`. A kétkockás módoknál az összeg dönt."),
             ("📈 High / Low", "`!hl <tét>` vagy `/casino highlow`. Kapsz egy kezdő lapot, majd Higher/Lower döntésekkel streaket építesz. Minden siker után nő a dinamikus cashout szorzó; bármikor kiszállhatsz. Tie nem töri meg a kört."),
@@ -666,8 +670,10 @@ class TutorialCog(commands.Cog):
         return embed
 
     async def show_settings(self, interaction: discord.Interaction, owner_id: int, existing: "TutorialSettingsView | None" = None) -> None:
+        if not interaction.response.is_done():
+            await interaction.response.defer()
         view = TutorialSettingsView(self, owner_id, interaction.guild, category_page=existing.category_page if existing else 0)
-        await interaction.response.edit_message(embed=await self.settings_embed(interaction.guild), view=view)
+        await interaction.edit_original_response(embed=await self.settings_embed(interaction.guild), view=view)
 
     async def back_to_settings(self, interaction: discord.Interaction, owner_id: int) -> None:
         settings_cog = self.bot.get_cog("SettingsCog")

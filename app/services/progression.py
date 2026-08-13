@@ -7,6 +7,7 @@ from app.database import Database
 from app.services.economy import CooldownError, EconomyService
 from app import economy_config as eco
 from app.progression_math import progress_for_xp
+from app.services.gameplay_settings import GameplaySettingsService
 from app.progression_config import (
     ACHIEVEMENT_DEFINITIONS,
     BADGE_DEFINITIONS,
@@ -30,6 +31,7 @@ class ProgressionService:
     def __init__(self, db: Database, economy: EconomyService) -> None:
         self.db = db
         self.economy = economy
+        self.settings = GameplaySettingsService(db)
 
     @staticmethod
     def level_from_xp(xp: int) -> tuple[int, int, int]:
@@ -102,6 +104,8 @@ class ProgressionService:
         ascending = list(reversed(eco.INTEREST_TIERS))
         idx = max(i for i, (minimum, _rate, _cap) in enumerate(ascending) if bank >= minimum)
         _minimum, rate, cap = ascending[idx]
+        rate *= await self.economy.guild_settings.get_interest_rate_multiplier(guild_id)
+        cap = int(cap * await self.economy.guild_settings.get_interest_cap_multiplier(guild_id))
         booster = await self.db.get_active_booster(guild_id, user_id, "interest_booster")
         if booster:
             rate *= booster[0]
@@ -110,13 +114,17 @@ class ProgressionService:
 
     async def invest(self, guild_id: int, user_id: int, risk: str, amount: int) -> tuple[int, int, datetime, str]:
         await self.economy.require_not_jailed(guild_id, user_id)
+        runtime = await self.settings.progression(guild_id)
+        if not runtime.invest_enabled:
+            raise ValueError("A Befektetés ezen a szerveren ki van kapcsolva.")
         now = datetime.now(timezone.utc)
+        cooldown = timedelta(hours=runtime.invest_cooldown_hours)
         last = await self.db.get_timestamp(guild_id, user_id, "last_invest")
-        if last and now < last + self.INVEST_COOLDOWN:
-            raise CooldownError(last + self.INVEST_COOLDOWN)
+        if last and now < last + cooldown:
+            raise CooldownError(last + cooldown)
         wallet, _ = await self.db.get_balance(guild_id, user_id)
-        if amount < eco.INVEST_MIN_AMOUNT or amount > wallet:
-            raise ValueError(f"Minimum ${eco.INVEST_MIN_AMOUNT:,}, és nem fektethetsz be többet a tárcádnál.".replace(",", " "))
+        if amount < runtime.invest_min_amount or amount > wallet:
+            raise ValueError(f"Minimum ${runtime.invest_min_amount:,}, és nem fektethetsz be többet a tárcádnál.".replace(",", " "))
         modes = eco.INVEST_MODES
         aliases = {"l": "low", "low": "low", "alacsony": "low", "m": "medium", "medium": "medium", "kozepes": "medium", "közepes": "medium", "h": "high", "high": "high", "magas": "high"}
         key = aliases.get(risk.lower())
@@ -141,4 +149,4 @@ class ProgressionService:
             await self.economy.stats.set_max(guild_id, user_id, "investment.biggest_loss", -profit)
         await self.db.set_timestamp(guild_id, user_id, "last_invest", now)
         wallet, _ = await self.db.get_balance(guild_id, user_id)
-        return profit, wallet, now + self.INVEST_COOLDOWN, label
+        return profit, wallet, now + cooldown, label

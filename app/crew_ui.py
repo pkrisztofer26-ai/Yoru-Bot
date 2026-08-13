@@ -35,7 +35,7 @@ async def build_crew_embed(bot, guild_id: int, target: discord.abc.User) -> disc
         embed.set_author(name=target.display_name, icon_url=target.display_avatar.url)
         embed.description = (
             "Még nem vagy Frakció tagja. Az egész rendszer innen, interaktívan kezelhető.\n\n"
-            f"💵 Alapítás: **{money(legacy_cfg.CREW_CREATE_COST)}**\n"
+            f"💵 Alapítás: **{money(await bot.crew.create_cost(guild_id))}**\n"
             "🤝 Egy játékos egyszerre csak **1 Frakció** tagja lehet.\n"
             "✨ Frakció XP, közös célok, perk tree, belső rangok és Frakció Wars."
         )
@@ -172,7 +172,12 @@ async def build_war_embed(bot, guild_id: int, user: discord.abc.User) -> discord
     war = await bot.factions.war_for_crew(guild_id, membership.crew.crew_id)
     if not war:
         embed.description = "Nincs aktív vagy függőben lévő War. Válassz ellenfelet az alábbi listából."
-        embed.add_field(name="🏆 Jutalom", value=f"Győztes alapjutalom: **{money(cfg.FACTION_WAR_WIN_BANK)} + {cfg.FACTION_WAR_WIN_XP:,} XP**".replace(",", " "), inline=False)
+        tuning = await bot.factions.tuning(guild_id)
+        embed.add_field(
+            name="🏆 Jutalom",
+            value=f"Győztes alapjutalom: **{money(int(tuning['win_bank']))} + {int(tuning['win_xp']):,} XP**".replace(",", " "),
+            inline=False,
+        )
         return embed
     left = await bot.crew.get_crew(guild_id, int(war["challenger_crew_id"]))
     right = await bot.crew.get_crew(guild_id, int(war["target_crew_id"]))
@@ -653,20 +658,92 @@ class FactionSettingsModal(discord.ui.Modal, title="🌙 Frakció 2.0 • Tuning
         await self.cog.show_settings(interaction, self.owner_id)
 
 
+class FactionCoreSettingsModal(discord.ui.Modal, title="Frakció • Alap szabályok"):
+    create_cost = discord.ui.TextInput(label="Alapítási ár", placeholder="pl. 5m", max_length=30)
+    invite_hours = discord.ui.TextInput(label="Meghívó lejárat (óra)", max_length=4)
+
+    def __init__(self, cog, owner_id: int, create_cost: int, invite_hours: int) -> None:
+        super().__init__(timeout=300)
+        self.cog, self.owner_id = cog, owner_id
+        self.create_cost.default = str(create_cost)
+        self.invite_hours.default = str(invite_hours)
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        try:
+            await self.cog.service.set_core_settings(
+                interaction.guild_id,
+                create_cost=parse_amount(str(self.create_cost.value)),
+                invite_hours=int(str(self.invite_hours.value)),
+            )
+        except (ValueError, TypeError) as exc:
+            return await interaction.response.send_message(f"❌ {exc}", ephemeral=True)
+        await self.cog.show_settings(interaction, self.owner_id)
+
+
+class FactionContentSettingsModal(discord.ui.Modal, title="Frakció • Célok / XP"):
+    daily = discord.ui.TextInput(label="Daily objective darab", max_length=3)
+    weekly = discord.ui.TextInput(label="Weekly objective darab", max_length=3)
+    deposit_per = discord.ui.TextInput(label="Deposit összeg / 1 XP", max_length=30)
+    deposit_cap = discord.ui.TextInput(label="Deposit XP cap / esemény", max_length=12)
+    activity_divisor = discord.ui.TextInput(label="Activity XP / 1 Frakció XP", max_length=12)
+
+    def __init__(self,cog,owner_id:int,current:dict)->None:
+        super().__init__(timeout=300);self.cog,self.owner_id=cog,owner_id
+        self.daily.default=str(current["daily_objectives"]);self.weekly.default=str(current["weekly_objectives"])
+        self.deposit_per.default=str(current["deposit_xp_per"]);self.deposit_cap.default=str(current["deposit_xp_cap"]);self.activity_divisor.default=str(current["activity_xp_divisor"])
+
+    async def on_submit(self,interaction:discord.Interaction)->None:
+        try:
+            await self.cog.factions.set_tuning(interaction.guild_id,daily_objectives=int(str(self.daily.value)),weekly_objectives=int(str(self.weekly.value)),deposit_xp_per=parse_amount(str(self.deposit_per.value)),deposit_xp_cap=int(str(self.deposit_cap.value)),activity_xp_divisor=int(str(self.activity_divisor.value)))
+        except ValueError as exc:return await interaction.response.send_message(f"❌ {exc}",ephemeral=True)
+        await self.cog.show_settings(interaction,self.owner_id)
+
+
+class FactionWarSettingsModal(discord.ui.Modal, title="Frakció • War balance"):
+    challenge = discord.ui.TextInput(label="Kihívás elfogadási idő (óra)",max_length=5)
+    duration = discord.ui.TextInput(label="War időtartam (óra)",max_length=5)
+    win_reward = discord.ui.TextInput(label="Win reward: pénz, XP",placeholder="2500000, 1500",max_length=60)
+    draw_reward = discord.ui.TextInput(label="Draw reward: pénz, XP",placeholder="500000, 300",max_length=60)
+
+    def __init__(self,cog,owner_id:int,current:dict)->None:
+        super().__init__(timeout=300);self.cog,self.owner_id=cog,owner_id
+        self.challenge.default=str(current["challenge_hours"]);self.duration.default=str(current["war_hours"])
+        self.win_reward.default=f"{current['win_bank']}, {current['win_xp']}";self.draw_reward.default=f"{current['draw_bank']}, {current['draw_xp']}"
+
+    @staticmethod
+    def _pair(raw:str)->tuple[int,int]:
+        parts=[x.strip() for x in raw.replace(";",",").split(",") if x.strip()]
+        if len(parts)!=2:raise ValueError("Reward formátum: pénz, XP")
+        return parse_amount(parts[0]),int(parts[1])
+
+    async def on_submit(self,interaction:discord.Interaction)->None:
+        try:
+            wb,wx=self._pair(str(self.win_reward.value));db,dx=self._pair(str(self.draw_reward.value))
+            await self.cog.factions.set_tuning(interaction.guild_id,challenge_hours=int(str(self.challenge.value)),war_hours=int(str(self.duration.value)),win_bank=wb,win_xp=wx,draw_bank=db,draw_xp=dx)
+        except ValueError as exc:return await interaction.response.send_message(f"❌ {exc}",ephemeral=True)
+        await self.cog.show_settings(interaction,self.owner_id)
+
+
 async def build_faction_settings_embed(cog, guild: discord.Guild) -> discord.Embed:
     enabled = await cog.factions.enabled(guild.id)
     objectives = await cog.factions.objectives_enabled(guild.id)
     wars = await cog.factions.wars_enabled(guild.id)
     xp = await cog.factions.xp_multiplier_percent(guild.id)
+    tuning = await cog.factions.tuning(guild.id)
+    create_cost = await cog.service.create_cost(guild.id)
+    invite_hours = await cog.service.invite_hours(guild.id)
     embed = discord.Embed(title="🌙 Frakció 2.0 • Szerverbeállítások", color=BRAND)
     embed.description = "A Frakció rendszer globális viselkedése. A játékosok minden mást a `!crew` / `/crew` interaktív panelen kezelnek."
     embed.add_field(name="Rendszer", value="✅ ON" if enabled else "❌ OFF", inline=True)
     embed.add_field(name="Közös célok", value="✅ ON" if objectives else "❌ OFF", inline=True)
     embed.add_field(name="Frakció Wars", value="✅ ON" if wars else "❌ OFF", inline=True)
     embed.add_field(name="XP szorzó", value=f"**{xp}%**", inline=True)
+    embed.add_field(name="🏗️ Alap szabályok", value=f"Alapítás **{money(create_cost)}** • meghívó **{invite_hours}h**", inline=False)
+    embed.add_field(name="🎯 Célok / XP", value=f"Daily **{tuning['daily_objectives']}** • Weekly **{tuning['weekly_objectives']}**\nDeposit: **{money(tuning['deposit_xp_per'])}/XP**, cap **{tuning['deposit_xp_cap']} XP** • Activity **{tuning['activity_xp_divisor']}:1**", inline=False)
+    embed.add_field(name="⚔️ War balance", value=f"Accept **{tuning['challenge_hours']}h** • duration **{tuning['war_hours']}h**\nWin **{money(tuning['win_bank'])} + {tuning['win_xp']} XP** • Draw **{money(tuning['draw_bank'])} + {tuning['draw_xp']} XP**", inline=False)
     embed.add_field(name="Milestone", value="Minden **5 Frakció Level** után 1 közös perk pont.", inline=True)
     embed.add_field(name="UI", value="Interaction-first • gombok • selectek • modalok • lapozható rendszerek", inline=True)
-    embed.set_footer(text="Yoru • /settings → Frakció")
+    embed.set_footer(text="Yoru • /settings → Frakció • DB Settings az elsődleges")
     return embed
 
 
@@ -708,7 +785,32 @@ class FactionSettingsView(discord.ui.View):
         current = await self.cog.factions.xp_multiplier_percent(interaction.guild_id)
         await interaction.response.send_modal(FactionSettingsModal(self.cog, self.owner_id, current))
 
-    @discord.ui.button(label="Vissza", emoji="⬅️", style=discord.ButtonStyle.secondary, row=1)
+    @discord.ui.button(label="Alap szabályok", emoji="🏗️", style=discord.ButtonStyle.primary, row=1)
+    async def core_tuning(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
+        await interaction.response.send_modal(FactionCoreSettingsModal(
+            self.cog, self.owner_id,
+            await self.cog.service.create_cost(interaction.guild_id),
+            await self.cog.service.invite_hours(interaction.guild_id),
+        ))
+
+    @discord.ui.button(label="Célok / XP", emoji="🎯", style=discord.ButtonStyle.primary, row=1)
+    async def content_tuning(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
+        await interaction.response.send_modal(FactionContentSettingsModal(self.cog,self.owner_id,await self.cog.factions.tuning(interaction.guild_id)))
+
+    @discord.ui.button(label="War balance", emoji="⚔️", style=discord.ButtonStyle.primary, row=1)
+    async def war_tuning(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
+        await interaction.response.send_modal(FactionWarSettingsModal(self.cog,self.owner_id,await self.cog.factions.tuning(interaction.guild_id)))
+
+    @discord.ui.button(label="Alap default", emoji="♻️", style=discord.ButtonStyle.secondary, row=1)
+    async def reset_core(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
+        await self.cog.service.reset_core_settings(interaction.guild_id)
+        await self.cog.show_settings(interaction, self.owner_id)
+
+    @discord.ui.button(label="Tuning default", emoji="♻️", style=discord.ButtonStyle.secondary, row=1)
+    async def reset_tuning(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
+        await self.cog.factions.reset_tuning(interaction.guild_id);await self.cog.show_settings(interaction,self.owner_id)
+
+    @discord.ui.button(label="Vissza", emoji="⬅️", style=discord.ButtonStyle.secondary, row=2)
     async def back(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
         settings_cog = self.cog.bot.get_cog("SettingsCog")
         if settings_cog is None:

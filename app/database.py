@@ -73,6 +73,7 @@ class Database:
                 ("selected_title", "TEXT NOT NULL DEFAULT 'Kezdő'"),
                 ("investment_profit", "INTEGER NOT NULL DEFAULT 0"),
                 ("last_invest", "TEXT"),
+                ("last_withdraw", "TEXT"),
                 ("jackpot_wins", "INTEGER NOT NULL DEFAULT 0"),
                 ("lottery_wins", "INTEGER NOT NULL DEFAULT 0"),
             ]:
@@ -1017,11 +1018,119 @@ class Database:
                      emoji=excluded.emoji, active=1, rarity=excluded.rarity, category=excluded.category""",
                 shop_catalog,
             )
+            # Yoru v3.24 Live World & Betting.  Betting schedules, tickets,
+            # horse races and live-game reservations are persistent so a restart
+            # cannot lose stakes or duplicate settlements.
+            await db.execute(
+                """CREATE TABLE IF NOT EXISTS betting_matches (
+                    match_id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id INTEGER NOT NULL,
+                    cycle_key TEXT NOT NULL, league TEXT NOT NULL, home TEXT NOT NULL, away TEXT NOT NULL,
+                    home_rating INTEGER NOT NULL, away_rating INTEGER NOT NULL, kickoff_at TEXT NOT NULL,
+                    odds_json TEXT NOT NULL, seed TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'open',
+                    home_score INTEGER, away_score INTEGER, ht_home INTEGER, ht_away INTEGER, settled_at TEXT,
+                    UNIQUE(guild_id,cycle_key,league,home,away)
+                )"""
+            )
+            await db.execute("CREATE INDEX IF NOT EXISTS idx_betting_matches_cycle ON betting_matches(guild_id,cycle_key,kickoff_at)")
+            await db.execute("CREATE INDEX IF NOT EXISTS idx_betting_matches_due ON betting_matches(guild_id,status,kickoff_at)")
+            await db.execute(
+                """CREATE TABLE IF NOT EXISTS betting_draft_legs (
+                    guild_id INTEGER NOT NULL, user_id INTEGER NOT NULL, match_id INTEGER NOT NULL,
+                    market_key TEXT NOT NULL, selection_key TEXT NOT NULL, label TEXT NOT NULL, odds REAL NOT NULL,
+                    added_at TEXT NOT NULL, PRIMARY KEY(guild_id,user_id,match_id),
+                    FOREIGN KEY(match_id) REFERENCES betting_matches(match_id) ON DELETE CASCADE
+                )"""
+            )
+            await db.execute(
+                """CREATE TABLE IF NOT EXISTS betting_tickets (
+                    ticket_id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id INTEGER NOT NULL, user_id INTEGER NOT NULL,
+                    bet_type TEXT NOT NULL, system_k INTEGER, stake_unit INTEGER NOT NULL, total_stake INTEGER NOT NULL,
+                    combined_odds REAL NOT NULL DEFAULT 1, potential_payout INTEGER NOT NULL DEFAULT 0,
+                    payout INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'open',
+                    created_at TEXT NOT NULL, settled_at TEXT
+                )"""
+            )
+            await db.execute("CREATE INDEX IF NOT EXISTS idx_betting_tickets_user ON betting_tickets(guild_id,user_id,created_at DESC)")
+            await db.execute("CREATE INDEX IF NOT EXISTS idx_betting_tickets_open ON betting_tickets(guild_id,status,ticket_id)")
+            await db.execute(
+                """CREATE TABLE IF NOT EXISTS betting_ticket_legs (
+                    ticket_id INTEGER NOT NULL, leg_index INTEGER NOT NULL, match_id INTEGER NOT NULL,
+                    market_key TEXT NOT NULL, selection_key TEXT NOT NULL, label TEXT NOT NULL, odds REAL NOT NULL,
+                    result TEXT NOT NULL DEFAULT 'pending', PRIMARY KEY(ticket_id,leg_index),
+                    FOREIGN KEY(ticket_id) REFERENCES betting_tickets(ticket_id) ON DELETE CASCADE,
+                    FOREIGN KEY(match_id) REFERENCES betting_matches(match_id) ON DELETE RESTRICT
+                )"""
+            )
+            await db.execute(
+                """CREATE TABLE IF NOT EXISTS horse_races (
+                    race_id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id INTEGER NOT NULL, race_key TEXT NOT NULL,
+                    starts_at TEXT NOT NULL, closes_at TEXT NOT NULL, horses_json TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'open', result_json TEXT, settled_at TEXT,
+                    UNIQUE(guild_id,race_key)
+                )"""
+            )
+            await db.execute("CREATE INDEX IF NOT EXISTS idx_horse_races_due ON horse_races(guild_id,status,starts_at)")
+            await db.execute(
+                """CREATE TABLE IF NOT EXISTS horse_bets (
+                    bet_id INTEGER PRIMARY KEY AUTOINCREMENT, race_id INTEGER NOT NULL, guild_id INTEGER NOT NULL, user_id INTEGER NOT NULL,
+                    horse_index INTEGER NOT NULL, market TEXT NOT NULL, odds REAL NOT NULL, stake INTEGER NOT NULL,
+                    payout INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'open', created_at TEXT NOT NULL, settled_at TEXT,
+                    FOREIGN KEY(race_id) REFERENCES horse_races(race_id) ON DELETE CASCADE
+                )"""
+            )
+            await db.execute("CREATE INDEX IF NOT EXISTS idx_horse_bets_user ON horse_bets(guild_id,user_id,created_at DESC)")
+            await db.execute(
+                """CREATE TABLE IF NOT EXISTS live_game_sessions (
+                    session_id TEXT PRIMARY KEY, guild_id INTEGER NOT NULL, user_id INTEGER NOT NULL,
+                    game TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'active', stake INTEGER NOT NULL DEFAULT 0,
+                    reward INTEGER NOT NULL DEFAULT 0, stage INTEGER NOT NULL DEFAULT 0, data_json TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL, updated_at TEXT NOT NULL, finished_at TEXT
+                )"""
+            )
+            await db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_live_game_active_user ON live_game_sessions(guild_id,user_id) WHERE status='active'")
+            await db.execute(
+                """CREATE TABLE IF NOT EXISTS poker_tables (
+                    table_id TEXT PRIMARY KEY, guild_id INTEGER NOT NULL, channel_id INTEGER NOT NULL, message_id INTEGER,
+                    owner_id INTEGER NOT NULL, buy_in INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'lobby',
+                    created_at TEXT NOT NULL, updated_at TEXT NOT NULL, finished_at TEXT
+                )"""
+            )
+            await db.execute(
+                """CREATE TABLE IF NOT EXISTS poker_players (
+                    table_id TEXT NOT NULL, user_id INTEGER NOT NULL, seat INTEGER NOT NULL, reserved INTEGER NOT NULL DEFAULT 0,
+                    payout INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'joined',
+                    PRIMARY KEY(table_id,user_id), FOREIGN KEY(table_id) REFERENCES poker_tables(table_id) ON DELETE CASCADE
+                )"""
+            )
             await db.execute("PRAGMA optimize")
             await db.commit()
 
+    async def get_starting_balance(self, guild_id: int, db: aiosqlite.Connection | None = None) -> int:
+        """Return the guild-scoped starting wallet balance.
+
+        DB guild_state is authoritative; ``self.starting_balance`` remains the
+        install-level fallback for servers that never changed the setting.
+        Passing an existing connection avoids nested SQLite connections inside
+        atomic service transactions.
+        """
+        if db is None:
+            raw = await self.get_guild_state(guild_id, "economy_starting_balance")
+        else:
+            cursor = await db.execute(
+                "SELECT value FROM guild_state WHERE guild_id=? AND key='economy_starting_balance'",
+                (guild_id,),
+            )
+            row = await cursor.fetchone()
+            raw = str(row[0]) if row else None
+        try:
+            value = self.starting_balance if raw is None or not str(raw).strip() else int(str(raw))
+        except (TypeError, ValueError):
+            value = self.starting_balance
+        return max(0, min(10**15, int(value)))
+
     async def ensure_user(self, guild_id: int, user_id: int) -> None:
         now = datetime.now(timezone.utc).isoformat()
+        starting_balance = await self.get_starting_balance(guild_id)
         async with aiosqlite.connect(self.path) as db:
             await db.execute(
                 """
@@ -1029,7 +1138,7 @@ class Database:
                     (guild_id, user_id, wallet, bank, created_at)
                 VALUES (?, ?, ?, 0, ?)
                 """,
-                (guild_id, user_id, self.starting_balance, now),
+                (guild_id, user_id, starting_balance, now),
             )
             await db.commit()
 
@@ -1044,6 +1153,23 @@ class Database:
         if row is None:
             raise RuntimeError("A felhasználó létrehozása sikertelen volt.")
         return int(row[0]), int(row[1])
+
+    async def has_active_live_session(self, guild_id: int, user_id: int, game: str | None = None) -> bool:
+        """Return whether a user currently has an active Live World session.
+
+        Economy guards (for example Rob protection during MÁV Crash) use this
+        DB-level lookup so protection does not depend on in-memory Cog state.
+        """
+        query = "SELECT 1 FROM live_game_sessions WHERE guild_id=? AND user_id=? AND status='active'"
+        params: list[object] = [guild_id, user_id]
+        if game is not None:
+            query += " AND game=?"
+            params.append(game)
+        query += " LIMIT 1"
+        async with aiosqlite.connect(self.path) as db:
+            cursor = await db.execute(query, tuple(params))
+            row = await cursor.fetchone()
+        return row is not None
 
     async def get_profile(self, guild_id: int, user_id: int) -> dict[str, int | str]:
         await self.ensure_user(guild_id, user_id)
@@ -1124,6 +1250,98 @@ class Database:
             )
             await db.commit()
         return new_wallet
+
+    async def debit_wallet_and_bank(self, guild_id: int, user_id: int, amount: int, reason: str) -> tuple[int, int, int, int]:
+        """Atomically spend from wallet first, then bank, without requiring a manual withdraw.
+
+        Returns ``(wallet_used, bank_used, new_wallet, new_bank)``.  This is used by
+        paid community events so a bank-funded entry remains one auditable economy loss
+        rather than a fake withdraw followed by a wallet debit.
+        """
+        if amount <= 0:
+            raise ValueError("Az összegnek pozitívnak kell lennie.")
+        await self.ensure_user(guild_id, user_id)
+        now = datetime.now(timezone.utc).isoformat()
+        async with aiosqlite.connect(self.path) as db:
+            await db.execute("BEGIN IMMEDIATE")
+            cursor = await db.execute(
+                "SELECT wallet, bank FROM users WHERE guild_id = ? AND user_id = ?",
+                (guild_id, user_id),
+            )
+            row = await cursor.fetchone()
+            if row is None:
+                await db.rollback()
+                raise RuntimeError("A felhasználó nem található.")
+            wallet, bank = int(row[0]), int(row[1])
+            wallet_available = max(0, wallet)
+            bank_available = max(0, bank)
+            if wallet_available + bank_available < amount:
+                await db.rollback()
+                raise ValueError("Nincs elég pénzed a tárcában és a bankban összesen.")
+            wallet_used = min(wallet_available, amount)
+            bank_used = amount - wallet_used
+            new_wallet = wallet - wallet_used
+            new_bank = bank - bank_used
+            await db.execute(
+                "UPDATE users SET wallet = ?, bank = ?, money_lost = money_lost + ? WHERE guild_id = ? AND user_id = ?",
+                (new_wallet, new_bank, amount, guild_id, user_id),
+            )
+            await db.execute(
+                """INSERT INTO user_statistics (guild_id, user_id, stat_name, value, updated_at)
+                   VALUES (?, ?, 'economy.lost', ?, ?)
+                   ON CONFLICT(guild_id, user_id, stat_name) DO UPDATE SET
+                       value = value + excluded.value, updated_at = excluded.updated_at""",
+                (guild_id, user_id, amount, now),
+            )
+            await db.execute(
+                "INSERT INTO transactions (guild_id, user_id, amount, reason, created_at) VALUES (?, ?, ?, ?, ?)",
+                (guild_id, user_id, -amount, reason, now),
+            )
+            await db.commit()
+        return wallet_used, bank_used, new_wallet, new_bank
+
+    async def refund_wallet_and_bank(
+        self,
+        guild_id: int,
+        user_id: int,
+        wallet_amount: int,
+        bank_amount: int,
+        reason: str,
+    ) -> tuple[int, int]:
+        """Reverse ``debit_wallet_and_bank`` to the original funding sources."""
+        wallet_amount = max(0, int(wallet_amount))
+        bank_amount = max(0, int(bank_amount))
+        amount = wallet_amount + bank_amount
+        if amount <= 0:
+            raise ValueError("A visszatérítés összege pozitív legyen.")
+        await self.ensure_user(guild_id, user_id)
+        now = datetime.now(timezone.utc).isoformat()
+        async with aiosqlite.connect(self.path) as db:
+            await db.execute("BEGIN IMMEDIATE")
+            await db.execute(
+                """UPDATE users
+                   SET wallet = wallet + ?, bank = bank + ?,
+                       money_lost = MAX(0, money_lost - ?)
+                   WHERE guild_id = ? AND user_id = ?""",
+                (wallet_amount, bank_amount, amount, guild_id, user_id),
+            )
+            await db.execute(
+                """UPDATE user_statistics
+                   SET value = MAX(0, value - ?), updated_at = ?
+                   WHERE guild_id = ? AND user_id = ? AND stat_name = 'economy.lost'""",
+                (amount, now, guild_id, user_id),
+            )
+            await db.execute(
+                "INSERT INTO transactions (guild_id, user_id, amount, reason, created_at) VALUES (?, ?, ?, ?, ?)",
+                (guild_id, user_id, amount, reason, now),
+            )
+            cursor = await db.execute(
+                "SELECT wallet, bank FROM users WHERE guild_id = ? AND user_id = ?",
+                (guild_id, user_id),
+            )
+            row = await cursor.fetchone()
+            await db.commit()
+        return (int(row[0]), int(row[1])) if row else (wallet_amount, bank_amount)
 
     async def refund_wallet(self, guild_id: int, user_id: int, amount: int, reason: str) -> int:
         """Visszatérítés korábban levont összeghez, economy/progression farm nélkül.
@@ -1453,8 +1671,20 @@ class Database:
         return int(row[0]) if row else amount
 
     async def add_progression_xp(self, guild_id: int, user_id: int, amount: int, source: str) -> int:
-        """Aktivitás-alapú progression XP jóváírás, pénztől teljesen függetlenül."""
+        """Aktivitás-alapú progression XP jóváírás, pénztől teljesen függetlenül.
+
+        A szerver DB-ben tárolt progression XP szorzó az elsődleges; a kódbeli
+        balance csak fallback. Így minden XP-forrás automatikusan ugyanazt a
+        /settings értéket használja.
+        """
         amount = int(amount)
+        raw_multiplier = await self.get_guild_state(guild_id, "progression_xp_multiplier_percent")
+        try:
+            multiplier_percent = 100 if raw_multiplier is None or not str(raw_multiplier).strip() else int(raw_multiplier)
+        except (TypeError, ValueError):
+            multiplier_percent = 100
+        multiplier_percent = max(0, min(1000, multiplier_percent))
+        amount = int(round(amount * (multiplier_percent / 100.0)))
         if amount <= 0:
             profile = await self.get_profile(guild_id, user_id)
             return int(profile.get("xp_points", 0))
@@ -1510,7 +1740,7 @@ class Database:
         return int(row[0]) if row else value
 
     async def get_timestamp(self, guild_id: int, user_id: int, column: str) -> datetime | None:
-        allowed = {"last_daily", "last_beg", "last_search", "last_slut", "last_work", "last_crime", "last_rob", "last_role_income", "last_weekly", "last_monthly", "last_interest", "last_invest"}
+        allowed = {"last_daily", "last_beg", "last_search", "last_slut", "last_work", "last_crime", "last_rob", "last_role_income", "last_weekly", "last_monthly", "last_interest", "last_invest", "last_withdraw"}
         if column not in allowed:
             raise ValueError("Érvénytelen időbélyeg oszlop.")
         await self.ensure_user(guild_id, user_id)
@@ -1522,7 +1752,7 @@ class Database:
         return datetime.fromisoformat(str(row[0]))
 
     async def set_timestamp(self, guild_id: int, user_id: int, column: str, value: datetime) -> None:
-        allowed = {"last_daily", "last_beg", "last_search", "last_slut", "last_work", "last_crime", "last_rob", "last_role_income", "last_weekly", "last_monthly", "last_interest", "last_invest"}
+        allowed = {"last_daily", "last_beg", "last_search", "last_slut", "last_work", "last_crime", "last_rob", "last_role_income", "last_weekly", "last_monthly", "last_interest", "last_invest", "last_withdraw"}
         if column not in allowed:
             raise ValueError("Érvénytelen időbélyeg oszlop.")
         await self.ensure_user(guild_id, user_id)
@@ -1539,6 +1769,25 @@ class Database:
             await db.execute(f"UPDATE users SET {column} = {column} + ? WHERE guild_id = ? AND user_id = ?", (amount, guild_id, user_id))
             await db.commit()
 
+    async def _assert_no_active_mav_tx(self, db: aiosqlite.Connection, guild_id: int, *user_ids: int) -> None:
+        """Transaction-level MÁV/Rob exclusion.
+
+        EconomyService has fast user-facing guards, but only this check closes
+        the race where a MÁV session starts between that guard and the actual
+        wallet transfer. Call only inside BEGIN IMMEDIATE.
+        """
+        ids=tuple({int(x) for x in user_ids})
+        if not ids:
+            return
+        placeholders=",".join("?" for _ in ids)
+        cur=await db.execute(
+            f"SELECT user_id FROM live_game_sessions WHERE guild_id=? AND game='mav' AND status='active' AND user_id IN ({placeholders}) LIMIT 1",
+            (guild_id,*ids),
+        )
+        row=await cur.fetchone()
+        if row is not None:
+            raise ValueError("Aktív MÁV Crash kör közben a Rob pénzmozgás tiltva van.")
+
     async def rob_wallet(self, guild_id: int, robber_id: int, victim_id: int, amount: int) -> tuple[int, int]:
         if amount <= 0:
             raise ValueError("Az összegnek pozitívnak kell lennie.")
@@ -1547,6 +1796,11 @@ class Database:
         now = datetime.now(timezone.utc).isoformat()
         async with aiosqlite.connect(self.path) as db:
             await db.execute("BEGIN IMMEDIATE")
+            try:
+                await self._assert_no_active_mav_tx(db, guild_id, robber_id, victim_id)
+            except Exception:
+                await db.rollback()
+                raise
             cursor = await db.execute("SELECT wallet FROM users WHERE guild_id = ? AND user_id = ?", (guild_id, victim_id))
             victim = await cursor.fetchone()
             victim_wallet = int(victim[0]) if victim else 0
@@ -1574,6 +1828,11 @@ class Database:
         now = datetime.now(timezone.utc).isoformat()
         async with aiosqlite.connect(self.path) as db:
             await db.execute("BEGIN IMMEDIATE")
+            try:
+                await self._assert_no_active_mav_tx(db, guild_id, robber_id, victim_id)
+            except Exception:
+                await db.rollback()
+                raise
             # A rablási bírság valódi tartozás: akkor is teljes egészében levonjuk,
             # ha a játékos előtte a bankba rakta a pénzét. A tárca ilyenkor
             # negatívba mehet; normál vásárlás/fogadás továbbra sem engedett hitelből.
@@ -2124,6 +2383,233 @@ class Database:
             "jackpot_contribution": contribution, "house_loss": house_loss, "settled_at": now,
             "idempotent": False,
         }
+
+    async def settle_casino_batch_immediate(
+        self,
+        *,
+        guild_id: int,
+        user_id: int,
+        game: str,
+        bet: int,
+        entries: list[dict],
+        config_snapshot: dict | None = None,
+        jackpot_rate: float = 0.0,
+        house_loss_eligible: bool = True,
+    ) -> list[dict]:
+        """Atomically reserve and settle a fixed-size Casino batch.
+
+        This is used by batch-style games such as Plinko where 1/2/3/5/10
+        independent balls belong to one user action.  All stakes are checked
+        against *wallet only* up-front and the whole batch commits in one SQLite
+        transaction.  Every ball still receives its own casino_session, ledger
+        entries and gambling statistics so history/stats remain per-play.
+
+        A transaction failure rolls the entire batch back: there can never be a
+        partially charged batch.  The caller may safely render only after this
+        method returns because money is already final at that point.
+        """
+        bet = int(bet)
+        if bet <= 0:
+            raise ValueError("A tétnek pozitívnak kell lennie.")
+        if not entries:
+            raise ValueError("Az üres Casino batch nem elszámolható.")
+        if len(entries) > 100:
+            raise ValueError("Túl nagy Casino batch.")
+
+        normalized: list[dict] = []
+        game_ids: list[str] = []
+        for raw in entries:
+            game_id = str(raw.get("game_id", "")).strip()
+            if not game_id:
+                raise ValueError("Hiányzó Casino Game ID a batchben.")
+            payout = int(raw.get("payout", 0))
+            multiplier = float(raw.get("multiplier", 0.0))
+            result = str(raw.get("result", ""))
+            if payout < 0:
+                raise ValueError("A payout nem lehet negatív.")
+            if multiplier < 0:
+                raise ValueError("A multiplier nem lehet negatív.")
+            game_ids.append(game_id)
+            normalized.append({
+                "game_id": game_id,
+                "payout": payout,
+                "multiplier": multiplier,
+                "result": result,
+            })
+        if len(set(game_ids)) != len(game_ids):
+            raise ValueError("Casino Game ID ütközés a batchen belül.")
+
+        await self.ensure_user(guild_id, user_id)
+        now = datetime.now(timezone.utc).isoformat()
+        config_json = json.dumps(config_snapshot or {}, ensure_ascii=False, sort_keys=True)
+        total_bet = bet * len(normalized)
+
+        async with aiosqlite.connect(self.path) as db:
+            await db.execute("PRAGMA foreign_keys=ON;")
+            await db.execute("BEGIN IMMEDIATE")
+
+            placeholders = ",".join("?" for _ in game_ids)
+            existing = await db.execute(
+                f"SELECT game_id FROM casino_sessions WHERE game_id IN ({placeholders}) LIMIT 1",
+                tuple(game_ids),
+            )
+            if await existing.fetchone() is not None:
+                await db.rollback()
+                raise ValueError("Casino Game ID ütközés. Próbáld újra.")
+
+            active = await db.execute(
+                """SELECT game_id FROM casino_sessions
+                   WHERE guild_id=? AND user_id=? AND status IN ('ACTIVE','WAITING_INPUT','SETTLING')
+                   LIMIT 1""",
+                (guild_id, user_id),
+            )
+            if await active.fetchone() is not None:
+                await db.rollback()
+                raise ValueError("Már fut egy Casino játékod. Várd meg, amíg befejeződik.")
+
+            pvp = await db.execute(
+                """SELECT id FROM pvp_duels
+                   WHERE guild_id=? AND status='accepted' AND (challenger_id=? OR target_id=?)
+                   LIMIT 1""",
+                (guild_id, user_id, user_id),
+            )
+            if await pvp.fetchone() is not None:
+                await db.rollback()
+                raise ValueError("Már fut egy Casino játékod. Várd meg, amíg befejeződik.")
+
+            wallet_cursor = await db.execute(
+                "SELECT wallet FROM users WHERE guild_id=? AND user_id=?",
+                (guild_id, user_id),
+            )
+            wallet_row = await wallet_cursor.fetchone()
+            wallet = int(wallet_row[0]) if wallet_row else 0
+            if wallet < total_bet:
+                await db.rollback()
+                raise ValueError("Nincs elég pénz a tárcádban a teljes Plinko batchhez.")
+
+            # Reserve the complete batch first.  This preserves the UX promise
+            # that N BALL requires N × bet in wallet before any ball is played.
+            reserved_balance = wallet
+            for entry in normalized:
+                reserved_balance -= bet
+                await db.execute(
+                    """INSERT INTO casino_sessions
+                       (game_id,guild_id,user_id,game,status,bet,payout,profit,multiplier,result,config_json,wallet_after,created_at,updated_at,settled_at)
+                       VALUES (?,?,?,?, 'SETTLING', ?,0,0,0,'',?,?,?, ?,NULL)""",
+                    (entry["game_id"], guild_id, user_id, game, bet, config_json, reserved_balance, now, now),
+                )
+                await db.execute(
+                    """INSERT INTO casino_ledger
+                       (game_id,guild_id,user_id,entry_type,entry_key,amount,balance_after,metadata_json,created_at)
+                       VALUES (?,?,?,?,?,?,?,?,?)""",
+                    (entry["game_id"], guild_id, user_id, "BET_RESERVED", "reserve:base", -bet, reserved_balance, "{}", now),
+                )
+                await db.execute(
+                    "INSERT INTO transactions (guild_id,user_id,amount,reason,created_at) VALUES (?,?,?,?,?)",
+                    (guild_id, user_id, -bet, f"casino_reserve:{game}:{entry['game_id']}", now),
+                )
+
+            settlement_balance = reserved_balance
+            total_profit = 0
+            win_count = 0
+            total_contribution = 0
+            total_house_loss = 0
+            month = datetime.now(timezone.utc).strftime("%Y-%m")
+            output: list[dict] = []
+
+            for entry in normalized:
+                payout = int(entry["payout"])
+                profit = payout - bet
+                won = profit > 0
+                settlement_balance += payout
+                total_profit += profit
+                win_count += 1 if won else 0
+
+                await self._record_gamble_stats_tx(
+                    db, guild_id, user_id, game, bet, profit, won, now,
+                    payout=payout, multiplier=float(entry["multiplier"]),
+                )
+                await db.execute(
+                    """INSERT INTO casino_ledger
+                       (game_id,guild_id,user_id,entry_type,entry_key,amount,balance_after,metadata_json,created_at)
+                       VALUES (?,?,?,?,?,?,?,?,?)""",
+                    (
+                        entry["game_id"], guild_id, user_id, "PAYOUT", "settlement", payout, settlement_balance,
+                        json.dumps({"result": entry["result"], "multiplier": entry["multiplier"]}, ensure_ascii=False, sort_keys=True),
+                        now,
+                    ),
+                )
+                await db.execute(
+                    "INSERT INTO transactions (guild_id,user_id,amount,reason,created_at) VALUES (?,?,?,?,?)",
+                    (guild_id, user_id, payout, f"casino_payout:{game}:{entry['game_id']}", now),
+                )
+
+                house_loss = max(0, -profit)
+                contribution = 0
+                if house_loss_eligible and house_loss > 0 and jackpot_rate > 0:
+                    contribution = max(0, int(house_loss * jackpot_rate))
+                    total_contribution += contribution
+                    total_house_loss += house_loss
+                    await db.execute(
+                        """INSERT INTO casino_ledger
+                           (game_id,guild_id,user_id,entry_type,entry_key,amount,balance_after,metadata_json,created_at)
+                           VALUES (?,?,?,?,?,?,?,?,?)""",
+                        (
+                            entry["game_id"], guild_id, user_id, "JACKPOT_CONTRIBUTION", "jackpot", contribution,
+                            settlement_balance,
+                            json.dumps({"house_loss": house_loss, "rate": jackpot_rate}, sort_keys=True), now,
+                        ),
+                    )
+
+                await db.execute(
+                    """UPDATE casino_sessions
+                       SET status='SETTLED', payout=?, profit=?, multiplier=?, result=?, wallet_after=?, updated_at=?, settled_at=?
+                       WHERE game_id=?""",
+                    (
+                        payout, profit, float(entry["multiplier"]), entry["result"], settlement_balance,
+                        now, now, entry["game_id"],
+                    ),
+                )
+                output.append({
+                    "game_id": entry["game_id"], "guild_id": guild_id, "user_id": user_id, "game": game,
+                    "status": "SETTLED", "bet": bet, "payout": payout, "profit": profit,
+                    "multiplier": float(entry["multiplier"]), "result": entry["result"],
+                    "wallet_after": settlement_balance, "jackpot_contribution": contribution,
+                    "house_loss": house_loss, "settled_at": now, "idempotent": False,
+                })
+
+            await db.execute(
+                """UPDATE users
+                   SET wallet=?, gambling_profit=gambling_profit+?, game_wins=game_wins+?
+                   WHERE guild_id=? AND user_id=?""",
+                (settlement_balance, total_profit, win_count, guild_id, user_id),
+            )
+
+            if house_loss_eligible and total_house_loss > 0 and jackpot_rate > 0:
+                await db.execute(
+                    """INSERT INTO casino_monthly_jackpot
+                       (guild_id,month,pool,total_house_loss,total_contributed,updated_at)
+                       VALUES (?,?,?,?,?,?)
+                       ON CONFLICT(guild_id,month) DO UPDATE SET
+                           pool=pool+excluded.pool,
+                           total_house_loss=total_house_loss+excluded.total_house_loss,
+                           total_contributed=total_contributed+excluded.total_contributed,
+                           updated_at=excluded.updated_at""",
+                    (guild_id, month, total_contribution, total_house_loss, total_contribution, now),
+                )
+                await db.execute(
+                    """INSERT INTO casino_monthly_user_contrib
+                       (guild_id,month,user_id,contributed,house_loss,updated_at)
+                       VALUES (?,?,?,?,?,?)
+                       ON CONFLICT(guild_id,month,user_id) DO UPDATE SET
+                           contributed=contributed+excluded.contributed,
+                           house_loss=house_loss+excluded.house_loss,
+                           updated_at=excluded.updated_at""",
+                    (guild_id, month, user_id, total_contribution, total_house_loss, now),
+                )
+
+            await db.commit()
+        return output
 
     async def refund_casino_session(self, game_id: str, reason: str = "cancelled") -> dict:
         """Refund an unfinished session exactly once."""
@@ -2793,6 +3279,7 @@ class Database:
     ) -> dict[str, int]:
         """Atomikus prestige reset. Prémium reward itemeket és lifetime adatokat megőrzi."""
         await self.ensure_user(guild_id, user_id)
+        starting_balance = await self.get_starting_balance(guild_id)
         now = datetime.now(timezone.utc).isoformat()
         async with aiosqlite.connect(self.path) as db:
             await db.execute("PRAGMA foreign_keys=ON;")
@@ -2847,7 +3334,7 @@ class Database:
 
                 await db.execute(
                     "UPDATE users SET wallet=?, bank=0, xp_points=0 WHERE guild_id=? AND user_id=?",
-                    (self.starting_balance, guild_id, user_id),
+                    (starting_balance, guild_id, user_id),
                 )
                 await db.execute(
                     """INSERT INTO user_prestige
@@ -4249,6 +4736,7 @@ class Database:
         and premium reward purchase transactions/items. Reset: money, level XP, normal inventory,
         boosters, market, quests, prestige, Crew bank/levels/contributions and economy-value stats.
         """
+        starting_balance = await self.get_starting_balance(guild_id)
         async with aiosqlite.connect(self.path) as db:
             await db.execute("PRAGMA foreign_keys=ON;")
             await db.execute("BEGIN IMMEDIATE")
@@ -4265,7 +4753,7 @@ class Database:
                        money_earned=0,money_lost=0,xp_points=0,selected_title='Kezdő',
                        investment_profit=0,rob_profit=0,gambling_profit=0
                        WHERE guild_id=?""",
-                    (self.starting_balance, guild_id),
+                    (starting_balance, guild_id),
                 )
 
                 # Normal inventory disappears, but already purchased real rewards stay.
@@ -4369,7 +4857,7 @@ class Database:
 
         A shop katalógus, role income konfiguráció és moderációs adatok megmaradnak.
         A felhasználók a következő economy parancsnál új játékosként jönnek létre
-        a konfigurált STARTING_BALANCE értékkel.
+        a szerver `/settings` kezdőegyenlegével (vagy annak kódbeli fallbackjével).
         """
         async with aiosqlite.connect(self.path) as db:
             await db.execute("PRAGMA foreign_keys=ON;")
@@ -4383,6 +4871,15 @@ class Database:
                 "active_boosters",
                 "lottery_history",
                 "lottery_entries",
+                "betting_ticket_legs",
+                "betting_tickets",
+                "betting_draft_legs",
+                "horse_bets",
+                "horse_races",
+                "live_game_sessions",
+                "poker_players",
+                "poker_tables",
+                "betting_matches",
                 "casino_ledger",
                 "casino_sessions",
                 "casino_monthly_user_contrib",
