@@ -16,6 +16,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: yoru-v373-w122-grounded-ai
@@ -24,9 +25,12 @@ concurrency:
 jobs:
   grounded-ai-contracts:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 25
     env:
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      PYTHONUNBUFFERED: '1'
+      ARTIFACT_NAME: yoru-v373-w122-grounded-ai-lab
+      OUT_DIR: artifacts/ai_grounded_scenario_lab
 
     steps:
       - name: Checkout repository
@@ -39,56 +43,39 @@ jobs:
 
       - name: Initialize W12.2 diagnostics
         run: |
-          mkdir -p artifacts/ai_grounded_scenario_lab
+          mkdir -p "$OUT_DIR"
           {
-            echo "W12.2 EARLY DIAGNOSTICS"
+            echo "W12.2 FAST/RESUME DIAGNOSTICS"
             echo "commit=${GITHUB_SHA}"
+            echo "run_id=${GITHUB_RUN_ID}"
             echo "runner_os=${RUNNER_OS}"
             python --version
-            echo "fixture_parts:"
-            ls -l .ci/v373_ai_grounded_lab/fixture.part*.b64 || true
-            echo "fixture_part_hashes:"
-            sha256sum .ci/v373_ai_grounded_lab/fixture.part*.b64 || true
-          } | tee artifacts/ai_grounded_scenario_lab/W12_2_EARLY_DIAGNOSTICS.txt
+          } | tee "$OUT_DIR/W12_2_EARLY_DIAGNOSTICS.txt"
 
       - name: Restore and verify frozen W12.2 fixture
-        shell: bash
         run: |
-          set +e
-          python .ci/v373_ai_grounded_lab/bootstrap.py --out .ci/v373_ai_grounded_lab/runtime 2>&1 | tee artifacts/ai_grounded_scenario_lab/W12_2_BOOTSTRAP.log
-          code=${PIPESTATUS[0]}
-          echo "bootstrap_exit_code=${code}" | tee -a artifacts/ai_grounded_scenario_lab/W12_2_EARLY_DIAGNOSTICS.txt
-          exit "$code"
+          echo "fixture_parts:" | tee -a "$OUT_DIR/W12_2_EARLY_DIAGNOSTICS.txt"
+          ls -l .ci/v373_ai_grounded_lab/fixture.part*.b64 | tee -a "$OUT_DIR/W12_2_EARLY_DIAGNOSTICS.txt"
+          sha256sum .ci/v373_ai_grounded_lab/fixture.part*.b64 | tee -a "$OUT_DIR/W12_2_EARLY_DIAGNOSTICS.txt"
+          python -u .ci/v373_ai_grounded_lab/bootstrap.py --out .ci/v373_ai_grounded_lab/runtime | tee "$OUT_DIR/W12_2_BOOTSTRAP.log"
 
       - name: Contract tests
-        shell: bash
-        run: |
-          set +e
-          python .ci/v373_ai_grounded_lab/runtime/contract_test.py 2>&1 | tee artifacts/ai_grounded_scenario_lab/W12_2_CONTRACT_TEST.log
-          code=${PIPESTATUS[0]}
-          echo "contract_exit_code=${code}" | tee -a artifacts/ai_grounded_scenario_lab/W12_2_EARLY_DIAGNOSTICS.txt
-          exit "$code"
+        run: python -u .ci/v373_ai_grounded_lab/runtime/contract_test.py | tee "$OUT_DIR/W12_2_CONTRACT_TEST.log"
 
       - name: Compile and dry-run
-        shell: bash
         run: |
-          set +e
-          {
-            python -m py_compile .ci/v373_ai_grounded_lab/runtime/runner.py && \
-            python .ci/v373_ai_grounded_lab/runtime/runner.py \
-              --dry-run \
-              --model "${{ inputs.model }}" \
-              --reasoning-effort "${{ inputs.reasoning_effort }}" \
-              --out-dir artifacts/ai_grounded_scenario_lab
-          } 2>&1 | tee artifacts/ai_grounded_scenario_lab/W12_2_DRY_RUN.log
-          code=${PIPESTATUS[0]}
-          echo "dry_run_exit_code=${code}" | tee -a artifacts/ai_grounded_scenario_lab/W12_2_EARLY_DIAGNOSTICS.txt
-          exit "$code"
+          python -m py_compile .ci/v373_ai_grounded_lab/runtime/runner.py
+          python -u .ci/v373_ai_grounded_lab/runtime/runner.py \
+            --dry-run \
+            --model "${{ inputs.model }}" \
+            --reasoning-effort "${{ inputs.reasoning_effort }}" \
+            --out-dir "$OUT_DIR" \
+            | tee "$OUT_DIR/W12_2_DRY_RUN.log"
 
       - name: Require Groq secret
         run: |
           if [ -z "$GROQ_API_KEY" ]; then
-            echo "Missing repository secret GROQ_API_KEY" | tee artifacts/ai_grounded_scenario_lab/W12_2_SECRET_CHECK.log
+            echo "Missing repository secret GROQ_API_KEY" | tee "$OUT_DIR/W12_2_SECRET_CHECK.log"
             exit 1
           fi
 
@@ -98,68 +85,98 @@ jobs:
         run: |
           python - <<'PY'
           import json, os, pathlib, urllib.error, urllib.request
-          out = pathlib.Path("artifacts/ai_grounded_scenario_lab")
+          out = pathlib.Path(os.environ["OUT_DIR"])
           model, key = os.environ["MODEL"], os.environ["GROQ_API_KEY"]
-          body = {"model": model, "messages": [{"role": "user", "content": "Válaszolj pontosan: OK"}], "max_completion_tokens": 8}
+          body = {"model": model, "messages": [{"role": "user", "content": "Válaszolj pontosan: OK"}], "reasoning_effort": "low", "include_reasoning": False, "max_completion_tokens": 8}
           req = urllib.request.Request(
               "https://api.groq.com/openai/v1/chat/completions",
               data=json.dumps(body).encode("utf-8"),
-              headers={
-                  "Authorization": f"Bearer {key}",
-                  "Content-Type": "application/json",
-                  "Accept": "application/json",
-                  "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
-              },
+              headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json", "Accept": "application/json", "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/140 Safari/537.36"},
               method="POST",
           )
           try:
-              with urllib.request.urlopen(req, timeout=30) as response:
+              with urllib.request.urlopen(req, timeout=20) as response:
                   payload = json.loads(response.read().decode("utf-8"))
               report = {"status": "PASS", "model": model, "http_status": 200, "response_id": payload.get("id", "")}
               out.joinpath("GROQ_PROBE_RESULT.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-              out.joinpath("GROQ_PROBE_RESULT.txt").write_text(
-                  f"STATUS: PASS\nmodel={model}\nhttp_status=200\nresponse_id={payload.get('id','')}\n",
-                  encoding="utf-8",
-              )
+              out.joinpath("GROQ_PROBE_RESULT.txt").write_text(f"STATUS: PASS\nmodel={model}\nhttp_status=200\nresponse_id={payload.get('id','')}\n", encoding="utf-8")
               print(f"Groq probe PASS: model={model}")
           except urllib.error.HTTPError as exc:
               error_body = exc.read().decode("utf-8", "replace")
-              try:
-                  parsed = json.loads(error_body)
-              except Exception:
-                  parsed = {"raw": error_body[:4000]}
-              report = {"status": "FAIL", "model": model, "http_status": exc.code, "reason": str(exc.reason), "groq_error": parsed}
+              report = {"status": "FAIL", "model": model, "http_status": exc.code, "reason": str(exc.reason), "groq_error": error_body[:4000]}
               out.joinpath("GROQ_PROBE_RESULT.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-              out.joinpath("GROQ_PROBE_RESULT.txt").write_text(
-                  f"STATUS: FAIL\nmodel={model}\nhttp_status={exc.code}\nreason={exc.reason}\nerror_body={error_body[:4000]}\n",
-                  encoding="utf-8",
-              )
-              print(error_body[:4000])
-              raise SystemExit(1)
+              out.joinpath("GROQ_PROBE_RESULT.txt").write_text(f"STATUS: FAIL\nmodel={model}\nhttp_status={exc.code}\nreason={exc.reason}\nerror_body={error_body[:4000]}\n", encoding="utf-8")
+              raise
           PY
 
-      - name: Run W12.2 grounded AI lab
+      - name: Find previous W12.2 checkpoint artifact
+        id: resume-source
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          python .ci/v373_ai_grounded_lab/runtime/runner.py \
+          python - <<'PY'
+          import json, os, subprocess
+          repo = os.environ["GITHUB_REPOSITORY"]
+          current = int(os.environ["GITHUB_RUN_ID"])
+          name = os.environ["ARTIFACT_NAME"]
+          raw = subprocess.check_output(["gh", "api", f"repos/{repo}/actions/artifacts?name={name}&per_page=50"], text=True)
+          artifacts = json.loads(raw).get("artifacts", [])
+          candidates = [a for a in artifacts if not a.get("expired") and int((a.get("workflow_run") or {}).get("id", 0)) != current]
+          candidates.sort(key=lambda a: str(a.get("created_at", "")), reverse=True)
+          run_id = int((candidates[0].get("workflow_run") or {}).get("id", 0)) if candidates else 0
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+              fh.write(f"run_id={run_id}\n")
+          print(f"previous_checkpoint_run_id={run_id}")
+          PY
+
+      - name: Restore previous PASS checkpoints
+        if: steps.resume-source.outputs.run_id != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PREVIOUS_RUN_ID: ${{ steps.resume-source.outputs.run_id }}
+        run: |
+          rm -rf /tmp/w122_previous
+          mkdir -p /tmp/w122_previous "$OUT_DIR/checkpoints"
+          gh run download "$PREVIOUS_RUN_ID" -n "$ARTIFACT_NAME" -D /tmp/w122_previous || true
+          restored=0
+          while IFS= read -r -d '' file; do
+            cp "$file" "$OUT_DIR/checkpoints/$(basename "$file")"
+            restored=$((restored + 1))
+          done < <(find /tmp/w122_previous -type f -path '*/checkpoints/*.json' -print0 2>/dev/null)
+          echo "restored_checkpoint_files=${restored}" | tee "$OUT_DIR/W12_2_RESUME.txt"
+
+      - name: Run W12.2 grounded AI lab FAST/RESUME
+        shell: bash
+        run: |
+          set +e
+          python -u .ci/v373_ai_grounded_lab/runtime/runner.py \
             --model "${{ inputs.model }}" \
             --reasoning-effort "${{ inputs.reasoning_effort }}" \
-            --out-dir artifacts/ai_grounded_scenario_lab
+            --timeout 40 \
+            --max-completion-tokens 2200 \
+            --http-retries 1 \
+            --content-retries 0 \
+            --repair-rounds 1 \
+            --max-wall-seconds 1080 \
+            --min-request-budget-seconds 70 \
+            --rate-floor-tokens 3200 \
+            --out-dir "$OUT_DIR" \
+            2>&1 | tee "$OUT_DIR/W12_2_LIVE.log"
+          code=${PIPESTATUS[0]}
+          echo "live_runner_exit_code=${code}" | tee -a "$OUT_DIR/W12_2_EARLY_DIAGNOSTICS.txt"
+          exit "$code"
 
       - name: Print grounded AI report
         if: always()
         run: |
-          test -f artifacts/ai_grounded_scenario_lab/GROQ_PROBE_RESULT.txt && cat artifacts/ai_grounded_scenario_lab/GROQ_PROBE_RESULT.txt || true
-          test -f artifacts/ai_grounded_scenario_lab/YORU_AI_GROUNDED_LAB_RESULT.txt && cat artifacts/ai_grounded_scenario_lab/YORU_AI_GROUNDED_LAB_RESULT.txt || true
+          test -f "$OUT_DIR/W12_2_PROGRESS.txt" && cat "$OUT_DIR/W12_2_PROGRESS.txt" || true
+          test -f "$OUT_DIR/YORU_AI_GROUNDED_LAB_RESULT.txt" && cat "$OUT_DIR/YORU_AI_GROUNDED_LAB_RESULT.txt" || true
 
-      - name: Upload W12.2 artifacts
+      - name: Upload W12.2 artifacts and checkpoints
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: yoru-v373-w122-grounded-ai-lab
-          path: |
-            artifacts/ai_grounded_scenario_lab/*.json
-            artifacts/ai_grounded_scenario_lab/*.txt
-            artifacts/ai_grounded_scenario_lab/*.csv
-            artifacts/ai_grounded_scenario_lab/*.log
+          path: artifacts/ai_grounded_scenario_lab/
           if-no-files-found: warn
           retention-days: 14
