@@ -1,0 +1,92 @@
+name: Yoru v3.72 W10.2 Native Heist Contracts
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.ci/v372_mysql_gate/w10_heist_*'
+      - '.github/workflows/v372-w10-heist-contracts.yml'
+  pull_request:
+    paths:
+      - '.ci/v372_mysql_gate/w10_heist_*'
+      - '.github/workflows/v372-w10-heist-contracts.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: yoru-v372-w10-heist-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  w10-heist:
+    name: Actual v3.72 Heist authoritative settlement contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      mariadb:
+        image: mariadb:11.4
+        env:
+          MARIADB_DATABASE: yoru_w10_heist
+          MARIADB_USER: yoru_w10
+          MARIADB_PASSWORD: yoru_w10_password
+          MARIADB_ROOT_PASSWORD: yoru_w10_root_password
+        ports:
+          - 3306/tcp
+        options: >-
+          --health-cmd "healthcheck.sh --connect --innodb_initialized"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+
+      - name: Install W10.2 dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "mysql-connector-python>=9.5,<10" "aiosqlite>=0.20,<1"
+
+      - name: Run actual v3.72 Heist transaction contracts
+        working-directory: .ci/v372_mysql_gate
+        env:
+          YORU_DB_BACKEND: mysql
+          MYSQL_HOST: 127.0.0.1
+          MYSQL_PORT: ${{ job.services.mariadb.ports['3306'] }}
+          MYSQL_DATABASE: yoru_w10_heist
+          MYSQL_USER: yoru_w10
+          MYSQL_PASSWORD: yoru_w10_password
+          MYSQL_SSL_DISABLED: '1'
+          MYSQL_POOL_SIZE: '8'
+          MYSQL_POOL_NAME: yoru-w10-heist-ci
+          MYSQL_ACQUIRE_TIMEOUT_SECONDS: '10'
+          MYSQL_TRANSIENT_RETRIES: '1'
+        run: python w10_heist_contracts.py
+
+      - name: Print W10.2 report
+        if: always()
+        working-directory: .ci/v372_mysql_gate
+        run: |
+          if [ -f YORU_W10_HEIST_CONTRACT_RESULT.txt ]; then
+            cat YORU_W10_HEIST_CONTRACT_RESULT.txt
+          else
+            echo "W10.2 result file was not created."
+          fi
+
+      - name: Upload W10.2 result
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: yoru-v372-w10-heist-contract-result
+          path: |
+            .ci/v372_mysql_gate/YORU_W10_HEIST_CONTRACT_RESULT.json
+            .ci/v372_mysql_gate/YORU_W10_HEIST_CONTRACT_RESULT.txt
+          if-no-files-found: warn
+          retention-days: 7
