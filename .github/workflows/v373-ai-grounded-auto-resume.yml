@@ -20,6 +20,7 @@ jobs:
     timeout-minutes: 45
     env:
       GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
       SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
       SOURCE_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
       ARTIFACT_NAME: yoru-v373-w122-grounded-ai-lab
