@@ -1,69 +1,53 @@
 from __future__ import annotations
 
 import asyncio
-import inspect
+import json
+import shutil
+import sys
+import time
+import traceback
+import types
+import uuid
+from typing import Any
 
 import w10_heist_canonical_runner as canonical
 
-
 gate = canonical.gate
-_original_install_support_stubs = gate.install_support_stubs
 
 
-class _NullDependency:
-    """Neutral dependency for constructor-only legacy/service wiring in W10.2."""
+def install_support_stubs() -> None:
+    """Only replace non-authoritative support services required to import Heist."""
+    server_settings = types.ModuleType("app.services.server_settings")
 
-    def __getattr__(self, name: str):
-        async def _async(*args, **kwargs):
+    class ServerSettingsService:
+        def __init__(self, database: Any) -> None:
+            self.database = database
+
+        async def get_int(self, guild_id: int, key: str) -> int | None:
             return None
 
-        return _async
+        async def get_bool(self, guild_id: int, key: str, default: bool = False) -> bool:
+            return bool(default)
+
+        async def set_int(self, guild_id: int, key: str, value: int | None) -> None:
+            return None
+
+        async def set_bool(self, guild_id: int, key: str, value: bool) -> None:
+            return None
+
+    server_settings.ServerSettingsService = ServerSettingsService
+    sys.modules["app.services.server_settings"] = server_settings
+
+    ui = types.ModuleType("app.ui")
+    ui.money = lambda value: f"{int(value):,}"
+    sys.modules["app.ui"] = ui
+
+    text_hu = types.ModuleType("app.text_hu")
+    text_hu.format_hu_relative = lambda value: str(value)
+    sys.modules["app.text_hu"] = text_hu
 
 
-def _install_constructor_compat() -> None:
-    _original_install_support_stubs()
-
-    from app.services.heist import HeistService
-
-    original_init = HeistService.__init__
-    signature = inspect.signature(original_init)
-    parameters = signature.parameters
-
-    def compat_init(self, *args, **kwargs):
-        # Ignore only constructor kwargs that the frozen v3.72 service does not
-        # accept. This adapts the test harness, not Heist settlement behavior.
-        accepted_kwargs = {
-            key: value
-            for key, value in kwargs.items()
-            if key in parameters and key != "self"
-        }
-        positional_names = [
-            name
-            for name, parameter in parameters.items()
-            if name != "self"
-            and parameter.kind
-            in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
-        ][: len(args)]
-        for name, parameter in parameters.items():
-            if name == "self" or name in positional_names or name in accepted_kwargs:
-                continue
-            if parameter.kind not in (
-                inspect.Parameter.POSITIONAL_ONLY,
-                inspect.Parameter.POSITIONAL_OR_KEYWORD,
-                inspect.Parameter.KEYWORD_ONLY,
-            ):
-                continue
-            if parameter.default is inspect.Parameter.empty:
-                accepted_kwargs[name] = _NullDependency()
-        return original_init(self, *args, **accepted_kwargs)
-
-    HeistService.__init__ = compat_init
-
-
-gate.install_support_stubs = _install_constructor_compat
-
-
-async def _assert_success_state(db, backend, gid, lobby_id, run_id, users):
+async def assert_success_state(db, backend, gid, lobby_id, run_id, users):
     wallets = {uid: (await db.get_balance(gid, uid))[0] for uid in users}
     expected = {users[0]: 700_000, users[1]: 500_000}
     if wallets != expected:
@@ -124,42 +108,38 @@ async def _assert_success_state(db, backend, gid, lobby_id, run_id, users):
     }
 
 
-async def _success_contract(service, db, backend, gid, lobby_id, run_id, users):
+async def success_contract(service, db, backend, gid, lobby_id, run_id, users):
     run = await gate.seed_case(db, backend, gid, lobby_id, run_id, users)
-    phase_results = list(run["phase_results"])
-    result = await service._resolve_run(gid, lobby_id, run, phase_results)
+    result = await service._resolve_run(gid, lobby_id, run, list(run["phase_results"]))
     if not bool(result.get("success")) or int(result.get("total_reward", -1)) != 1_000_000:
         raise AssertionError(f"Unexpected Heist success result: {result!r}")
-    state = await _assert_success_state(db, backend, gid, lobby_id, run_id, users)
+    state = await assert_success_state(db, backend, gid, lobby_id, run_id, users)
     state["result_total_reward"] = int(result["total_reward"])
     return state
 
 
-async def _exactly_once_contract(service, db, backend, gid, lobby_id, run_id, users):
+async def exactly_once_contract(service, db, backend, gid, lobby_id, run_id, users):
     run = await gate.seed_case(db, backend, gid, lobby_id, run_id, users)
-    phase_results = list(run["phase_results"])
     outcomes = await asyncio.gather(
-        service._resolve_run(gid, lobby_id, dict(run), list(phase_results)),
-        service._resolve_run(gid, lobby_id, dict(run), list(phase_results)),
+        service._resolve_run(gid, lobby_id, dict(run), list(run["phase_results"])),
+        service._resolve_run(gid, lobby_id, dict(run), list(run["phase_results"])),
         return_exceptions=True,
     )
     successes = [item for item in outcomes if isinstance(item, dict)]
     failures = [item for item in outcomes if isinstance(item, BaseException)]
     if len(successes) != 1 or len(failures) != 1 or not isinstance(failures[0], ValueError):
         raise AssertionError(f"Heist concurrent resolve outcome mismatch: {outcomes!r}")
-    state = await _assert_success_state(db, backend, gid, lobby_id, run_id, users)
+    state = await assert_success_state(db, backend, gid, lobby_id, run_id, users)
     state.update(
-        {
-            "parallel_calls": 2,
-            "authoritative_resolves": 1,
-            "rejected_replays": 1,
-            "replay_error": str(failures[0]),
-        }
+        parallel_calls=2,
+        authoritative_resolves=1,
+        rejected_replays=1,
+        replay_error=str(failures[0]),
     )
     return state
 
 
-async def _rollback_contract(service, heist_module, db, backend, gid, lobby_id, run_id, users):
+async def rollback_contract(service, db, backend, gid, lobby_id, run_id, users):
     run = await gate.seed_case(db, backend, gid, lobby_id, run_id, users)
     original_connect = backend.connect
     trip = {"done": False}
@@ -231,13 +211,107 @@ async def _rollback_contract(service, heist_module, db, backend, gid, lobby_id, 
     }
 
 
-# Replace only stale W10.2 harness contracts. The frozen RC3 HeistService and its
-# authoritative transaction implementation remain untouched.
-gate.assert_success_state = _assert_success_state
-gate.success_contract = _success_contract
-gate.exactly_once_contract = _exactly_once_contract
-gate.rollback_contract = _rollback_contract
+async def run_test(result: dict[str, Any], name: str, task) -> None:
+    started = time.perf_counter()
+    result["stage"] = f"running:{name}"
+    try:
+        details = await task
+        result["tests"][name] = {
+            "status": "PASS",
+            "elapsed_ms": round((time.perf_counter() - started) * 1000, 3),
+            "details": details,
+        }
+    except Exception as exc:
+        result["tests"][name] = {
+            "status": "FAIL",
+            "elapsed_ms": round((time.perf_counter() - started) * 1000, 3),
+            "error_type": type(exc).__name__,
+            "error": str(exc),
+            "traceback": traceback.format_exc(),
+        }
+        raise
+
+
+async def main_async(result: dict[str, Any]) -> None:
+    result["stage"] = "bootstrap_schema"
+    await gate.bootstrap_heist_schema()
+
+    import w10_transaction_contracts
+
+    result["stage"] = "extract_foundation_source"
+    work = w10_transaction_contracts.extract_and_verify_source()
+    result["foundation_source_sha256"] = w10_transaction_contracts.EXPECTED_ZIP_SHA256
+    src = work / "src"
+
+    try:
+        result["stage"] = "overlay_heist_source"
+        gate.overlay_and_verify_heist(src)
+
+        result["stage"] = "install_support_stubs"
+        install_support_stubs()
+
+        result["stage"] = "import_runtime"
+        from app.database import Database
+        from app import db_backend
+        from app.services.heist import HeistService
+
+        result["stage"] = "construct_service"
+        db = Database("data/w10-heist-unused.db", 75_000)
+        service = HeistService(
+            db,
+            gate.DummyStats(),
+            characters=None,
+            vehicles=None,
+            world=None,
+            police=None,
+        )
+
+        base = 8_000_000_000_000 + int(uuid.uuid4().hex[:7], 16) * 100
+        await run_test(
+            result,
+            "heist_success_payout_conservation",
+            success_contract(service, db, db_backend, base, base + 1, base + 2, (101, 102)),
+        )
+        await run_test(
+            result,
+            "heist_concurrent_exactly_once",
+            exactly_once_contract(service, db, db_backend, base + 10, base + 11, base + 12, (201, 202)),
+        )
+        await run_test(
+            result,
+            "heist_injected_failure_full_rollback",
+            rollback_contract(service, db, db_backend, base + 20, base + 21, base + 22, (301, 302)),
+        )
+
+        result["db_backend_metrics"] = db_backend.mysql_runtime_metrics()
+        result["stage"] = "complete"
+        result["status"] = "PASS"
+    finally:
+        result["finished_at"] = gate.utcnow()
+        shutil.rmtree(work, ignore_errors=True)
+
+
+def main() -> int:
+    result: dict[str, Any] = {
+        "status": "FAIL",
+        "started_at": gate.utcnow(),
+        "tests": {},
+        "heist_source_sha256": canonical.CANONICAL_SOURCE_SHA256,
+        "stage": "startup",
+    }
+    try:
+        asyncio.run(main_async(result))
+        code = 0 if result.get("status") == "PASS" else 2
+    except Exception as exc:
+        result["finished_at"] = gate.utcnow()
+        result["error_type"] = type(exc).__name__
+        result["error"] = str(exc)
+        result["traceback"] = traceback.format_exc()
+        code = 2
+    finally:
+        gate.write_result(result)
+    return code
 
 
 if __name__ == "__main__":
-    raise SystemExit(gate.main())
+    raise SystemExit(main())
