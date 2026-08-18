@@ -7,12 +7,17 @@ on:
       - '.ci/v372_mysql_gate/w10_source_*.b64'
       - '.ci/v372_mysql_gate/w10_transaction_contracts.py'
       - '.github/workflows/v372-w10-transaction-contracts.yml'
+  pull_request:
+    paths:
+      - '.ci/v372_mysql_gate/w10_source_*.b64'
+      - '.ci/v372_mysql_gate/w10_transaction_contracts.py'
+      - '.github/workflows/v372-w10-transaction-contracts.yml'
 
 permissions:
   contents: read
 
 concurrency:
-  group: yoru-v372-w10-native-transactions
+  group: yoru-v372-w10-native-transactions-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
