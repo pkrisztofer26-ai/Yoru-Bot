@@ -1,0 +1,75 @@
+name: Yoru v3.73 AI Scenario Lab PoC
+
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: Groq model ID
+        required: true
+        default: openai/gpt-oss-120b
+      reasoning_effort:
+        description: GPT-OSS reasoning effort
+        required: true
+        type: choice
+        options:
+          - low
+          - medium
+          - high
+        default: low
+
+permissions:
+  contents: read
+
+concurrency:
+  group: yoru-v373-ai-scenario-lab
+  cancel-in-progress: false
+
+jobs:
+  ai-scenario-lab:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+
+      - name: Runner self-test and dry-run
+        run: |
+          python -m py_compile .ci/v373_ai_scenario_lab/runner.py
+          python .ci/v373_ai_scenario_lab/runner.py --dry-run --model "${{ inputs.model }}" --reasoning-effort "${{ inputs.reasoning_effort }}"
+
+      - name: Require Groq secret
+        run: |
+          if [ -z "$GROQ_API_KEY" ]; then
+            echo "Missing repository secret GROQ_API_KEY"
+            exit 1
+          fi
+
+      - name: Run AI Scenario Lab
+        run: python .ci/v373_ai_scenario_lab/runner.py --model "${{ inputs.model }}" --reasoning-effort "${{ inputs.reasoning_effort }}" --out-dir artifacts/ai_scenario_lab
+
+      - name: Print report
+        if: always()
+        run: |
+          if [ -f artifacts/ai_scenario_lab/YORU_AI_SCENARIO_LAB_RESULT.txt ]; then
+            cat artifacts/ai_scenario_lab/YORU_AI_SCENARIO_LAB_RESULT.txt
+          fi
+
+      - name: Upload lab artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: yoru-v373-ai-scenario-lab
+          path: |
+            artifacts/ai_scenario_lab/*.json
+            artifacts/ai_scenario_lab/*.txt
+            artifacts/ai_scenario_lab/*.csv
+          if-no-files-found: warn
+          retention-days: 14
