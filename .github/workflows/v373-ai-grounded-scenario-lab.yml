@@ -45,11 +45,12 @@ jobs:
         run: |
           mkdir -p "$OUT_DIR"
           {
-            echo "W12.2 FAST/RESUME DIAGNOSTICS"
+            echo "W12.2 FAST/RESUME v2 DIAGNOSTICS"
             echo "commit=${GITHUB_SHA}"
             echo "run_id=${GITHUB_RUN_ID}"
             echo "runner_os=${RUNNER_OS}"
             python --version
+            sha256sum .ci/v373_ai_grounded_lab/fast_resume_v2.py
           } | tee "$OUT_DIR/W12_2_EARLY_DIAGNOSTICS.txt"
 
       - name: Restore and verify frozen W12.2 fixture
@@ -59,16 +60,17 @@ jobs:
           sha256sum .ci/v373_ai_grounded_lab/fixture.fast*.b64 | tee -a "$OUT_DIR/W12_2_EARLY_DIAGNOSTICS.txt"
           python -u .ci/v373_ai_grounded_lab/bootstrap.py --out .ci/v373_ai_grounded_lab/runtime | tee "$OUT_DIR/W12_2_BOOTSTRAP.log"
 
-      - name: Contract tests
+      - name: Frozen fixture contract tests
         run: python -u .ci/v373_ai_grounded_lab/runtime/contract_test.py | tee "$OUT_DIR/W12_2_CONTRACT_TEST.log"
 
-      - name: Compile and dry-run
+      - name: Compile and v2 dry-run
         run: |
-          python -m py_compile .ci/v373_ai_grounded_lab/runtime/runner.py
-          python -u .ci/v373_ai_grounded_lab/runtime/runner.py \
+          python -m py_compile .ci/v373_ai_grounded_lab/runtime/runner.py .ci/v373_ai_grounded_lab/fast_resume_v2.py
+          python -u .ci/v373_ai_grounded_lab/fast_resume_v2.py \
             --dry-run \
             --model "${{ inputs.model }}" \
             --reasoning-effort "${{ inputs.reasoning_effort }}" \
+            --max-completion-tokens 1900 \
             --out-dir "$OUT_DIR" \
             | tee "$OUT_DIR/W12_2_DRY_RUN.log"
 
@@ -145,21 +147,21 @@ jobs:
           done < <(find /tmp/w122_previous -type f -path '*/checkpoints/*.json' -print0 2>/dev/null)
           echo "restored_checkpoint_files=${restored}" | tee "$OUT_DIR/W12_2_RESUME.txt"
 
-      - name: Run W12.2 grounded AI lab FAST/RESUME
+      - name: Run W12.2 grounded AI lab FAST/RESUME v2
         shell: bash
         run: |
           set +e
-          python -u .ci/v373_ai_grounded_lab/runtime/runner.py \
+          python -u .ci/v373_ai_grounded_lab/fast_resume_v2.py \
             --model "${{ inputs.model }}" \
             --reasoning-effort "${{ inputs.reasoning_effort }}" \
             --timeout 40 \
-            --max-completion-tokens 2200 \
+            --max-completion-tokens 1900 \
             --http-retries 1 \
             --content-retries 0 \
             --repair-rounds 1 \
             --max-wall-seconds 1080 \
             --min-request-budget-seconds 70 \
-            --rate-floor-tokens 3200 \
+            --rate-floor-tokens 3000 \
             --out-dir "$OUT_DIR" \
             2>&1 | tee "$OUT_DIR/W12_2_LIVE.log"
           code=${PIPESTATUS[0]}
