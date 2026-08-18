@@ -18,6 +18,8 @@ from mysql.connector.aio import connect as mysql_async_connect
 
 HERE = Path(__file__).resolve().parent
 SOURCE_PARTS = [HERE / f"w10_source_{index:02d}.b64" for index in range(4)]
+CASINO_CONFIG_B64 = HERE / "w10_casino_config.b64"
+CASINO_CONFIG_SHA256 = "031e7d38f4aa5d4386672dd4ebc8f626bc19c84d4081b745e8fb7a5f74cc5166"
 RESULT_JSON = HERE / "YORU_W10_TRANSACTION_CONTRACT_RESULT.json"
 RESULT_TXT = HERE / "YORU_W10_TRANSACTION_CONTRACT_RESULT.txt"
 EXPECTED_ZIP_SHA256 = "ca2db6f82bedb9679b38ace75956e583c91f1d6b712309c0b0d3f4fc47d06839"
@@ -91,6 +93,12 @@ def extract_and_verify_source() -> Path:
     archive.write_bytes(zip_bytes)
     shutil.unpack_archive(str(archive), str(work / "src"))
     src = work / "src"
+    casino_bytes = base64.b64decode(CASINO_CONFIG_B64.read_text(encoding="ascii"))
+    actual_casino = sha256(casino_bytes)
+    if actual_casino != CASINO_CONFIG_SHA256:
+        raise AssertionError(f"casino_config.py SHA mismatch: {actual_casino}")
+    casino_path = src / "app" / "casino_config.py"
+    casino_path.write_bytes(casino_bytes)
     for rel, expected in EXPECTED_FILES.items():
         path = src / rel
         if not path.is_file():
