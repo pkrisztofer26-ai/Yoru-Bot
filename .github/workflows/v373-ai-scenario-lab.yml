@@ -27,7 +27,7 @@ concurrency:
 jobs:
   ai-scenario-lab:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
 
@@ -43,7 +43,7 @@ jobs:
       - name: Runner self-test and dry-run
         run: |
           python -m py_compile .ci/v373_ai_scenario_lab/runner.py
-          python .ci/v373_ai_scenario_lab/runner.py --dry-run --model "${{ inputs.model }}" --reasoning-effort "${{ inputs.reasoning_effort }}"
+          python .ci/v373_ai_scenario_lab/runner.py --dry-run --batch-size 5 --model "${{ inputs.model }}" --reasoning-effort "${{ inputs.reasoning_effort }}"
 
       - name: Require Groq secret
         run: |
@@ -118,7 +118,7 @@ jobs:
           PY
 
       - name: Run AI Scenario Lab
-        run: python .ci/v373_ai_scenario_lab/runner.py --model "${{ inputs.model }}" --reasoning-effort "${{ inputs.reasoning_effort }}" --out-dir artifacts/ai_scenario_lab
+        run: python .ci/v373_ai_scenario_lab/runner.py --batch-size 5 --model "${{ inputs.model }}" --reasoning-effort "${{ inputs.reasoning_effort }}" --out-dir artifacts/ai_scenario_lab
 
       - name: Print report
         if: always()
