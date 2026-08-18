@@ -1,0 +1,117 @@
+name: Yoru v3.73 W12.2 Grounded AI Scenario Contracts
+
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: Groq model ID
+        required: true
+        default: openai/gpt-oss-120b
+      reasoning_effort:
+        description: GPT-OSS reasoning effort
+        required: true
+        type: choice
+        options: [low, medium, high]
+        default: low
+
+permissions:
+  contents: read
+
+concurrency:
+  group: yoru-v373-w122-grounded-ai
+  cancel-in-progress: false
+
+jobs:
+  grounded-ai-contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+
+      - name: Restore and verify frozen W12.2 fixture
+        run: python .ci/v373_ai_grounded_lab/bootstrap.py --out .ci/v373_ai_grounded_lab/runtime
+
+      - name: Contract tests and dry-run
+        run: |
+          python .ci/v373_ai_grounded_lab/runtime/contract_test.py
+          python -m py_compile .ci/v373_ai_grounded_lab/runtime/runner.py
+          python .ci/v373_ai_grounded_lab/runtime/runner.py \
+            --dry-run \
+            --model "${{ inputs.model }}" \
+            --reasoning-effort "${{ inputs.reasoning_effort }}" \
+            --out-dir artifacts/ai_grounded_scenario_lab
+
+      - name: Require Groq secret
+        run: |
+          if [ -z "$GROQ_API_KEY" ]; then
+            echo "Missing repository secret GROQ_API_KEY"
+            exit 1
+          fi
+
+      - name: Probe Groq model access
+        env:
+          MODEL: ${{ inputs.model }}
+        run: |
+          mkdir -p artifacts/ai_grounded_scenario_lab
+          python - <<'PY'
+          import json, os, pathlib, urllib.error, urllib.request
+          out = pathlib.Path("artifacts/ai_grounded_scenario_lab")
+          model, key = os.environ["MODEL"], os.environ["GROQ_API_KEY"]
+          body = {"model": model, "messages": [{"role": "user", "content": "Válaszolj pontosan: OK"}], "max_completion_tokens": 8}
+          req = urllib.request.Request(
+              "https://api.groq.com/openai/v1/chat/completions",
+              data=json.dumps(body).encode("utf-8"),
+              headers={
+                  "Authorization": f"Bearer {key}", "Content-Type": "application/json", "Accept": "application/json",
+                  "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
+              }, method="POST")
+          try:
+              with urllib.request.urlopen(req, timeout=30) as response:
+                  payload = json.loads(response.read().decode("utf-8"))
+              report = {"status": "PASS", "model": model, "http_status": 200, "response_id": payload.get("id", "")}
+              out.joinpath("GROQ_PROBE_RESULT.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+              out.joinpath("GROQ_PROBE_RESULT.txt").write_text(f"STATUS: PASS\nmodel={model}\nhttp_status=200\nresponse_id={payload.get('id','')}\n", encoding="utf-8")
+              print(f"Groq probe PASS: model={model}")
+          except urllib.error.HTTPError as exc:
+              error_body = exc.read().decode("utf-8", "replace")
+              try: parsed = json.loads(error_body)
+              except Exception: parsed = {"raw": error_body[:4000]}
+              report = {"status": "FAIL", "model": model, "http_status": exc.code, "reason": str(exc.reason), "groq_error": parsed}
+              out.joinpath("GROQ_PROBE_RESULT.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+              out.joinpath("GROQ_PROBE_RESULT.txt").write_text(f"STATUS: FAIL\nmodel={model}\nhttp_status={exc.code}\nreason={exc.reason}\nerror_body={error_body[:4000]}\n", encoding="utf-8")
+              print(error_body[:4000]); raise SystemExit(1)
+          PY
+
+      - name: Run W12.2 grounded AI lab
+        run: |
+          python .ci/v373_ai_grounded_lab/runtime/runner.py \
+            --model "${{ inputs.model }}" \
+            --reasoning-effort "${{ inputs.reasoning_effort }}" \
+            --out-dir artifacts/ai_grounded_scenario_lab
+
+      - name: Print grounded AI report
+        if: always()
+        run: |
+          test -f artifacts/ai_grounded_scenario_lab/GROQ_PROBE_RESULT.txt && cat artifacts/ai_grounded_scenario_lab/GROQ_PROBE_RESULT.txt || true
+          test -f artifacts/ai_grounded_scenario_lab/YORU_AI_GROUNDED_LAB_RESULT.txt && cat artifacts/ai_grounded_scenario_lab/YORU_AI_GROUNDED_LAB_RESULT.txt || true
+
+      - name: Upload W12.2 artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: yoru-v373-w122-grounded-ai-lab
+          path: |
+            artifacts/ai_grounded_scenario_lab/*.json
+            artifacts/ai_grounded_scenario_lab/*.txt
+            artifacts/ai_grounded_scenario_lab/*.csv
+          if-no-files-found: warn
+          retention-days: 14
