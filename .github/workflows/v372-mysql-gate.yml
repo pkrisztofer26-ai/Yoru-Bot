@@ -12,9 +12,9 @@ concurrency:
 
 jobs:
   native-mariadb-gate:
-    name: Native MariaDB / InnoDB concurrency gate
+    name: Native MariaDB / InnoDB + W10 transaction contracts
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     services:
       mariadb:
@@ -46,7 +46,7 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install "mysql-connector-python>=9.5,<10"
 
-      - name: Run isolated Yoru v3.72 MariaDB gate
+      - name: Run infrastructure MariaDB gate
         working-directory: .ci/v372_mysql_gate
         env:
           YORU_CI_DB_HOST: 127.0.0.1
@@ -57,23 +57,63 @@ jobs:
           YORU_CI_POOL_SIZE: '4'
         run: python runner.py
 
-      - name: Print gate report
+      - name: Run W10 real Yoru wallet/casino/crew/market contracts
+        working-directory: .ci/v372_mysql_gate
+        env:
+          YORU_DB_BACKEND: mysql
+          MYSQL_HOST: 127.0.0.1
+          MYSQL_PORT: ${{ job.services.mariadb.ports['3306'] }}
+          MYSQL_DATABASE: yoru_ci_test
+          MYSQL_USER: yoru_ci
+          MYSQL_PASSWORD: yoru_ci_password
+          MYSQL_POOL_SIZE: '8'
+          MYSQL_POOL_NAME: yoru-w10-core
+          MYSQL_SSL_DISABLED: 'true'
+        run: python w10_bootstrap_runner.py
+
+      - name: Run W10.2 real Yoru Heist transaction contracts
+        working-directory: .ci/v372_mysql_gate
+        env:
+          YORU_DB_BACKEND: mysql
+          MYSQL_HOST: 127.0.0.1
+          MYSQL_PORT: ${{ job.services.mariadb.ports['3306'] }}
+          MYSQL_DATABASE: yoru_ci_test
+          MYSQL_USER: yoru_ci
+          MYSQL_PASSWORD: yoru_ci_password
+          MYSQL_POOL_SIZE: '8'
+          MYSQL_POOL_NAME: yoru-w10-heist
+          MYSQL_SSL_DISABLED: 'true'
+        run: python w10_heist_contracts.py
+
+      - name: Print all gate reports
         if: always()
         working-directory: .ci/v372_mysql_gate
         run: |
-          if [ -f YORU_MYSQL_GATE_RESULT.txt ]; then
-            cat YORU_MYSQL_GATE_RESULT.txt
-          else
-            echo "Gate result file was not created."
-          fi
+          for report in \
+            YORU_MYSQL_GATE_RESULT.txt \
+            YORU_W10_TRANSACTION_CONTRACT_RESULT.txt \
+            YORU_W10_HEIST_CONTRACT_RESULT.txt; do
+            echo "============================================================"
+            echo "$report"
+            echo "============================================================"
+            if [ -f "$report" ]; then
+              cat "$report"
+            else
+              echo "Result file was not created."
+            fi
+          done
 
-      - name: Upload gate result
+      - name: Upload complete W10 gate result
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: yoru-v372-native-mariadb-gate-result
+          name: yoru-v372-w10-native-mariadb-gate-result
           path: |
             .ci/v372_mysql_gate/YORU_MYSQL_GATE_RESULT.json
             .ci/v372_mysql_gate/YORU_MYSQL_GATE_RESULT.txt
+            .ci/v372_mysql_gate/YORU_W10_TRANSACTION_CONTRACT_RESULT.json
+            .ci/v372_mysql_gate/YORU_W10_TRANSACTION_CONTRACT_RESULT.txt
+            .ci/v372_mysql_gate/YORU_W10_HEIST_CONTRACT_RESULT.json
+            .ci/v372_mysql_gate/YORU_W10_HEIST_CONTRACT_RESULT.txt
           if-no-files-found: warn
           retention-days: 7
