@@ -48,7 +48,7 @@ class ScenarioModifier:
     chance_add: float = 0.0
     reward_multiplier: float = 1.0
     score_add_success: int = 0
-    score_add_fail: int = -8
+    score_add_fail: int = 0
     tags: tuple[str, ...] = ()
 
 
