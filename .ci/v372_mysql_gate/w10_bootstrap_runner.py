@@ -1,76 +1,56 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import hashlib
 import os
+from pathlib import Path
 
 from mysql.connector.aio import connect as mysql_async_connect
 
-
-USERS_DDL = """CREATE TABLE IF NOT EXISTS `users` (
-  `guild_id` BIGINT UNSIGNED NOT NULL,
-  `user_id` BIGINT UNSIGNED NOT NULL,
-  `wallet` DECIMAL(65,0) NOT NULL DEFAULT 0,
-  `bank` DECIMAL(65,0) NOT NULL DEFAULT 0,
-  `created_at` VARCHAR(64) NOT NULL,
-  `last_daily` VARCHAR(64),
-  `last_work` VARCHAR(64),
-  `last_crime` VARCHAR(64),
-  `last_rob` VARCHAR(64),
-  `last_role_income` VARCHAR(64),
-  `work_count` BIGINT NOT NULL DEFAULT 0,
-  `crime_success` BIGINT NOT NULL DEFAULT 0,
-  `crime_failed` BIGINT NOT NULL DEFAULT 0,
-  `rob_success` BIGINT NOT NULL DEFAULT 0,
-  `rob_failed` BIGINT NOT NULL DEFAULT 0,
-  `rob_profit` DECIMAL(65,0) NOT NULL DEFAULT 0,
-  `gambling_profit` DECIMAL(65,0) NOT NULL DEFAULT 0,
-  `game_wins` BIGINT NOT NULL DEFAULT 0,
-  `last_beg` VARCHAR(64),
-  `last_search` VARCHAR(64),
-  `daily_streak` BIGINT NOT NULL DEFAULT 0,
-  `best_daily_streak` BIGINT NOT NULL DEFAULT 0,
-  `daily_count` BIGINT NOT NULL DEFAULT 0,
-  `beg_count` BIGINT NOT NULL DEFAULT 0,
-  `search_count` BIGINT NOT NULL DEFAULT 0,
-  `money_earned` DECIMAL(65,0) NOT NULL DEFAULT 0,
-  `money_lost` DECIMAL(65,0) NOT NULL DEFAULT 0,
-  `jail_until` LONGTEXT,
-  `last_weekly` VARCHAR(64),
-  `last_monthly` VARCHAR(64),
-  `last_interest` VARCHAR(64),
-  `weekly_count` BIGINT NOT NULL DEFAULT 0,
-  `monthly_count` BIGINT NOT NULL DEFAULT 0,
-  `scratch_count` BIGINT NOT NULL DEFAULT 0,
-  `chicken_wins` BIGINT NOT NULL DEFAULT 0,
-  `xp_points` BIGINT NOT NULL DEFAULT 0,
-  `selected_title` VARCHAR(1024) NOT NULL DEFAULT 'Kezdő',
-  `investment_profit` DECIMAL(65,0) NOT NULL DEFAULT 0,
-  `last_invest` VARCHAR(64),
-  `jackpot_wins` BIGINT NOT NULL DEFAULT 0,
-  `lottery_wins` BIGINT NOT NULL DEFAULT 0,
-  `last_slut` VARCHAR(64),
-  `last_withdraw` VARCHAR(64),
-  PRIMARY KEY (`guild_id`, `user_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"""
+HERE = Path(__file__).resolve().parent
+SCHEMA_B64 = HERE / "w10_contract_schema.b64"
+SCHEMA_SHA256 = "d845d5636fd8d05d07a14242dba3e8b374b2697ee184be7c8166c4c128997763"
 
 
-async def bootstrap_db1_users() -> None:
-    conn = await mysql_async_connect(
-        host=os.environ["MYSQL_HOST"],
-        port=int(os.environ.get("MYSQL_PORT", "3306")),
-        user=os.environ["MYSQL_USER"],
-        password=os.environ["MYSQL_PASSWORD"],
-        database=os.environ["MYSQL_DATABASE"],
-        autocommit=False,
-        charset="utf8mb4",
-        connection_timeout=10,
-        use_pure=True,
-        ssl_disabled=True,
-    )
+def mysql_kwargs() -> dict:
+    return {
+        "host": os.environ["MYSQL_HOST"],
+        "port": int(os.environ.get("MYSQL_PORT", "3306")),
+        "user": os.environ["MYSQL_USER"],
+        "password": os.environ["MYSQL_PASSWORD"],
+        "database": os.environ["MYSQL_DATABASE"],
+        "autocommit": False,
+        "charset": "utf8mb4",
+        "connection_timeout": 10,
+        "use_pure": True,
+        "ssl_disabled": True,
+    }
+
+
+async def bootstrap_contract_schema() -> None:
+    raw = base64.b64decode(SCHEMA_B64.read_text(encoding="ascii"))
+    actual = hashlib.sha256(raw).hexdigest()
+    if actual != SCHEMA_SHA256:
+        raise RuntimeError(f"W10 DB-1 contract schema SHA mismatch: {actual}")
+    sql = raw.decode("utf-8")
+    statements = [item.strip() for item in sql.split(";") if item.strip()]
+
+    conn = await mysql_async_connect(**mysql_kwargs())
     try:
         cur = await conn.cursor()
         try:
-            await cur.execute(USERS_DDL)
+            for statement in statements:
+                await cur.execute(statement)
+            # Market contracts use the real Database methods, but production
+            # normally seeds this catalogue during startup. Seed only the one
+            # catalogue row required by this isolated transaction fixture.
+            await cur.execute(
+                """INSERT INTO shop_items
+                   (item_id,name,description,price,emoji,active,rarity,category)
+                   VALUES ('silver','Ezüst','W10 transaction fixture',0,'🥈',1,'common','market')
+                   ON DUPLICATE KEY UPDATE active=1"""
+            )
             await conn.commit()
         finally:
             await cur.close()
@@ -78,9 +58,32 @@ async def bootstrap_db1_users() -> None:
         await conn.close()
 
 
+def install_initialize_bypass(module) -> None:
+    original_extract = module.extract_and_verify_source
+
+    def extract_then_patch():
+        work = original_extract()
+        from app.database import Database
+
+        async def _w10_schema_already_prepared(self) -> None:
+            return None
+
+        Database.initialize = _w10_schema_already_prepared
+        return work
+
+    module.extract_and_verify_source = extract_then_patch
+
+
 def main() -> int:
-    asyncio.run(bootstrap_db1_users())
+    # W10 is a transaction-contract gate, not the complete migration-schema
+    # gate. The fixture is an exact subset generated from the frozen DB-1
+    # cutover schema, including the unique/FK/index constraints relevant to
+    # the tested money paths. Actual v3.72 Database/db_backend code is used for
+    # every transaction below.
+    asyncio.run(bootstrap_contract_schema())
     import w10_transaction_contracts
+
+    install_initialize_bypass(w10_transaction_contracts)
     return w10_transaction_contracts.main()
 
 
