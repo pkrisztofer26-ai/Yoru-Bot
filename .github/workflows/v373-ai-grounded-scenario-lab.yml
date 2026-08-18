@@ -45,13 +45,10 @@ jobs:
             echo "commit=${GITHUB_SHA}"
             echo "runner_os=${RUNNER_OS}"
             python --version
-            echo "fixture_path=.ci/v373_ai_grounded_lab/fixture.b64"
-            if [ -f .ci/v373_ai_grounded_lab/fixture.b64 ]; then
-              wc -c .ci/v373_ai_grounded_lab/fixture.b64
-              sha256sum .ci/v373_ai_grounded_lab/fixture.b64
-            else
-              echo "fixture_missing=true"
-            fi
+            echo "fixture_parts:"
+            ls -l .ci/v373_ai_grounded_lab/fixture.part*.b64 || true
+            echo "fixture_part_hashes:"
+            sha256sum .ci/v373_ai_grounded_lab/fixture.part*.b64 || true
           } | tee artifacts/ai_grounded_scenario_lab/W12_2_EARLY_DIAGNOSTICS.txt
 
       - name: Restore and verify frozen W12.2 fixture
@@ -94,7 +91,6 @@ jobs:
             echo "Missing repository secret GROQ_API_KEY" | tee artifacts/ai_grounded_scenario_lab/W12_2_SECRET_CHECK.log
             exit 1
           fi
-          echo "GROQ_API_KEY present" > artifacts/ai_grounded_scenario_lab/W12_2_SECRET_CHECK.log
 
       - name: Probe Groq model access
         env:
@@ -109,24 +105,37 @@ jobs:
               "https://api.groq.com/openai/v1/chat/completions",
               data=json.dumps(body).encode("utf-8"),
               headers={
-                  "Authorization": f"Bearer {key}", "Content-Type": "application/json", "Accept": "application/json",
+                  "Authorization": f"Bearer {key}",
+                  "Content-Type": "application/json",
+                  "Accept": "application/json",
                   "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
-              }, method="POST")
+              },
+              method="POST",
+          )
           try:
               with urllib.request.urlopen(req, timeout=30) as response:
                   payload = json.loads(response.read().decode("utf-8"))
               report = {"status": "PASS", "model": model, "http_status": 200, "response_id": payload.get("id", "")}
               out.joinpath("GROQ_PROBE_RESULT.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-              out.joinpath("GROQ_PROBE_RESULT.txt").write_text(f"STATUS: PASS\nmodel={model}\nhttp_status=200\nresponse_id={payload.get('id','')}\n", encoding="utf-8")
+              out.joinpath("GROQ_PROBE_RESULT.txt").write_text(
+                  f"STATUS: PASS\nmodel={model}\nhttp_status=200\nresponse_id={payload.get('id','')}\n",
+                  encoding="utf-8",
+              )
               print(f"Groq probe PASS: model={model}")
           except urllib.error.HTTPError as exc:
               error_body = exc.read().decode("utf-8", "replace")
-              try: parsed = json.loads(error_body)
-              except Exception: parsed = {"raw": error_body[:4000]}
+              try:
+                  parsed = json.loads(error_body)
+              except Exception:
+                  parsed = {"raw": error_body[:4000]}
               report = {"status": "FAIL", "model": model, "http_status": exc.code, "reason": str(exc.reason), "groq_error": parsed}
               out.joinpath("GROQ_PROBE_RESULT.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-              out.joinpath("GROQ_PROBE_RESULT.txt").write_text(f"STATUS: FAIL\nmodel={model}\nhttp_status={exc.code}\nreason={exc.reason}\nerror_body={error_body[:4000]}\n", encoding="utf-8")
-              print(error_body[:4000]); raise SystemExit(1)
+              out.joinpath("GROQ_PROBE_RESULT.txt").write_text(
+                  f"STATUS: FAIL\nmodel={model}\nhttp_status={exc.code}\nreason={exc.reason}\nerror_body={error_body[:4000]}\n",
+                  encoding="utf-8",
+              )
+              print(error_body[:4000])
+              raise SystemExit(1)
           PY
 
       - name: Run W12.2 grounded AI lab
@@ -139,9 +148,6 @@ jobs:
       - name: Print grounded AI report
         if: always()
         run: |
-          test -f artifacts/ai_grounded_scenario_lab/W12_2_EARLY_DIAGNOSTICS.txt && cat artifacts/ai_grounded_scenario_lab/W12_2_EARLY_DIAGNOSTICS.txt || true
-          test -f artifacts/ai_grounded_scenario_lab/W12_2_BOOTSTRAP.log && cat artifacts/ai_grounded_scenario_lab/W12_2_BOOTSTRAP.log || true
-          test -f artifacts/ai_grounded_scenario_lab/W12_2_CONTRACT_TEST.log && cat artifacts/ai_grounded_scenario_lab/W12_2_CONTRACT_TEST.log || true
           test -f artifacts/ai_grounded_scenario_lab/GROQ_PROBE_RESULT.txt && cat artifacts/ai_grounded_scenario_lab/GROQ_PROBE_RESULT.txt || true
           test -f artifacts/ai_grounded_scenario_lab/YORU_AI_GROUNDED_LAB_RESULT.txt && cat artifacts/ai_grounded_scenario_lab/YORU_AI_GROUNDED_LAB_RESULT.txt || true
 
@@ -155,5 +161,5 @@ jobs:
             artifacts/ai_grounded_scenario_lab/*.txt
             artifacts/ai_grounded_scenario_lab/*.csv
             artifacts/ai_grounded_scenario_lab/*.log
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 14
