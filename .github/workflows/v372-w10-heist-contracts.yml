@@ -68,7 +68,10 @@ jobs:
           MYSQL_POOL_NAME: yoru-w10-heist-ci
           MYSQL_ACQUIRE_TIMEOUT_SECONDS: '10'
           MYSQL_TRANSIENT_RETRIES: '1'
-        run: python w10_heist_contracts.py
+        # Keep this dedicated workflow aligned with the canonical W10.2 gate.
+        # The raw w10_heist_contracts.py harness still contains the obsolete
+        # pre-RC constructor call with bot=None and must not be executed directly.
+        run: python w10_heist_fault_proxy_runner.py
 
       - name: Print W10.2 report
         if: always()
