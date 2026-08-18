@@ -93,7 +93,7 @@ jobs:
           MYSQL_POOL_SIZE: '8'
           MYSQL_POOL_NAME: yoru-w10-heist
           MYSQL_SSL_DISABLED: 'true'
-        run: python w10_heist_canonical_runner.py
+        run: python w10_heist_constructor_compat_runner.py
 
       - name: Print all gate reports
         if: always()
