@@ -41,10 +41,10 @@ jobs:
         with:
           python-version: '3.14'
 
-      - name: Install gate dependency
+      - name: Install gate dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install "mysql-connector-python>=9.5,<10"
+          python -m pip install "mysql-connector-python>=9.5,<10" "aiosqlite>=0.20,<1"
 
       - name: Run infrastructure MariaDB gate
         working-directory: .ci/v372_mysql_gate
