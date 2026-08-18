@@ -71,6 +71,16 @@ jobs:
           MYSQL_SSL_DISABLED: 'true'
         run: python w10_bootstrap_runner.py
 
+      - name: Reset ephemeral schema before isolated W10.2 Heist gate
+        working-directory: .ci/v372_mysql_gate
+        env:
+          MYSQL_HOST: 127.0.0.1
+          MYSQL_PORT: ${{ job.services.mariadb.ports['3306'] }}
+          MYSQL_DATABASE: yoru_ci_test
+          MYSQL_USER: yoru_ci
+          MYSQL_PASSWORD: yoru_ci_password
+        run: python w10_reset_schema.py
+
       - name: Run W10.2 real Yoru Heist transaction contracts
         working-directory: .ci/v372_mysql_gate
         env:
