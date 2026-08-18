@@ -54,9 +54,9 @@ jobs:
 
       - name: Restore and verify frozen W12.2 fixture
         run: |
-          echo "fixture_parts:" | tee -a "$OUT_DIR/W12_2_EARLY_DIAGNOSTICS.txt"
-          ls -l .ci/v373_ai_grounded_lab/fixture.part*.b64 | tee -a "$OUT_DIR/W12_2_EARLY_DIAGNOSTICS.txt"
-          sha256sum .ci/v373_ai_grounded_lab/fixture.part*.b64 | tee -a "$OUT_DIR/W12_2_EARLY_DIAGNOSTICS.txt"
+          echo "fixture_chunks:" | tee -a "$OUT_DIR/W12_2_EARLY_DIAGNOSTICS.txt"
+          ls -l .ci/v373_ai_grounded_lab/fixture.fast*.b64 | tee -a "$OUT_DIR/W12_2_EARLY_DIAGNOSTICS.txt"
+          sha256sum .ci/v373_ai_grounded_lab/fixture.fast*.b64 | tee -a "$OUT_DIR/W12_2_EARLY_DIAGNOSTICS.txt"
           python -u .ci/v373_ai_grounded_lab/bootstrap.py --out .ci/v373_ai_grounded_lab/runtime | tee "$OUT_DIR/W12_2_BOOTSTRAP.log"
 
       - name: Contract tests
