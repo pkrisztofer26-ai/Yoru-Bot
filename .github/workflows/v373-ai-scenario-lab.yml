@@ -56,12 +56,15 @@ jobs:
         env:
           MODEL: ${{ inputs.model }}
         run: |
+          mkdir -p artifacts/ai_scenario_lab
           python - <<'PY'
           import json
           import os
+          import pathlib
           import urllib.error
           import urllib.request
 
+          out = pathlib.Path("artifacts/ai_scenario_lab")
           model = os.environ["MODEL"]
           key = os.environ["GROQ_API_KEY"]
           body = {
@@ -81,10 +84,32 @@ jobs:
           try:
               with urllib.request.urlopen(req, timeout=30) as response:
                   payload = json.loads(response.read().decode("utf-8"))
+              report = {
+                  "status": "PASS",
+                  "model": model,
+                  "http_status": 200,
+                  "response_id": payload.get("id", ""),
+              }
               print(f"Groq probe PASS: model={model}")
               print("response_id=", payload.get("id", ""))
+              out.joinpath("GROQ_PROBE_RESULT.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+              out.joinpath("GROQ_PROBE_RESULT.txt").write_text(f"STATUS: PASS\nmodel={model}\nhttp_status=200\nresponse_id={payload.get('id','')}\n", encoding="utf-8")
           except urllib.error.HTTPError as exc:
               error_body = exc.read().decode("utf-8", "replace")
+              try:
+                  parsed = json.loads(error_body)
+              except Exception:
+                  parsed = {"raw": error_body[:4000]}
+              report = {
+                  "status": "FAIL",
+                  "model": model,
+                  "http_status": exc.code,
+                  "reason": str(exc.reason),
+                  "groq_error": parsed,
+              }
+              text = f"STATUS: FAIL\nmodel={model}\nhttp_status={exc.code}\nreason={exc.reason}\nerror_body={error_body[:4000]}\n"
+              out.joinpath("GROQ_PROBE_RESULT.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+              out.joinpath("GROQ_PROBE_RESULT.txt").write_text(text, encoding="utf-8")
               print(f"Groq probe FAIL: HTTP {exc.code} {exc.reason}")
               print(error_body[:4000])
               raise SystemExit(1)
@@ -96,7 +121,12 @@ jobs:
       - name: Print report
         if: always()
         run: |
+          if [ -f artifacts/ai_scenario_lab/GROQ_PROBE_RESULT.txt ]; then
+            echo "--- Groq probe ---"
+            cat artifacts/ai_scenario_lab/GROQ_PROBE_RESULT.txt
+          fi
           if [ -f artifacts/ai_scenario_lab/YORU_AI_SCENARIO_LAB_RESULT.txt ]; then
+            echo "--- AI Lab ---"
             cat artifacts/ai_scenario_lab/YORU_AI_SCENARIO_LAB_RESULT.txt
           fi
 
