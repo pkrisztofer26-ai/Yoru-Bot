@@ -5,8 +5,8 @@ import argparse, base64, hashlib, io, shutil, zipfile
 
 HERE = Path(__file__).resolve().parent
 FIXTURE_PARTS = tuple(sorted(HERE.glob("fixture.part*.b64")))
-EXPECTED_FIXTURE_TEXT_SHA256 = "bec085c0ba2336329e7a11d5e983f47e49ac153f4ce07432dfd53cf9a30f7649"
-EXPECTED_ARCHIVE_SHA256 = "d85a8ad614a1eec89d3d99ed71e5c7731a5e8efb66c5a02f999760062911c572"
+EXPECTED_FIXTURE_TEXT_SHA256 = "2d4ef40fdf9389570681b3c2f5b35f78634aa61eb9113343a4858ebf8d97f94f"
+EXPECTED_ARCHIVE_SHA256 = "558df5d507be42189a17b364cab78d3a1de2cc2c300ef93ae7fcf11518c860ba"
 
 
 def sha256(data: bytes) -> str:
@@ -52,7 +52,7 @@ def main() -> int:
             raise SystemExit(f"W12.2 file SHA mismatch {name}: {actual_file}")
         print(f"HASH PASS {name} {actual_file}")
 
-    print(f"W12.2 fixture PASS text_sha256={text_sha} archive_sha256={actual} parts={len(FIXTURE_PARTS)}")
+    print(f"W12.2 FAST/RESUME fixture PASS text_sha256={text_sha} archive_sha256={actual} parts={len(FIXTURE_PARTS)}")
     return 0
 
 
