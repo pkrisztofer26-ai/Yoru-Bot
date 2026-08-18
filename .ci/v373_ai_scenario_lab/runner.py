@@ -16,10 +16,12 @@ import json
 import os
 import re
 import time
+import urllib.error
 import urllib.request
 
 ENDPOINT = "https://api.groq.com/openai/v1/chat/completions"
 DEFAULT_MODEL = "openai/gpt-oss-120b"
+USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
 FORBIDDEN = {
     "amount", "balance", "cooldown", "inventory", "money", "payout",
     "probability", "reward", "rng", "success_chance", "wallet", "xp",
@@ -155,10 +157,37 @@ def request(case: Case, api_key: str, model: str, effort: str, timeout: float) -
         "reasoning_effort": effort,
         "response_format": {"type": "json_schema", "json_schema": {"name": f"yoru_{case.key}", "strict": True, "schema": schema(case)}},
     }
-    req = urllib.request.Request(ENDPOINT, data=json.dumps(body, ensure_ascii=False).encode(), headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}, method="POST")
+    req = urllib.request.Request(
+        ENDPOINT,
+        data=json.dumps(body, ensure_ascii=False).encode(),
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "User-Agent": USER_AGENT,
+        },
+        method="POST",
+    )
     started = time.perf_counter()
-    with urllib.request.urlopen(req, timeout=timeout) as response:
-        raw = json.loads(response.read().decode())
+    for attempt in range(4):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as response:
+                raw = json.loads(response.read().decode())
+            break
+        except urllib.error.HTTPError as exc:
+            error_body = exc.read().decode("utf-8", "replace")
+            if exc.code == 429 and attempt < 3:
+                retry_after = exc.headers.get("Retry-After", "")
+                try:
+                    delay = max(1.0, min(float(retry_after), 90.0))
+                except (TypeError, ValueError):
+                    delay = min(15.0 * (2 ** attempt), 90.0)
+                print(f"Groq rate limit for {case.key}; retrying in {delay:.1f}s (attempt {attempt + 2}/4)")
+                time.sleep(delay)
+                continue
+            raise RuntimeError(f"Groq HTTP {exc.code} {exc.reason}: {error_body[:4000]}") from exc
+    else:
+        raise RuntimeError("Groq request retry loop exhausted")
     latency = (time.perf_counter() - started) * 1000
     content = raw["choices"][0]["message"]["content"]
     return json.loads(content), raw.get("usage") or {}, latency
