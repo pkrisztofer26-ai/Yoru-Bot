@@ -1,0 +1,86 @@
+name: Yoru v3.73 W11.2 Scenario MariaDB Gate
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: yoru-v373-w11-2-scenario-mariadb
+  cancel-in-progress: false
+
+jobs:
+  scenario-mariadb-gate:
+    name: ScenarioRepository native MariaDB / InnoDB
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      mariadb:
+        image: mariadb:11.4
+        env:
+          MARIADB_DATABASE: yoru_scenario_ci_test
+          MARIADB_USER: yoru_ci
+          MARIADB_PASSWORD: yoru_ci_password
+          MARIADB_ROOT_PASSWORD: yoru_ci_root_password
+        ports:
+          - 3306/tcp
+        options: >-
+          --health-cmd "healthcheck.sh --connect --innodb_initialized"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+
+      - name: Install gate dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "mysql-connector-python>=9.5,<10" "aiosqlite>=0.20,<1"
+
+      - name: Run W11.2 native ScenarioRepository contracts
+        working-directory: .ci/v373_scenario_gate
+        env:
+          YORU_W11_DISPOSABLE_SCHEMA: '1'
+          YORU_DB_BACKEND: mysql
+          MYSQL_HOST: 127.0.0.1
+          MYSQL_PORT: ${{ job.services.mariadb.ports['3306'] }}
+          MYSQL_DATABASE: yoru_scenario_ci_test
+          MYSQL_USER: yoru_ci
+          MYSQL_PASSWORD: yoru_ci_password
+          MYSQL_POOL_SIZE: '8'
+          MYSQL_POOL_NAME: yoru-w11-scenario
+          MYSQL_SSL_DISABLED: 'true'
+          MYSQL_CONNECT_TIMEOUT_SECONDS: '10'
+          MYSQL_POOL_ACQUIRE_TIMEOUT_SECONDS: '8'
+          MYSQL_LEGACY_LOCK_TIMEOUT: '30'
+        run: python w11_scenario_mariadb_runner.py
+
+      - name: Print W11.2 report
+        if: always()
+        working-directory: .ci/v373_scenario_gate
+        run: |
+          if [ -f YORU_V373_W11_2_SCENARIO_MARIADB_RESULT.txt ]; then
+            cat YORU_V373_W11_2_SCENARIO_MARIADB_RESULT.txt
+          else
+            echo "W11.2 result file was not created."
+          fi
+
+      - name: Upload W11.2 result
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: yoru-v373-w11-2-scenario-mariadb-result
+          path: |
+            .ci/v373_scenario_gate/YORU_V373_W11_2_SCENARIO_MARIADB_RESULT.json
+            .ci/v373_scenario_gate/YORU_V373_W11_2_SCENARIO_MARIADB_RESULT.txt
+          if-no-files-found: warn
+          retention-days: 7
