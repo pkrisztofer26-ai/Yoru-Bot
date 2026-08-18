@@ -1,0 +1,79 @@
+name: Yoru v3.72 Native MariaDB Gate
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: yoru-v372-native-mariadb-gate
+  cancel-in-progress: false
+
+jobs:
+  native-mariadb-gate:
+    name: Native MariaDB / InnoDB concurrency gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      mariadb:
+        image: mariadb:11.4
+        env:
+          MARIADB_DATABASE: yoru_ci_test
+          MARIADB_USER: yoru_ci
+          MARIADB_PASSWORD: yoru_ci_password
+          MARIADB_ROOT_PASSWORD: yoru_ci_root_password
+        ports:
+          - 3306/tcp
+        options: >-
+          --health-cmd "healthcheck.sh --connect --innodb_initialized"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+
+      - name: Install gate dependency
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "mysql-connector-python>=9.5,<10"
+
+      - name: Run isolated Yoru v3.72 MariaDB gate
+        working-directory: .ci/v372_mysql_gate
+        env:
+          YORU_CI_DB_HOST: 127.0.0.1
+          YORU_CI_DB_PORT: ${{ job.services.mariadb.ports['3306'] }}
+          YORU_CI_DB_NAME: yoru_ci_test
+          YORU_CI_DB_USER: yoru_ci
+          YORU_CI_DB_PASSWORD: yoru_ci_password
+          YORU_CI_POOL_SIZE: '4'
+        run: python runner.py
+
+      - name: Print gate report
+        if: always()
+        working-directory: .ci/v372_mysql_gate
+        run: |
+          if [ -f YORU_MYSQL_GATE_RESULT.txt ]; then
+            cat YORU_MYSQL_GATE_RESULT.txt
+          else
+            echo "Gate result file was not created."
+          fi
+
+      - name: Upload gate result
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: yoru-v372-native-mariadb-gate-result
+          path: |
+            .ci/v372_mysql_gate/YORU_MYSQL_GATE_RESULT.json
+            .ci/v372_mysql_gate/YORU_MYSQL_GATE_RESULT.txt
+          if-no-files-found: warn
+          retention-days: 7
