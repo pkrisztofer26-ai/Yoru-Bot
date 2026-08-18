@@ -5,12 +5,16 @@ on:
   push:
     paths:
       - '.ci/v372_mysql_gate/w10_source_*.b64'
+      - '.ci/v372_mysql_gate/w10_casino_config.b64'
       - '.ci/v372_mysql_gate/w10_transaction_contracts.py'
+      - '.ci/v372_mysql_gate/w10_bootstrap_runner.py'
       - '.github/workflows/v372-w10-transaction-contracts.yml'
   pull_request:
     paths:
       - '.ci/v372_mysql_gate/w10_source_*.b64'
+      - '.ci/v372_mysql_gate/w10_casino_config.b64'
       - '.ci/v372_mysql_gate/w10_transaction_contracts.py'
+      - '.ci/v372_mysql_gate/w10_bootstrap_runner.py'
       - '.github/workflows/v372-w10-transaction-contracts.yml'
 
 permissions:
@@ -70,7 +74,7 @@ jobs:
           MYSQL_POOL_NAME: yoru-w10-ci
           MYSQL_ACQUIRE_TIMEOUT_SECONDS: '10'
           MYSQL_TRANSIENT_RETRIES: '1'
-        run: python w10_transaction_contracts.py
+        run: python w10_bootstrap_runner.py
 
       - name: Print W10 report
         if: always()
