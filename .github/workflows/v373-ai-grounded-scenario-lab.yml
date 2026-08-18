@@ -37,31 +37,69 @@ jobs:
         with:
           python-version: '3.14'
 
-      - name: Restore and verify frozen W12.2 fixture
-        run: python .ci/v373_ai_grounded_lab/bootstrap.py --out .ci/v373_ai_grounded_lab/runtime
-
-      - name: Contract tests and dry-run
+      - name: Initialize W12.2 diagnostics
         run: |
-          python .ci/v373_ai_grounded_lab/runtime/contract_test.py
-          python -m py_compile .ci/v373_ai_grounded_lab/runtime/runner.py
-          python .ci/v373_ai_grounded_lab/runtime/runner.py \
-            --dry-run \
-            --model "${{ inputs.model }}" \
-            --reasoning-effort "${{ inputs.reasoning_effort }}" \
-            --out-dir artifacts/ai_grounded_scenario_lab
+          mkdir -p artifacts/ai_grounded_scenario_lab
+          {
+            echo "W12.2 EARLY DIAGNOSTICS"
+            echo "commit=${GITHUB_SHA}"
+            echo "runner_os=${RUNNER_OS}"
+            python --version
+            echo "fixture_path=.ci/v373_ai_grounded_lab/fixture.b64"
+            if [ -f .ci/v373_ai_grounded_lab/fixture.b64 ]; then
+              wc -c .ci/v373_ai_grounded_lab/fixture.b64
+              sha256sum .ci/v373_ai_grounded_lab/fixture.b64
+            else
+              echo "fixture_missing=true"
+            fi
+          } | tee artifacts/ai_grounded_scenario_lab/W12_2_EARLY_DIAGNOSTICS.txt
+
+      - name: Restore and verify frozen W12.2 fixture
+        shell: bash
+        run: |
+          set +e
+          python .ci/v373_ai_grounded_lab/bootstrap.py --out .ci/v373_ai_grounded_lab/runtime 2>&1 | tee artifacts/ai_grounded_scenario_lab/W12_2_BOOTSTRAP.log
+          code=${PIPESTATUS[0]}
+          echo "bootstrap_exit_code=${code}" | tee -a artifacts/ai_grounded_scenario_lab/W12_2_EARLY_DIAGNOSTICS.txt
+          exit "$code"
+
+      - name: Contract tests
+        shell: bash
+        run: |
+          set +e
+          python .ci/v373_ai_grounded_lab/runtime/contract_test.py 2>&1 | tee artifacts/ai_grounded_scenario_lab/W12_2_CONTRACT_TEST.log
+          code=${PIPESTATUS[0]}
+          echo "contract_exit_code=${code}" | tee -a artifacts/ai_grounded_scenario_lab/W12_2_EARLY_DIAGNOSTICS.txt
+          exit "$code"
+
+      - name: Compile and dry-run
+        shell: bash
+        run: |
+          set +e
+          {
+            python -m py_compile .ci/v373_ai_grounded_lab/runtime/runner.py && \
+            python .ci/v373_ai_grounded_lab/runtime/runner.py \
+              --dry-run \
+              --model "${{ inputs.model }}" \
+              --reasoning-effort "${{ inputs.reasoning_effort }}" \
+              --out-dir artifacts/ai_grounded_scenario_lab
+          } 2>&1 | tee artifacts/ai_grounded_scenario_lab/W12_2_DRY_RUN.log
+          code=${PIPESTATUS[0]}
+          echo "dry_run_exit_code=${code}" | tee -a artifacts/ai_grounded_scenario_lab/W12_2_EARLY_DIAGNOSTICS.txt
+          exit "$code"
 
       - name: Require Groq secret
         run: |
           if [ -z "$GROQ_API_KEY" ]; then
-            echo "Missing repository secret GROQ_API_KEY"
+            echo "Missing repository secret GROQ_API_KEY" | tee artifacts/ai_grounded_scenario_lab/W12_2_SECRET_CHECK.log
             exit 1
           fi
+          echo "GROQ_API_KEY present" > artifacts/ai_grounded_scenario_lab/W12_2_SECRET_CHECK.log
 
       - name: Probe Groq model access
         env:
           MODEL: ${{ inputs.model }}
         run: |
-          mkdir -p artifacts/ai_grounded_scenario_lab
           python - <<'PY'
           import json, os, pathlib, urllib.error, urllib.request
           out = pathlib.Path("artifacts/ai_grounded_scenario_lab")
@@ -101,6 +139,9 @@ jobs:
       - name: Print grounded AI report
         if: always()
         run: |
+          test -f artifacts/ai_grounded_scenario_lab/W12_2_EARLY_DIAGNOSTICS.txt && cat artifacts/ai_grounded_scenario_lab/W12_2_EARLY_DIAGNOSTICS.txt || true
+          test -f artifacts/ai_grounded_scenario_lab/W12_2_BOOTSTRAP.log && cat artifacts/ai_grounded_scenario_lab/W12_2_BOOTSTRAP.log || true
+          test -f artifacts/ai_grounded_scenario_lab/W12_2_CONTRACT_TEST.log && cat artifacts/ai_grounded_scenario_lab/W12_2_CONTRACT_TEST.log || true
           test -f artifacts/ai_grounded_scenario_lab/GROQ_PROBE_RESULT.txt && cat artifacts/ai_grounded_scenario_lab/GROQ_PROBE_RESULT.txt || true
           test -f artifacts/ai_grounded_scenario_lab/YORU_AI_GROUNDED_LAB_RESULT.txt && cat artifacts/ai_grounded_scenario_lab/YORU_AI_GROUNDED_LAB_RESULT.txt || true
 
@@ -113,5 +154,6 @@ jobs:
             artifacts/ai_grounded_scenario_lab/*.json
             artifacts/ai_grounded_scenario_lab/*.txt
             artifacts/ai_grounded_scenario_lab/*.csv
-          if-no-files-found: warn
+            artifacts/ai_grounded_scenario_lab/*.log
+          if-no-files-found: error
           retention-days: 14
