@@ -52,7 +52,7 @@ _add_forbidden(
     r"(?i)(?:konkrét\s+(?:fuvar|munka|műszak)\w*|pontos\s+időpont\w*|munkakezd\w*)",
 )
 
-# Shado Lab gap 5: Misi asks only whether the player is generally looking for a
+# Shadow Lab gap 5: Misi asks only whether the player is generally looking for a
 # car; a specific vehicle or price is new deal truth.
 _add_forbidden(
     "npc_misi_car_dealer",
@@ -60,11 +60,12 @@ _add_forbidden(
     r"(?i)(?:konkrét\s+autó\w*|\b(?:ár|alku|kedvezmény)\w*)",
 )
 
-# Shado Lab gap 6: the memory contains exactly one help event. Compounded car # repair / debt / invented joint-event wording is not a valid recall.
+# Shadow Lab gap 6: the memory contains exactly one help event. Compounded car
+# repair / debt / invented joint-event wording is not a valid recall.
 _add_forbidden(
     "memory_jani_tools",
     "jani_memory_joint_event_invention",
-    r"(?i)(?:közös\s+(?:munka|esenény|javítás)\w*|autó\w*javít\w*|tartoz\w*|fizets\w*)",
+    r"(?i)(?:közös\s+(?:munka|esemény|javítás)\w*|autó\w*javít\w*|tartoz\w*|fizets\w*)",
 )
 
 # Imported v2 functions resolve CONFIG/CONTRACT_VERSION in the v2 module.
