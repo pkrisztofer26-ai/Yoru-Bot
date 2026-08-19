@@ -1,0 +1,174 @@
+name: Yoru v3.73 W12.3 Auto Resume
+
+on:
+  workflow_run:
+    workflows: ["Yoru v3.73 W12.3 Semantic Skeleton Contracts"]
+    types: [completed]
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: yoru-v373-w123-auto-resume
+  cancel-in-progress: false
+
+jobs:
+  auto-resume:
+    if: github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
+      SOURCE_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+      ARTIFACT_NAME: yoru-v373-w123-semantic-skeleton-lab
+      TARGET_WORKFLOW: v373-ai-semantic-skeleton-lab.yml
+      TARGET_REF: main
+
+    steps:
+      - name: Download completed W12.3 artifact
+        id: download
+        shell: bash
+        run: |
+          set +e
+          rm -rf /tmp/w123_source
+          mkdir -p /tmp/w123_source
+          gh run download "$SOURCE_RUN_ID" -n "$ARTIFACT_NAME" -D /tmp/w123_source
+          code=$?
+          if [ "$code" -ne 0 ]; then
+            echo "artifact_available=false" >> "$GITHUB_OUTPUT"
+            echo "No W12.3 artifact available for run $SOURCE_RUN_ID; auto-resume disabled for this completion."
+            exit 0
+          fi
+          echo "artifact_available=true" >> "$GITHUB_OUTPUT"
+
+      - name: Inspect W12.3 resume gate
+        id: gate
+        if: steps.download.outputs.artifact_available == 'true'
+        shell: bash
+        run: |
+          python - <<'PY'
+          import datetime as dt
+          import json
+          import math
+          import os
+          import pathlib
+          import subprocess
+
+          root = pathlib.Path('/tmp/w123_source')
+          result_files = list(root.rglob('YORU_AI_GROUNDED_LAB_RESULT.json'))
+          probe_files = list(root.rglob('GROQ_PROBE_RESULT.json'))
+          should = False
+          reason = 'missing_result'
+          wait_seconds = 0
+          raw_retry = 0.0
+          model = 'openai/gpt-oss-120b'
+
+          if probe_files:
+              try:
+                  model = str(json.loads(probe_files[0].read_text(encoding='utf-8')).get('model') or model)
+              except Exception:
+                  pass
+
+          if result_files:
+              try:
+                  payload = json.loads(result_files[0].read_text(encoding='utf-8'))
+                  summary = payload.get('summary', payload) if isinstance(payload, dict) else {}
+                  status = str(summary.get('status', '')).upper()
+                  blocked = str(summary.get('provider_blocked_reason', ''))
+                  preserved = bool(summary.get('checkpoint_progress_preserved', False))
+                  contract = str(summary.get('contract_version', ''))
+                  raw_retry = float(summary.get('provider_retry_after_seconds') or 0.0)
+                  if status == 'INCOMPLETE' and blocked == 'daily_token_limit' and preserved and contract.startswith('w12.3-'):
+                      should = True
+                      reason = 'daily_token_limit'
+                      wait_seconds = max(60, min(int(math.ceil(raw_retry + 20.0)), 1800))
+                  else:
+                      reason = f'not_resumable status={status} blocked={blocked} preserved={preserved} contract={contract}'
+              except Exception as exc:
+                  reason = f'result_parse_error:{type(exc).__name__}'
+
+          if should:
+              repo = os.environ['GITHUB_REPOSITORY']
+              try:
+                  raw = subprocess.check_output(
+                      ['gh', 'api', f'repos/{repo}/actions/workflows/{os.environ["TARGET_WORKFLOW"]}/runs?event=workflow_dispatch&per_page=100'],
+                      text=True,
+                  )
+                  runs = json.loads(raw).get('workflow_runs', [])
+                  cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=12)
+                  recent = 0
+                  for run in runs:
+                      created = str(run.get('created_at') or '')
+                      if not created:
+                          continue
+                      when = dt.datetime.fromisoformat(created.replace('Z', '+00:00'))
+                      if when >= cutoff:
+                          recent += 1
+                  if recent >= 48:
+                      should = False
+                      reason = f'auto_resume_safety_cap recent_dispatch_runs={recent}/48'
+              except Exception as exc:
+                  should = False
+                  reason = f'safety_check_error:{type(exc).__name__}'
+
+          out = pathlib.Path(os.environ['GITHUB_OUTPUT'])
+          with out.open('a', encoding='utf-8') as fh:
+              fh.write(f'should_resume={str(should).lower()}\n')
+              fh.write(f'wait_seconds={wait_seconds}\n')
+              fh.write(f'raw_retry_seconds={raw_retry:.3f}\n')
+              fh.write(f'model={model}\n')
+              fh.write(f'reason={reason}\n')
+
+          print(f'AUTO_RESUME_GATE should_resume={should} reason={reason}')
+          print(f'AUTO_RESUME_GATE retry_after={raw_retry:.1f}s wait_seconds={wait_seconds}s model={model}')
+          PY
+
+      - name: Wait for Groq token window
+        if: steps.gate.outputs.should_resume == 'true'
+        shell: bash
+        env:
+          WAIT_SECONDS: ${{ steps.gate.outputs.wait_seconds }}
+        run: |
+          echo "W12.3 AUTO_RESUME_WAIT ${WAIT_SECONDS}s — no user action required"
+          sleep "$WAIT_SECONDS"
+
+      - name: Avoid duplicate W12.3 dispatch
+        id: duplicate
+        if: steps.gate.outputs.should_resume == 'true'
+        shell: bash
+        run: |
+          active=$(gh run list --workflow "$TARGET_WORKFLOW" --limit 20 --json status --jq '[.[] | select(.status == "queued" or .status == "in_progress" or .status == "waiting" or .status == "pending")] | length')
+          echo "active_target_runs=${active}" >> "$GITHUB_OUTPUT"
+          if [ "$active" -gt 0 ]; then
+            echo "AUTO_RESUME_SKIP active_target_runs=${active}; an existing W12.3 run owns the next continuation."
+          else
+            echo "AUTO_RESUME_READY no active target run"
+          fi
+
+      - name: Dispatch next W12.3 continuation
+        if: steps.gate.outputs.should_resume == 'true' && steps.duplicate.outputs.active_target_runs == '0'
+        shell: bash
+        env:
+          MODEL: ${{ steps.gate.outputs.model }}
+        run: |
+          echo "AUTO_RESUME_DISPATCH workflow=${TARGET_WORKFLOW} ref=${TARGET_REF} model=${MODEL} reasoning=low"
+          gh workflow run "$TARGET_WORKFLOW" \
+            --ref "$TARGET_REF" \
+            -f model="$MODEL" \
+            -f reasoning_effort=low
+          echo "AUTO_RESUME_DISPATCHED source_run=${SOURCE_RUN_ID}"
+
+      - name: Auto-resume summary
+        if: always()
+        shell: bash
+        run: |
+          echo "source_run_id=${SOURCE_RUN_ID}"
+          echo "source_conclusion=${SOURCE_CONCLUSION}"
+          echo "artifact_available=${{ steps.download.outputs.artifact_available }}"
+          echo "should_resume=${{ steps.gate.outputs.should_resume }}"
+          echo "reason=${{ steps.gate.outputs.reason }}"
+          echo "wait_seconds=${{ steps.gate.outputs.wait_seconds }}"
+          echo "active_target_runs=${{ steps.duplicate.outputs.active_target_runs }}"

@@ -1,0 +1,193 @@
+name: Yoru v3.73 W12.3 Semantic Skeleton Contracts
+
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: Groq model ID
+        required: true
+        default: openai/gpt-oss-120b
+      reasoning_effort:
+        description: GPT-OSS reasoning effort
+        required: true
+        type: choice
+        options: [low, medium, high]
+        default: low
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: yoru-v373-w123-semantic-skeleton
+  cancel-in-progress: false
+
+jobs:
+  semantic-skeleton-contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      PYTHONUNBUFFERED: '1'
+      ARTIFACT_NAME: yoru-v373-w123-semantic-skeleton-lab
+      OUT_DIR: artifacts/ai_semantic_skeleton_lab
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+
+      - name: Initialize W12.3 diagnostics
+        run: |
+          mkdir -p "$OUT_DIR"
+          {
+            echo "W12.3 SEMANTIC SKELETON DIAGNOSTICS"
+            echo "commit=${GITHUB_SHA}"
+            echo "run_id=${GITHUB_RUN_ID}"
+            echo "runner_os=${RUNNER_OS}"
+            python --version
+            sha256sum \
+              .ci/v373_ai_grounded_lab/semantic_skeleton_v3.py \
+              .ci/v373_ai_grounded_lab/semantic_skeleton_v3_rules.py \
+              .ci/v373_ai_grounded_lab/semantic_skeleton_v3.json \
+              .ci/v373_ai_grounded_lab/w123_regression_corpus.part*.b64 \
+              .ci/v373_ai_grounded_lab/w123_contract_test.py
+          } | tee "$OUT_DIR/W12_3_EARLY_DIAGNOSTICS.txt"
+
+      - name: Restore and verify frozen W12.2 fixture
+        run: |
+          python -u .ci/v373_ai_grounded_lab/bootstrap.py --out .ci/v373_ai_grounded_lab/runtime | tee "$OUT_DIR/W12_3_BOOTSTRAP.log"
+
+      - name: Frozen grounded contract tests
+        run: python -u .ci/v373_ai_grounded_lab/runtime/contract_test.py | tee "$OUT_DIR/W12_3_FROZEN_CONTRACT_TEST.log"
+
+      - name: W12.3 semantic regression contracts
+        run: python -u .ci/v373_ai_grounded_lab/w123_contract_test.py | tee "$OUT_DIR/W12_3_CONTRACT_TEST.log"
+
+      - name: Compile and W12.3 dry-run
+        run: |
+          python -m py_compile \
+            .ci/v373_ai_grounded_lab/runtime/runner.py \
+            .ci/v373_ai_grounded_lab/fast_resume_v2.py \
+            .ci/v373_ai_grounded_lab/semantic_skeleton_v3.py \
+            .ci/v373_ai_grounded_lab/semantic_skeleton_v3_rules.py \
+            .ci/v373_ai_grounded_lab/w123_contract_test.py
+          python -u .ci/v373_ai_grounded_lab/semantic_skeleton_v3.py \
+            --dry-run \
+            --model "${{ inputs.model }}" \
+            --reasoning-effort "${{ inputs.reasoning_effort }}" \
+            --max-completion-tokens 900 \
+            --out-dir "$OUT_DIR" \
+            | tee "$OUT_DIR/W12_3_DRY_RUN.log"
+
+      - name: Require Groq secret
+        run: |
+          if [ -z "$GROQ_API_KEY" ]; then
+            echo "Missing repository secret GROQ_API_KEY" | tee "$OUT_DIR/W12_3_SECRET_CHECK.log"
+            exit 1
+          fi
+
+      - name: Probe Groq model access
+        env:
+          MODEL: ${{ inputs.model }}
+        run: |
+          python - <<'PY'
+          import json, os, pathlib, urllib.error, urllib.request
+          out = pathlib.Path(os.environ["OUT_DIR"])
+          model, key = os.environ["MODEL"], os.environ["GROQ_API_KEY"]
+          body = {"model": model, "messages": [{"role": "user", "content": "Válaszolj pontosan: OK"}], "reasoning_effort": "low", "include_reasoning": False, "max_completion_tokens": 8}
+          req = urllib.request.Request(
+              "https://api.groq.com/openai/v1/chat/completions",
+              data=json.dumps(body).encode("utf-8"),
+              headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json", "Accept": "application/json", "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/140 Safari/537.36"},
+              method="POST",
+          )
+          try:
+              with urllib.request.urlopen(req, timeout=20) as response:
+                  payload = json.loads(response.read().decode("utf-8"))
+              report = {"status": "PASS", "model": model, "http_status": 200, "response_id": payload.get("id", "")}
+              out.joinpath("GROQ_PROBE_RESULT.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+              print(f"Groq probe PASS: model={model}")
+          except urllib.error.HTTPError as exc:
+              error_body = exc.read().decode("utf-8", "replace")
+              report = {"status": "FAIL", "model": model, "http_status": exc.code, "reason": str(exc.reason), "groq_error": error_body[:4000]}
+              out.joinpath("GROQ_PROBE_RESULT.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+              raise
+          PY
+
+      - name: Find previous W12.3 checkpoint artifact
+        id: resume-source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import json, os, subprocess
+          repo = os.environ["GITHUB_REPOSITORY"]
+          current = int(os.environ["GITHUB_RUN_ID"])
+          name = os.environ["ARTIFACT_NAME"]
+          raw = subprocess.check_output(["gh", "api", f"repos/{repo}/actions/artifacts?name={name}&per_page=50"], text=True)
+          artifacts = json.loads(raw).get("artifacts", [])
+          candidates = [a for a in artifacts if not a.get("expired") and int((a.get("workflow_run") or {}).get("id", 0)) != current]
+          candidates.sort(key=lambda a: str(a.get("created_at", "")), reverse=True)
+          run_id = int((candidates[0].get("workflow_run") or {}).get("id", 0)) if candidates else 0
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+              fh.write(f"run_id={run_id}\n")
+          print(f"previous_checkpoint_run_id={run_id}")
+          PY
+
+      - name: Restore previous W12.3 PASS checkpoints
+        if: steps.resume-source.outputs.run_id != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PREVIOUS_RUN_ID: ${{ steps.resume-source.outputs.run_id }}
+        run: |
+          rm -rf /tmp/w123_previous
+          mkdir -p /tmp/w123_previous "$OUT_DIR/checkpoints"
+          gh run download "$PREVIOUS_RUN_ID" -n "$ARTIFACT_NAME" -D /tmp/w123_previous || true
+          restored=0
+          while IFS= read -r -d '' file; do
+            cp "$file" "$OUT_DIR/checkpoints/$(basename "$file")"
+            restored=$((restored + 1))
+          done < <(find /tmp/w123_previous -type f -path '*/checkpoints/*.json' -print0 2>/dev/null)
+          echo "restored_checkpoint_files=${restored}" | tee "$OUT_DIR/W12_3_RESUME.txt"
+
+      - name: Run W12.3 semantic skeleton lab
+        shell: bash
+        run: |
+          set +e
+          python -u .ci/v373_ai_grounded_lab/semantic_skeleton_v3.py \
+            --model "${{ inputs.model }}" \
+            --reasoning-effort "${{ inputs.reasoning_effort }}" \
+            --timeout 40 \
+            --max-completion-tokens 900 \
+            --http-retries 1 \
+            --content-retries 0 \
+            --repair-rounds 1 \
+            --max-wall-seconds 1080 \
+            --min-request-budget-seconds 70 \
+            --rate-floor-tokens 1800 \
+            --out-dir "$OUT_DIR" \
+            2>&1 | tee "$OUT_DIR/W12_3_LIVE.log"
+          code=${PIPESTATUS[0]}
+          echo "live_runner_exit_code=${code}" | tee -a "$OUT_DIR/W12_3_EARLY_DIAGNOSTICS.txt"
+          exit "$code"
+
+      - name: Print W12.3 report
+        if: always()
+        run: |
+          test -f "$OUT_DIR/W12_3_REGRESSION_RESULT.txt" && cat "$OUT_DIR/W12_3_REGRESSION_RESULT.txt" || true
+          test -f "$OUT_DIR/W12_3_PROGRESS.txt" && cat "$OUT_DIR/W12_3_PROGRESS.txt" || true
+          test -f "$OUT_DIR/YORU_AI_GROUNDED_LAB_RESULT.txt" && cat "$OUT_DIR/YORU_AI_GROUNDED_LAB_RESULT.txt" || true
+
+      - name: Upload W12.3 artifacts and checkpoints
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: yoru-v373-w123-semantic-skeleton-lab
+          path: artifacts/ai_semantic_skeleton_lab/
+          if-no-files-found: warn
+          retention-days: 14
