@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from semantic_skeleton_v3_rules import *
+from semantic_skeleton_v3_rules_v8 import *
 from semantic_skeleton_v3_install_v5 import install_semantic_layer
 from semantic_skeleton_v3_surface_v5 import _surface_fields_only, _extract_failed_generation, repair_surface_with_golden
 from semantic_skeleton_v3_validation_v5 import self_test, regression_report
