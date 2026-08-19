@@ -63,6 +63,7 @@ jobs:
               .ci/v373_ai_grounded_lab/semantic_skeleton_v3_validation_v5.py \
               .ci/v373_ai_grounded_lab/semantic_skeleton_v3_output_v5.py \
               .ci/v373_ai_grounded_lab/semantic_skeleton_v3_rules.py \
+              .ci/v373_ai_grounded_lab/semantic_skeleton_v3_rules_v5.py \
               .ci/v373_ai_grounded_lab/semantic_skeleton_v3_rules_v4.py \
               .ci/v373_ai_grounded_lab/semantic_skeleton_v3_rules_v3.py \
               .ci/v373_ai_grounded_lab/w123_canary.py \
@@ -71,13 +72,15 @@ jobs:
               .ci/v373_ai_grounded_lab/w123_shadow_golden.b64 \
               .ci/v373_ai_grounded_lab/w123_shadow_lab.py \
               .ci/v373_ai_grounded_lab/w123_contract_test.py \
-              .ci/v373_ai_grounded_lab/w123_contract_test_v5.py \
+              .ci/v373_ai_grounded_lab/w123_contract_test_v6.py \
+              .ci/v373_ai_grounded_lab/w123_v5_canary_humanqa.part01.b64 \
+              .ci/v373_ai_grounded_lab/w123_v5_canary_humanqa.part02.b64 \
               .ci/v373_ai_grounded_lab/w123_v4_canteen_fail_checkpoint.b64
           } | tee "$OUT_DIR/W12_3_EARLY_DIAGNOSTICS.txt"
           python -u .ci/v373_ai_grounded_lab/bootstrap.py --out .ci/v373_ai_grounded_lab/runtime | tee "$OUT_DIR/W12_3_BOOTSTRAP.log"
           python -u .ci/v373_ai_grounded_lab/runtime/contract_test.py | tee "$OUT_DIR/W12_3_FROZEN_CONTRACT_TEST.log"
           python -u .ci/v373_ai_grounded_lab/w123_contract_test.py | tee "$OUT_DIR/W12_3_CONTRACT_TEST.log"
-          python -u .ci/v373_ai_grounded_lab/w123_contract_test_v5.py | tee "$OUT_DIR/W12_3_V5_CONTRACT_TEST.log"
+          python -u .ci/v373_ai_grounded_lab/w123_contract_test_v6.py | tee "$OUT_DIR/W12_3_V6_CONTRACT_TEST.log"
           python -u .ci/v373_ai_grounded_lab/w123_shadow_lab.py --out-dir "$OUT_DIR" | tee "$OUT_DIR/W12_3_SHADOW_LAB.log"
           python -u .ci/v373_ai_grounded_lab/w123_checkpoint_migrate_test.py | tee "$OUT_DIR/W12_3_CHECKPOINT_MIGRATION_TEST.log"
           python -m py_compile \
@@ -87,13 +90,14 @@ jobs:
             .ci/v373_ai_grounded_lab/semantic_skeleton_v3_validation_v5.py \
             .ci/v373_ai_grounded_lab/semantic_skeleton_v3_output_v5.py \
             .ci/v373_ai_grounded_lab/semantic_skeleton_v3_rules.py \
+            .ci/v373_ai_grounded_lab/semantic_skeleton_v3_rules_v5.py \
             .ci/v373_ai_grounded_lab/semantic_skeleton_v3_rules_v4.py \
             .ci/v373_ai_grounded_lab/semantic_skeleton_v3_rules_v3.py \
             .ci/v373_ai_grounded_lab/w123_canary.py \
             .ci/v373_ai_grounded_lab/w123_checkpoint_migrate.py \
             .ci/v373_ai_grounded_lab/w123_checkpoint_migrate_test.py \
             .ci/v373_ai_grounded_lab/w123_shadow_lab.py \
-            .ci/v373_ai_grounded_lab/w123_contract_test_v5.py
+            .ci/v373_ai_grounded_lab/w123_contract_test_v6.py
           python -u .ci/v373_ai_grounded_lab/semantic_skeleton_v3.py \
             --dry-run --model "${{ inputs.model }}" \
             --reasoning-effort "${{ inputs.reasoning_effort }}" \
