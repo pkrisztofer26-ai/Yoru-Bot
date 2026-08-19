@@ -58,27 +58,47 @@ jobs:
             python --version
             sha256sum \
               .ci/v373_ai_grounded_lab/semantic_skeleton_v3.py \
+              .ci/v373_ai_grounded_lab/semantic_skeleton_v3_surface_v5.py \
+              .ci/v373_ai_grounded_lab/semantic_skeleton_v3_install_v5.py \
+              .ci/v373_ai_grounded_lab/semantic_skeleton_v3_validation_v5.py \
+              .ci/v373_ai_grounded_lab/semantic_skeleton_v3_output_v5.py \
               .ci/v373_ai_grounded_lab/semantic_skeleton_v3_rules.py \
+              .ci/v373_ai_grounded_lab/semantic_skeleton_v3_rules_v4.py \
               .ci/v373_ai_grounded_lab/semantic_skeleton_v3_rules_v3.py \
               .ci/v373_ai_grounded_lab/w123_canary.py \
+              .ci/v373_ai_grounded_lab/w123_checkpoint_migrate.py \
+              .ci/v373_ai_grounded_lab/w123_checkpoint_migrate_test.py \
+              .ci/v373_ai_grounded_lab/w123_shadow_golden.b64 \
+              .ci/v373_ai_grounded_lab/w123_shadow_lab.py \
               .ci/v373_ai_grounded_lab/w123_contract_test.py \
-              .ci/v373_ai_grounded_lab/w123_contract_test_v4.py
+              .ci/v373_ai_grounded_lab/w123_contract_test_v5.py \
+              .ci/v373_ai_grounded_lab/w123_v4_canteen_fail_checkpoint.b64
           } | tee "$OUT_DIR/W12_3_EARLY_DIAGNOSTICS.txt"
           python -u .ci/v373_ai_grounded_lab/bootstrap.py --out .ci/v373_ai_grounded_lab/runtime | tee "$OUT_DIR/W12_3_BOOTSTRAP.log"
           python -u .ci/v373_ai_grounded_lab/runtime/contract_test.py | tee "$OUT_DIR/W12_3_FROZEN_CONTRACT_TEST.log"
           python -u .ci/v373_ai_grounded_lab/w123_contract_test.py | tee "$OUT_DIR/W12_3_CONTRACT_TEST.log"
-          python -u .ci/v373_ai_grounded_lab/w123_contract_test_v4.py | tee "$OUT_DIR/W12_3_V4_CONTRACT_TEST.log"
+          python -u .ci/v373_ai_grounded_lab/w123_contract_test_v5.py | tee "$OUT_DIR/W12_3_V5_CONTRACT_TEST.log"
           python -u .ci/v373_ai_grounded_lab/w123_shadow_lab.py --out-dir "$OUT_DIR" | tee "$OUT_DIR/W12_3_SHADOW_LAB.log"
           python -u .ci/v373_ai_grounded_lab/w123_checkpoint_migrate_test.py | tee "$OUT_DIR/W12_3_CHECKPOINT_MIGRATION_TEST.log"
           python -m py_compile \
             .ci/v373_ai_grounded_lab/semantic_skeleton_v3.py \
+            .ci/v373_ai_grounded_lab/semantic_skeleton_v3_surface_v5.py \
+            .ci/v373_ai_grounded_lab/semantic_skeleton_v3_install_v5.py \
+            .ci/v373_ai_grounded_lab/semantic_skeleton_v3_validation_v5.py \
+            .ci/v373_ai_grounded_lab/semantic_skeleton_v3_output_v5.py \
             .ci/v373_ai_grounded_lab/semantic_skeleton_v3_rules.py \
+            .ci/v373_ai_grounded_lab/semantic_skeleton_v3_rules_v4.py \
             .ci/v373_ai_grounded_lab/semantic_skeleton_v3_rules_v3.py \
-            .ci/v373_ai_grounded_lab/w123_canary.py
+            .ci/v373_ai_grounded_lab/w123_canary.py \
+            .ci/v373_ai_grounded_lab/w123_checkpoint_migrate.py \
+            .ci/v373_ai_grounded_lab/w123_checkpoint_migrate_test.py \
+            .ci/v373_ai_grounded_lab/w123_shadow_lab.py \
+            .ci/v373_ai_grounded_lab/w123_contract_test_v5.py
           python -u .ci/v373_ai_grounded_lab/semantic_skeleton_v3.py \
             --dry-run --model "${{ inputs.model }}" \
             --reasoning-effort "${{ inputs.reasoning_effort }}" \
-            --max-completion-tokens 900 --out-dir "$OUT_DIR" \
+            --max-completion-tokens 900 --content-retries 0 --repair-rounds 0 \
+            --out-dir "$OUT_DIR" \
             | tee "$OUT_DIR/W12_3_DRY_RUN.log"
           test -n "$GROQ_API_KEY" || { echo "Missing GROQ_API_KEY"; exit 1; }
 
@@ -108,13 +128,13 @@ jobs:
             python -u .ci/v373_ai_grounded_lab/w123_canary.py \
               --model "${{ inputs.model }}" --reasoning-effort "${{ inputs.reasoning_effort }}" \
               --timeout 40 --max-completion-tokens 900 --http-retries 1 \
-              --content-retries 1 --rate-floor-tokens 1800 --out-dir "$OUT_DIR" \
+              --content-retries 0 --rate-floor-tokens 1800 --out-dir "$OUT_DIR" \
               2>&1 | tee "$OUT_DIR/W12_3_CANARY_LIVE.log"
           else
             python -u .ci/v373_ai_grounded_lab/semantic_skeleton_v3.py \
               --model "${{ inputs.model }}" --reasoning-effort "${{ inputs.reasoning_effort }}" \
               --timeout 40 --max-completion-tokens 900 --http-retries 1 \
-              --content-retries 0 --repair-rounds 1 --max-wall-seconds 1080 \
+              --content-retries 0 --repair-rounds 0 --max-wall-seconds 1080 \
               --min-request-budget-seconds 70 --rate-floor-tokens 1800 --out-dir "$OUT_DIR" \
               2>&1 | tee "$OUT_DIR/W12_3_LIVE.log"
           fi
