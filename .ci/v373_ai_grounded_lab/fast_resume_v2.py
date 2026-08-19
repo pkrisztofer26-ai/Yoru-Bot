@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 import importlib.util
 import json
+import os
 import re
 import sys
 import time
@@ -20,6 +21,24 @@ import urllib.request
 HERE = Path(__file__).resolve().parent
 RUNTIME_RUNNER = HERE / "runtime" / "runner.py"
 HOTFIX_VERSION = "w12.2-fast-resume-v2"
+TARGETED_PROMPT_PACKET = "crime_stolen_phone_offer"
+
+
+def grounded_user_prompt(lab, packet, prior_keys: list[str]) -> str:
+    """Keep the canonical prompt, with a narrow lexical/diversity guard for one stuck packet."""
+    base = lab.user_prompt(packet, prior_keys)
+    if packet.key != TARGETED_PROMPT_PACKET:
+        return base
+    return base + (
+        "\n\nPACKET_SPECIFIC_GUARD — crime_stolen_phone_offer:\n"
+        "- A validator tiltja ezeket a szavakat az output bármely szövegmezőjében: "
+        "kedvezmény, ingyenes, ingyenesen, ajándékba. Egyiket se használd.\n"
+        "- Az ajánlat árjellegét csak a grounded fact értelmében, például „feltűnően olcsó” "
+        "vagy „gyanúsan olcsó” formában írd le; ne találj ki árat, akciót, ajándékot vagy új feltételt.\n"
+        "- Az öt jelenet descriptionje legyen ténylegesen eltérő megfogalmazású. "
+        "Váltogasd a hangsúlyt kizárólag a meglévő factek között: gyanús ajánlat, kitérő eredetválasz, "
+        "visszautasítás, beszélgetés megszakítása, további tisztázás. Új tényt ne adj hozzá.\n"
+    )
 
 
 class DailyTokenLimitStop(BaseException):
@@ -118,14 +137,18 @@ def install_provider_hotfix(lab) -> None:
             "model": model,
             "messages": [
                 {"role": "system", "content": lab.system_prompt(packet)},
-                {"role": "user", "content": lab.user_prompt(packet, prior_keys)},
+                {"role": "user", "content": grounded_user_prompt(lab, packet, prior_keys)},
             ],
             "reasoning_effort": effort,
             "include_reasoning": False,
             "max_completion_tokens": max_completion_tokens,
             "response_format": {
                 "type": "json_schema",
-                "json_schema": {"name": f"yoru_grounded_{packet.key}", "strict": True, "schema": lab.output_schema(packet)},
+                "json_schema": {
+                    "name": f"yoru_grounded_{packet.key}",
+                    "strict": True,
+                    "schema": lab.output_schema(packet),
+                },
             },
         }
         encoded = json.dumps(body, ensure_ascii=False).encode("utf-8")
@@ -158,7 +181,13 @@ def install_provider_hotfix(lab) -> None:
                     "limit_tokens": int(headers.get("x-ratelimit-limit-tokens", "0") or 0),
                     "reset_tokens_seconds": round(parse_reset_seconds(headers.get("x-ratelimit-reset-tokens")), 3),
                 }
-                return parsed, raw.get("usage") if isinstance(raw.get("usage"), dict) else {}, (time.perf_counter() - started) * 1000.0, attempt + 1, rate
+                return (
+                    parsed,
+                    raw.get("usage") if isinstance(raw.get("usage"), dict) else {},
+                    (time.perf_counter() - started) * 1000.0,
+                    attempt + 1,
+                    rate,
+                )
             except urllib.error.HTTPError as exc:
                 detail = exc.read().decode("utf-8", "replace")[:4000]
                 if exc.code == 429:
@@ -188,24 +217,42 @@ def install_provider_hotfix(lab) -> None:
 
 def self_test(lab) -> None:
     p = next(x for x in lab.PACKETS if x.key == "work_miskolc_warehouse")
-    items = []
-    for _ in range(p.count):
-        items.append({
-            "key": "elso_valtozat", "packet_key": p.key, "scene_type": p.scene_type, "family": p.family,
-            "title": "Helyzet", "description": "A megadott helyzetből induló rövid jelenet.",
+    payload = {
+        "items": [{
+            "key": "elso_valtozat",
+            "packet_key": p.key,
+            "scene_type": p.scene_type,
+            "family": p.family,
+            "title": "Helyzet",
+            "description": "A megadott helyzetből induló rövid jelenet.",
             "choices": [{"key": "varsz", "label": "Kivársz", "consequence_hint": "Nem sieted el."}],
-            "tags": ["grounded"], "semantic_key": "raktari_helyzet", "grounding_ids": list(p.fact_ids),
-            "entities_mentioned": [], "new_fact_claims": [],
-        })
-    payload = {"items": items}
+            "tags": ["grounded"],
+            "semantic_key": "raktari_helyzet",
+            "grounding_ids": list(p.fact_ids),
+            "entities_mentioned": [],
+            "new_fact_claims": [],
+        }] * p.count
+    }
+    payload = json.loads(json.dumps(payload, ensure_ascii=False))
     changed = host_namespace(lab, p, payload)
     assert changed >= p.count * 2
     assert all(str(x["key"]).startswith(p.key + "_") for x in payload["items"])
     assert all(str(x["semantic_key"]).startswith(p.key + "_") for x in payload["items"])
-    wait = daily_limit_retry_seconds('{"error":{"message":"Rate limit reached on tokens per day (TPD). Please try again in 6m12.816s."}}')
+    wait = daily_limit_retry_seconds(
+        '{"error":{"message":"Rate limit reached on tokens per day (TPD). Please try again in 6m12.816s."}}'
+    )
     assert 372.7 < wait < 373.0
     assert daily_limit_retry_seconds("tokens per minute exceeded") == 0.0
-    print("HOTFIX_V2_CONTRACTS_PASS host_namespace daily_tpd_stop checkpoint_version", flush=True)
+    stuck = next(x for x in lab.PACKETS if x.key == TARGETED_PROMPT_PACKET)
+    guarded = grounded_user_prompt(lab, stuck, [])
+    assert "PACKET_SPECIFIC_GUARD" in guarded
+    assert "kedvezmény, ingyenes, ingyenesen, ajándékba" in guarded
+    assert "ténylegesen eltérő" in guarded
+    assert "PACKET_SPECIFIC_GUARD" not in grounded_user_prompt(lab, p, [])
+    print(
+        "HOTFIX_V2_CONTRACTS_PASS host_namespace daily_tpd_stop checkpoint_version targeted_crime_prompt_guard",
+        flush=True,
+    )
 
 
 def out_dir_from_argv() -> Path:
@@ -229,13 +276,27 @@ def write_tpd_stop(out: Path, exc: DailyTokenLimitStop) -> None:
         "human_review_required": True,
         "production_ai_authorized": False,
     }
-    (out / "YORU_AI_GROUNDED_LAB_RESULT.json").write_text(json.dumps({"summary": summary}, ensure_ascii=False, indent=2), encoding="utf-8")
-    (out / "YORU_AI_GROUNDED_LAB_RESULT.txt").write_text("\n".join([
-        summary["gate"], "STATUS: INCOMPLETE", "provider_blocked_reason=daily_token_limit",
-        f"provider_retry_after_seconds={summary['provider_retry_after_seconds']}", "checkpoint_progress_preserved=true",
-        "human_review_required=true", "production_ai_authorized=false", "",
-    ]), encoding="utf-8")
-    print(f"TPD_BUDGET_STOP retry_after={exc.retry_after_seconds:.1f}s checkpoint_progress_preserved=true; rerun later", flush=True)
+    (out / "YORU_AI_GROUNDED_LAB_RESULT.json").write_text(
+        json.dumps({"summary": summary}, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    (out / "YORU_AI_GROUNDED_LAB_RESULT.txt").write_text(
+        "\n".join([
+            summary["gate"],
+            "STATUS: INCOMPLETE",
+            "provider_blocked_reason=daily_token_limit",
+            f"provider_retry_after_seconds={summary['provider_retry_after_seconds']}",
+            "checkpoint_progress_preserved=true",
+            "human_review_required=true",
+            "production_ai_authorized=false",
+            "",
+        ]),
+        encoding="utf-8",
+    )
+    print(
+        f"TPD_BUDGET_STOP retry_after={exc.retry_after_seconds:.1f}s "
+        "checkpoint_progress_preserved=true; rerun later",
+        flush=True,
+    )
 
 
 def main() -> int:
