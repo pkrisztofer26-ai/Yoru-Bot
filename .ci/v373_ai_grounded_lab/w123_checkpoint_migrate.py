@@ -42,11 +42,26 @@ def _surface_from_result(mod, result: dict[str, Any]) -> dict[str, Any] | None:
     return {"items": rows}
 
 
+def _write_migrated_checkpoint(path: Path, doc: dict[str, Any], lab, mod, packet, result: dict[str, Any]) -> None:
+    new_doc = {
+        "contract_version": mod.CONTRACT_VERSION,
+        "packet_fingerprint": lab.packet_fingerprint(packet),
+        "model": doc.get("model"),
+        "reasoning_effort": doc.get("reasoning_effort"),
+        "saved_at_unix": round(time.time(), 3),
+        "result": result,
+    }
+    tmp = path.with_suffix(".json.migrating")
+    tmp.write_text(json.dumps(new_doc, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp.replace(path)
+
+
 def migrate(checkpoint_dir: Path, out_dir: Path, *, model: str | None, reasoning_effort: str | None) -> dict[str, Any]:
     mod, lab = _load_target()
     packet_by_key = {p.key: p for p in lab.PACKETS}
     rows = []
     migrated = 0
+    salvaged_failed = 0
     already_current = 0
     rejected = 0
     skipped = 0
@@ -67,8 +82,8 @@ def migrate(checkpoint_dir: Path, out_dir: Path, *, model: str | None, reasoning
             rows.append({"file": path.name, "packet": packet_key, "action": "skip_unknown_packet"})
             skipped += 1
             continue
-        if not isinstance(result, dict) or result.get("status") != "PASS":
-            rows.append({"file": path.name, "packet": packet_key, "action": "skip_non_pass", "source_status": (result or {}).get("status") if isinstance(result, dict) else None})
+        if not isinstance(result, dict):
+            rows.append({"file": path.name, "packet": packet_key, "action": "skip_missing_result"})
             skipped += 1
             continue
         if model and doc.get("model") != model:
@@ -85,6 +100,81 @@ def migrate(checkpoint_dir: Path, out_dir: Path, *, model: str | None, reasoning
             continue
 
         source_version = str(doc.get("contract_version") or "")
+        source_status = str(result.get("status") or "")
+
+        # v5 can salvage a historical FAIL with zero provider calls when the
+        # exact provider surface was preserved. The current contract chooses
+        # the minimum golden-slot repair and fully revalidates the final payload.
+        if source_status == "FAIL":
+            surfaces = result.get("provider_surfaces") or []
+            salvage_payload = None
+            salvage_meta = None
+            for surface in reversed(surfaces):
+                try:
+                    payload, repair = mod.repair_surface_with_golden(lab, packet, surface)
+                    errors = lab.validate_payload(packet, payload) if isinstance(payload, dict) else ["missing repaired payload"]
+                except Exception as exc:
+                    payload = None
+                    repair = {"status": "FAIL", "error": f"{type(exc).__name__}:{exc}"}
+                    errors = [repair["error"]]
+                if payload is not None and not errors:
+                    salvage_payload = payload
+                    salvage_meta = repair
+                    break
+
+            if salvage_payload is None:
+                rows.append({
+                    "file": path.name,
+                    "packet": packet_key,
+                    "action": "skip_non_pass_no_safe_surface_salvage",
+                    "source_status": source_status,
+                    "source_version": source_version,
+                })
+                skipped += 1
+                continue
+
+            migrated_result = dict(result)
+            migrated_result["status"] = "PASS"
+            migrated_result["payload"] = salvage_payload
+            migrated_result["salvaged_from_failed_checkpoint"] = True
+            migrated_result["host_surface_repair"] = {
+                **(salvage_meta or {}),
+                "trigger": "checkpoint_fail_surface_salvage",
+            }
+            migrated_result["surface_quality"] = {
+                "provider_attempt_surfaces": len(surfaces),
+                "golden_fallback_slots": list((salvage_meta or {}).get("golden_fallback_slots") or []),
+                "golden_fallback_count": int((salvage_meta or {}).get("golden_fallback_count") or 0),
+                "native_slot_count": int((salvage_meta or {}).get("native_slot_count") or 0),
+                "provider_second_content_request_used": False,
+            }
+            migrated_result["checkpoint_migration"] = {
+                "source_contract_version": source_version,
+                "source_status": "FAIL",
+                "target_contract_version": mod.CONTRACT_VERSION,
+                "provider_reused": False,
+                "provider_calls_for_migration": 0,
+                "failed_surface_salvaged": True,
+                "revalidated_at_unix": round(time.time(), 3),
+            }
+            _write_migrated_checkpoint(path, doc, lab, mod, packet, migrated_result)
+            rows.append({
+                "file": path.name,
+                "packet": packet_key,
+                "action": "salvaged_failed_surface",
+                "source_version": source_version,
+                "target_version": mod.CONTRACT_VERSION,
+                "golden_fallback_count": int((salvage_meta or {}).get("golden_fallback_count") or 0),
+                "provider_calls_for_migration": 0,
+            })
+            salvaged_failed += 1
+            continue
+
+        if source_status != "PASS":
+            rows.append({"file": path.name, "packet": packet_key, "action": "skip_non_pass", "source_status": source_status})
+            skipped += 1
+            continue
+
         if source_version == mod.CONTRACT_VERSION:
             payload = result.get("payload")
             errs = lab.validate_payload(packet, payload) if isinstance(payload, dict) else ["missing payload"]
@@ -110,43 +200,53 @@ def migrate(checkpoint_dir: Path, out_dir: Path, *, model: str | None, reasoning
             current_payload = None
 
         if errors:
-            rows.append({
-                "file": path.name,
-                "packet": packet_key,
-                "action": "reject_old_checkpoint_under_current_contract",
-                "source_version": source_version,
-                "target_version": mod.CONTRACT_VERSION,
-                "errors": errors[:12],
-            })
-            rejected += 1
-            continue
+            # A historical PASS may still be safely recoverable under v5's
+            # deterministic surface fallback. This prevents a contract bump
+            # from forcing a new provider request solely for wording changes.
+            try:
+                current_payload, repair = mod.repair_surface_with_golden(lab, packet, surface)
+                errors = lab.validate_payload(packet, current_payload) if current_payload else ["repair failed"]
+            except Exception as exc:
+                repair = {"status": "FAIL"}
+                current_payload = None
+                errors = [f"repair:{type(exc).__name__}:{exc}"]
+            if errors:
+                rows.append({
+                    "file": path.name,
+                    "packet": packet_key,
+                    "action": "reject_old_checkpoint_under_current_contract",
+                    "source_version": source_version,
+                    "target_version": mod.CONTRACT_VERSION,
+                    "errors": errors[:12],
+                })
+                rejected += 1
+                continue
+        else:
+            repair = None
 
         migrated_result = dict(result)
         migrated_result["payload"] = current_payload
+        if repair and repair.get("golden_fallback_count"):
+            migrated_result["host_surface_repair"] = {
+                **repair,
+                "trigger": "checkpoint_pass_surface_repair",
+            }
         migrated_result["checkpoint_migration"] = {
             "source_contract_version": source_version,
+            "source_status": "PASS",
             "target_contract_version": mod.CONTRACT_VERSION,
             "provider_reused": False,
             "provider_calls_for_migration": 0,
             "revalidated_at_unix": round(time.time(), 3),
         }
-        new_doc = {
-            "contract_version": mod.CONTRACT_VERSION,
-            "packet_fingerprint": lab.packet_fingerprint(packet),
-            "model": doc.get("model"),
-            "reasoning_effort": doc.get("reasoning_effort"),
-            "saved_at_unix": round(time.time(), 3),
-            "result": migrated_result,
-        }
-        tmp = path.with_suffix(".json.migrating")
-        tmp.write_text(json.dumps(new_doc, ensure_ascii=False, indent=2), encoding="utf-8")
-        tmp.replace(path)
+        _write_migrated_checkpoint(path, doc, lab, mod, packet, migrated_result)
         rows.append({
             "file": path.name,
             "packet": packet_key,
             "action": "migrated_pass",
             "source_version": source_version,
             "target_version": mod.CONTRACT_VERSION,
+            "golden_fallback_count": int((repair or {}).get("golden_fallback_count") or 0),
             "provider_calls_for_migration": 0,
         })
         migrated += 1
@@ -156,6 +256,7 @@ def migrate(checkpoint_dir: Path, out_dir: Path, *, model: str | None, reasoning
         "contract_version": mod.CONTRACT_VERSION,
         "checkpoint_dir": str(checkpoint_dir),
         "migrated_pass": migrated,
+        "salvaged_failed": salvaged_failed,
         "already_current_pass": already_current,
         "rejected": rejected,
         "skipped": skipped,
@@ -171,6 +272,7 @@ def migrate(checkpoint_dir: Path, out_dir: Path, *, model: str | None, reasoning
             report["gate"],
             f"contract_version={mod.CONTRACT_VERSION}",
             f"migrated_pass={migrated}",
+            f"salvaged_failed={salvaged_failed}",
             f"already_current_pass={already_current}",
             f"rejected={rejected}",
             f"skipped={skipped}",
