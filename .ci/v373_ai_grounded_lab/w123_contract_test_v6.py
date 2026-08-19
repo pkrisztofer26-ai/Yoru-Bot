@@ -43,8 +43,8 @@ lab = mod.V2.load_lab()
 mod.V2.install_provider_hotfix(lab)
 mod.install_semantic_layer(lab)
 
-ok("contract_v6", mod.CONTRACT_VERSION == "w12.3-semantic-skeleton-v6")
-ok("config_v6", mod.CONFIG["version"] == mod.CONTRACT_VERSION)
+ok("contract_v7", mod.CONTRACT_VERSION == "w12.3-semantic-skeleton-v7")
+ok("config_v7", mod.CONFIG["version"] == mod.CONTRACT_VERSION)
 
 fixture = load_canary_fixture()
 docs = fixture["checkpoints"]
@@ -129,7 +129,44 @@ ok(
     ),
 )
 
-# Exact v5 PASS canary must migrate to v6 with zero provider calls.
+
+# Partial-FULL human-QA regressions are deterministic rejects.
+for packet_key, bad_text, expected in [
+    ("work_miskolc_warehouse", "Torlasdott raklapoknál a kevert címkék sorrendjét kell rendezni.", "warehouse_partial_full_bad_hungarian"),
+    ("work_eger_event_cleanup", "A nedves kábelek a szabadban száradnak.", "cleanup_unsupplied_drying_location"),
+    ("career_dispatch_road_closure", "A sofőrrel találkozik az útlezárás.", "dispatch_partial_full_broken_subject"),
+    ("career_retail_training", "Az új kolléga egy rutin feladatnál szorul akadályba.", "retail_partial_full_bad_collocation"),
+    ("work_mezokovesd_archive", "A régi mappa közt több hibás címke akad.", "archive_partial_full_bad_plural"),
+]:
+    packet = packet_by_key[packet_key]
+    surface = mod.golden_surface(packet)
+    surface["items"][0]["description"] = bad_text
+    payload = mod.canonicalize_surface_payload(lab, packet, surface)
+    errs = lab.validate_payload(packet, payload)
+    ok(f"reject_v7_partial_full_{packet_key}", any(expected in e for e in errs))
+
+for packet_key in [
+    "work_miskolc_warehouse",
+    "work_eger_event_cleanup",
+    "work_mezokovesd_archive",
+    "career_dispatch_road_closure",
+    "career_retail_training",
+    "career_mechanic_part_delay",
+    "crime_stolen_phone_offer",
+]:
+    packet = packet_by_key[packet_key]
+    payload = mod.canonicalize_surface_payload(lab, packet, mod.golden_surface(packet))
+    ok(f"golden_v7_{packet_key}", not lab.validate_payload(packet, payload))
+
+phone = packet_by_key["crime_stolen_phone_offer"]
+phone_payload = mod.canonicalize_surface_payload(lab, phone, mod.golden_surface(phone))
+phone_text = " ".join(
+    c["label"] + " " + c["consequence_hint"] for i in phone_payload["items"] for c in i["choices"]
+).casefold()
+ok("phone_no_alkudozas_nelkuli", "alkudozás nélküli" not in phone_text)
+ok("phone_origin_reask_natural", "újra rákérdezel a telefon eredetére" in phone_text)
+
+# Exact v5 PASS canary must migrate to v7 with zero provider calls.
 import w123_checkpoint_migrate as migrate_mod
 
 with tempfile.TemporaryDirectory(prefix="w123_v6_migrate_") as td:
@@ -171,6 +208,6 @@ with tempfile.TemporaryDirectory(prefix="w123_v6_migrate_") as td:
     )
 
 # Provider remains exactly one request per fresh packet; no content retry.
-ok("v6_zero_content_retry_policy", getattr(mod, "CONTRACT_VERSION") == "w12.3-semantic-skeleton-v6")
+ok("v7_zero_content_retry_policy", getattr(mod, "CONTRACT_VERSION") == "w12.3-semantic-skeleton-v7")
 
-print("W12_3_V6_HUMAN_CANARY_TESTS_PASS")
+print("W12_3_V7_HUMAN_CANARY_TESTS_PASS")
