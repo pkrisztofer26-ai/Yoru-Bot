@@ -24,6 +24,49 @@ HOTFIX_VERSION = "w12.2-fast-resume-v2"
 TARGETED_PROMPT_PACKET = "crime_stolen_phone_offer"
 
 
+TARGETED_LEXICAL_REPLACEMENTS = (
+    (re.compile(r"\bkedvezmény\b", re.I), "feltűnően olcsó ajánlat"),
+    (re.compile(r"\bingyenesen\b", re.I), "feltűnően olcsón"),
+    (re.compile(r"\bingyenes\b", re.I), "feltűnően olcsó"),
+    (re.compile(r"\bajándékba\b", re.I), "feltűnően olcsón"),
+)
+
+
+def normalize_targeted_lexical_drift(packet, value: Any) -> int:
+    """Normalize only the stuck packet's forbidden freebie lexemes back to its grounded cheap-offer fact."""
+    if packet.key != TARGETED_PROMPT_PACKET:
+        return 0
+    changed = 0
+
+    def walk(node: Any) -> None:
+        nonlocal changed
+        if isinstance(node, dict):
+            for key, child in list(node.items()):
+                if isinstance(child, str):
+                    text = child
+                    for pattern, replacement in TARGETED_LEXICAL_REPLACEMENTS:
+                        text, count = pattern.subn(replacement, text)
+                        changed += count
+                    node[key] = text
+                else:
+                    walk(child)
+        elif isinstance(node, list):
+            for index, child in enumerate(node):
+                if isinstance(child, str):
+                    text = child
+                    for pattern, replacement in TARGETED_LEXICAL_REPLACEMENTS:
+                        text, count = pattern.subn(replacement, text)
+                        changed += count
+                    node[index] = text
+                else:
+                    walk(child)
+
+    walk(value)
+    if changed:
+        print(f"TARGETED_LEXICAL_NORMALIZE packet={packet.key} replacements={changed}", flush=True)
+    return changed
+
+
 def grounded_user_prompt(lab, packet, prior_keys: list[str]) -> str:
     """Keep the canonical prompt, with a narrow lexical/diversity guard for one stuck packet."""
     base = lab.user_prompt(packet, prior_keys)
@@ -176,6 +219,7 @@ def install_provider_hotfix(lab) -> None:
                 if not isinstance(parsed, dict):
                     raise ValueError("structured output root is not an object")
                 host_namespace(lab, packet, parsed)
+                normalize_targeted_lexical_drift(packet, parsed)
                 rate = {
                     "remaining_tokens": int(headers.get("x-ratelimit-remaining-tokens", "0") or 0),
                     "limit_tokens": int(headers.get("x-ratelimit-limit-tokens", "0") or 0),
@@ -249,8 +293,14 @@ def self_test(lab) -> None:
     assert "kedvezmény, ingyenes, ingyenesen, ajándékba" in guarded
     assert "ténylegesen eltérő" in guarded
     assert "PACKET_SPECIFIC_GUARD" not in grounded_user_prompt(lab, p, [])
+    lexical_probe = {"items": [{"title": "Ingyenes", "description": "Kedvezmény és ajándékba, ingyenesen."}]}
+    replacements = normalize_targeted_lexical_drift(stuck, lexical_probe)
+    assert replacements == 4
+    probe_text = lab._all_text(lexical_probe)
+    discount_pattern = next(pattern for name, pattern in lab.AUTHORITY_TEXT_PATTERNS if name == "discount_or_freebie")
+    assert not discount_pattern.search(probe_text)
     print(
-        "HOTFIX_V2_CONTRACTS_PASS host_namespace daily_tpd_stop checkpoint_version targeted_crime_prompt_guard",
+        "HOTFIX_V2_CONTRACTS_PASS host_namespace daily_tpd_stop checkpoint_version targeted_crime_prompt_guard targeted_lexical_normalize",
         flush=True,
     )
 
