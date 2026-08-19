@@ -43,7 +43,7 @@ def _args() -> argparse.Namespace:
     p.add_argument("--timeout", type=float, default=40.0)
     p.add_argument("--max-completion-tokens", type=int, default=900)
     p.add_argument("--http-retries", type=int, default=1)
-    p.add_argument("--content-retries", type=int, default=0)
+    p.add_argument("--content-retries", type=int, default=1)
     p.add_argument("--rate-floor-tokens", type=int, default=1800)
     p.add_argument("--input-usd-per-million", type=float, default=0.15)
     p.add_argument("--output-usd-per-million", type=float, default=0.60)
@@ -108,9 +108,24 @@ def main() -> int:
                 continue
             print(f"CANARY {index}/{len(packets)} START {packet.key}", flush=True)
             result = lab.run_packet(args, packet, api_key, prior_keys)
-            requests += 1
+            requests += max(1, len(result.get("attempts") or []))
             lab.save_checkpoint(out, packet, args, result)
             if result.get("status") != "PASS":
+                surfaces = result.get("provider_surfaces") or []
+                if surfaces:
+                    (out / f"W12_3_FAILED_SURFACE_{packet.key}.json").write_text(
+                        json.dumps(
+                            {
+                                "packet": packet.key,
+                                "contract_version": mod.CONTRACT_VERSION,
+                                "provider_surfaces": surfaces,
+                                "validation_attempts": result.get("attempts") or [],
+                            },
+                            ensure_ascii=False,
+                            indent=2,
+                        ),
+                        encoding="utf-8",
+                    )
                 results_by_key[packet.key] = result
                 ordered = [results_by_key[k] for k in CANARY_PACKETS if k in results_by_key]
                 summary = {

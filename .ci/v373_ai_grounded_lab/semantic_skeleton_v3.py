@@ -6,15 +6,21 @@ import os
 def install_semantic_layer(lab) -> None:
     base_validate = lab.validate_payload
     base_request = lab.request_groq
+    base_run_packet = lab.run_packet
     lab.CONTRACT_VERSION = CONTRACT_VERSION
     lab.output_schema = surface_output_schema
     lab.system_prompt = system_prompt_v3
     lab.user_prompt = user_prompt_v3
+    lab._w123_surface_attempts = {}
 
     def request_v3(**kwargs):
         packet = kwargs["packet"]
-        payload, usage, latency, http_attempts, rate = base_request(**kwargs)
-        payload = canonicalize_surface_payload(lab, packet, payload)
+        surface, usage, latency, http_attempts, rate = base_request(**kwargs)
+        # Preserve the exact provider-owned surface before host canonicalization.
+        # Diagnostic evidence only; it never participates in game authority.
+        snapshot = json.loads(json.dumps(surface, ensure_ascii=False))
+        lab._w123_surface_attempts.setdefault(packet.key, []).append(snapshot)
+        payload = canonicalize_surface_payload(lab, packet, surface)
         return payload, usage, latency, http_attempts, rate
 
     def validate_v3(packet, payload):
@@ -23,8 +29,18 @@ def install_semantic_layer(lab) -> None:
             base = [e for e in base if "choices count must be 1..2" not in e]
         return base + semantic_errors(lab, packet, payload)
 
+    def run_packet_v3(args, packet, api_key, prior_keys, **kwargs):
+        lab._w123_surface_attempts.pop(packet.key, None)
+        result = base_run_packet(args, packet, api_key, prior_keys, **kwargs)
+        if result.get("status") != "PASS":
+            surfaces = lab._w123_surface_attempts.get(packet.key) or []
+            if surfaces:
+                result["provider_surfaces"] = surfaces
+        return result
+
     lab.request_groq = request_v3
     lab.validate_payload = validate_v3
+    lab.run_packet = run_packet_v3
 
 
 def regression_report(lab) -> dict[str, Any]:

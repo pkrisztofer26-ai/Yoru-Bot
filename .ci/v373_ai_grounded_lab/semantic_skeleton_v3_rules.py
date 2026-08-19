@@ -1,81 +1,78 @@
 from __future__ import annotations
 
-"""W12.3 semantic skeleton v3 shadow-lab hardening.
+"""W12.3 semantic skeleton v4 canary-efficiency hardening.
 
-v3 preserves the first-live v2 rules and adds semantic regressions discovered
-by the zero-token Shadow Lab. The provider remains a surface renderer only.
+v4 keeps all v3 semantic/language regressions but relaxes only the per-item
+anchor threshold that caused the first v3 canary false reject. Packet-level
+anchor coverage remains mandatory, so canonical facts cannot disappear across
+the five-variant packet.
 """
 
 import copy as _copy
-import semantic_skeleton_v3_rules_v2 as _v2
-from semantic_skeleton_v3_rules_v2 import *
+import semantic_skeleton_v3_rules_v3 as _v3
+from semantic_skeleton_v3_rules_v3 import *
 
-CONTRACT_VERSION = "w12.3-semantic-skeleton-v3"
-CONFIG = _copy.deepcopy(_v2.CONFIG)
+CONTRACT_VERSION = "w12.3-semantic-skeleton-v4"
+CONFIG = _copy.deepcopy(_v3.CONFIG)
 CONFIG["version"] = CONTRACT_VERSION
 
-
-def _add_forbidden(packet_key: str, name: str, pattern: str) -> None:
-    rows = CONFIG["packets"][packet_key].setdefault("forbidden", [])
-    if not any(existing == name for existing, _ in rows):
-        rows.append([name, pattern])
-
-
-# Shadow Lab gap 1: archive labels are known to be inconsistent, so sorting by
-# the bad label itself contradicts the canonical constraint.
-_add_forbidden(
-    "work_mezokovesd_archive",
-    "archive_wrong_label_sort",
-    r"(?i)(?:hibás|rossz)\s+címk\w*.{0,28}(?:alapján|szerint).{0,28}(?:rendez|tesz|helyez|pakol)",
-)
-
-# Shadow Lab gap 2: the retail situation is explicitly professional/human, not
-# a disciplinary case.
-_add_forbidden(
-    "career_retail_training",
-    "retail_disciplinary_invention",
-    r"(?i)\b(?:fegyelmi(?:\s+(?:ügy|eljárás))?|büntet\w*|megrov\w*)\b",
-)
-
-# Shadow Lab gap 3: suffixes/compounds bypassed the original supplier/ETA regex.
-_add_forbidden(
-    "career_mechanic_part_delay",
-    "supplier_eta_suffix_invention",
-    r"(?i)(?:szállító\w*|pontos\s+érkezési\s+idő\w*)",
-)
-
-# Shadow Lab gap 4: Lilla only asks whether a later work-related coordination is
-# acceptable; no concrete job or exact appointment exists.
-_add_forbidden(
-    "npc_lilla_dispatcher",
-    "lilla_concrete_job_time_invention",
-    r"(?i)(?:konkrét\s+(?:fuvar|munka|műszak)\w*|pontos\s+időpont\w*|munkakezd\w*)",
-)
-
-# Shadow Lab gap 5: Misi asks only whether the player is generally looking for a
-# car; a specific vehicle or price is new deal truth.
-_add_forbidden(
-    "npc_misi_car_dealer",
-    "misi_concrete_deal_suffix",
-    r"(?i)(?:konkrét\s+autó\w*|\b(?:ár|alku|kedvezmény)\w*)",
-)
-
-# Shadow Lab gap 6: the memory contains exactly one help event. Compounded car
-# repair / debt / invented joint-event wording is not a valid recall.
-_add_forbidden(
-    "memory_jani_tools",
-    "jani_memory_joint_event_invention",
-    r"(?i)(?:közös\s+(?:munka|esemény|javítás)\w*|autó\w*javít\w*|tartoz\w*|fizets\w*)",
-)
-
-# Imported v2 functions resolve CONFIG/CONTRACT_VERSION in the v2 module.
-_v2.CONFIG = CONFIG
-_v2.CONTRACT_VERSION = CONTRACT_VERSION
-
-# Re-exported functions call into v2 -> v1. Keep every layer aligned with the
-# current merged configuration/version.
+# Align the imported rule layers with the merged current config/version.
+_v3.CONFIG = CONFIG
+_v3.CONTRACT_VERSION = CONTRACT_VERSION
 try:
-    _v2._v1.CONFIG = CONFIG
-    _v2._v1.CONTRACT_VERSION = CONTRACT_VERSION
+    _v3._v2.CONFIG = CONFIG
+    _v3._v2.CONTRACT_VERSION = CONTRACT_VERSION
+    _v3._v2._v1.CONFIG = CONFIG
+    _v3._v2._v1.CONTRACT_VERSION = CONTRACT_VERSION
 except Exception:
     pass
+
+
+def user_prompt_v3(packet, prior_keys: list[str]) -> str:
+    text = _v3.user_prompt_v3(packet, prior_keys)
+    old = (
+        "Minden slot title + description felületi megfogalmazás legyen. "
+        "Egy leírásnak nem kell az összes anchor csoportot szó szerint ismételnie: "
+        "legalább a csoportok többségét tartsa meg, az öt slot együtt pedig fedje le mindet. "
+    )
+    new = (
+        "Minden slot title + description felületi megfogalmazás legyen. "
+        "Egy leírásnak nem kell az összes anchor csoportot szó szerint ismételnie: "
+        "három vagy négy anchor esetén legalább kettőt, öt anchor esetén legalább hármat tartson meg. "
+        "Az öt slot együtt minden anchor csoportot legalább három külön variánsban fedjen le. "
+    )
+    return text.replace(old, new)
+
+
+def semantic_errors(lab, packet, payload: dict) -> list[str]:
+    # Keep every v3 structural/language/semantic rule and the packet-level
+    # 3/5 anchor requirement. Replace only v2's overly strict per-item rule.
+    errors = [
+        e for e in _v3.semantic_errors(lab, packet, payload)
+        if not (e.startswith("items[") and "semantic anchor coverage too weak" in e)
+    ]
+    cfg = packet_cfg(packet)
+    items = payload.get("items", []) if isinstance(payload, dict) else []
+    anchors = list(cfg.get("anchors", []))
+    minimum = max(2, (len(anchors) + 1) // 2) if anchors else 0
+
+    for i, item in enumerate(items):
+        if not isinstance(item, dict):
+            continue
+        desc = _v3._v2._v1._clean_text(item.get("description"))
+        matched = [
+            gi for gi, group in enumerate(anchors, 1)
+            if _v3._v2._v1._matches_group(desc, group)
+        ]
+        if len(matched) < minimum:
+            missing = [
+                f"{gi}:{'/'.join(group)}"
+                for gi, group in enumerate(anchors, 1)
+                if gi not in matched
+            ]
+            errors.append(
+                f"items[{i}]: semantic anchor coverage too weak "
+                f"matched={len(matched)}/{len(anchors)} minimum={minimum} "
+                f"missing={';'.join(missing)}"
+            )
+    return errors

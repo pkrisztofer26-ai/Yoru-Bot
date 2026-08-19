@@ -137,4 +137,63 @@ for packet_key, bad_phrase, expected in shadow_cases:
     errs = lab.validate_payload(packet, mod.canonicalize_surface_payload(lab, packet, surface))
     ok(f"reject_shadow_{packet_key}", any(expected in e for e in errs))
 
+
+# W12.3.3/v4: four-anchor packets may have a focused 2-anchor variant as long
+# as packet-level 3/5 coverage preserves every canonical anchor.
+canteen = next(p for p in lab.PACKETS if p.key == "work_miskolc_canteen")
+all_canteen = "alapanyag késik sor előkészítés"
+surface = {"items": [
+    {"slot": mod.SLOT_IDS[0], "title": "Menza fókusz A", "description": f"{all_canteen} marad a rövid jelenet fókusza."},
+    {"slot": mod.SLOT_IDS[1], "title": "Menza fókusz B", "description": "A növekvő sor mellett a kiszolgálás szervezése kerül előtérbe."},
+    {"slot": mod.SLOT_IDS[2], "title": "Menza fókusz C", "description": f"{all_canteen} mellett a kisegítő a saját feladatánál marad."},
+    {"slot": mod.SLOT_IDS[3], "title": "Menza fókusz D", "description": f"{all_canteen} együtt adja a jelenet keretét."},
+    {"slot": mod.SLOT_IDS[4], "title": "Menza fókusz E", "description": f"{all_canteen} marad a helyzet teljes kerete."},
+]}
+errs = lab.validate_payload(canteen, mod.canonicalize_surface_payload(lab, canteen, surface))
+ok("allow_four_anchor_two_focus_when_packet_covered", not errs)
+
+# Five-anchor world packets still require at least three anchors per variant.
+world5 = next(p for p in lab.PACKETS if p.key == "world_eger_heat")
+anchors5 = mod.packet_cfg(world5)["anchors"]
+full5 = " ".join(g[0] for g in anchors5)
+surface = {"items": [
+    {"slot": mod.SLOT_IDS[0], "title": "Egri fókusz A", "description": "Eger és a hőség röviden jelenik meg a leírásban."},
+    {"slot": mod.SLOT_IDS[1], "title": "Egri fókusz B", "description": f"{full5} marad a világállapot leírasa."},
+    {"slot": mod.SLOT_IDS[2], "title": "Egri fókusz C", "description": f"{full5} marad a világállapot kerete."},
+    {"slot": mod.SLOT_IDS[3], "title": "Egri fókusz D", "description": f"{full5} együtt jelenik meg."},
+    {"slot": mod.SLOT_IDS[4], "title": "Egri fókusz E", "description": f"{full5} adja a rövid hírszerű leírást."},
+]}
+errs = lab.validate_payload(world5, mod.canonicalize_surface_payload(lab, world5, surface))
+ok("world_five_anchor_minimum_three", any("minimum=3" in e for e in errs))
+
+# Failed provider surfaces must survive as diagnostic evidence without becoming
+# authoritative payload fields. This is entirely offline: request_groq is faked.
+import argparse as _argparse
+lab2 = mod.V2.load_lab()
+mod.V2.install_provider_hotfix(lab2)
+bad_packet = next(p for p in lab2.PACKETS if p.key == "work_miskolc_canteen")
+def _fake_request(**kwargs):
+    return (
+        {"items": [
+            {"slot": slot, "title": f"Nyers próba {chr(65+i)}", "description": f"alapanyag késik sor előkészítés zöldséget talál ki {chr(97+i)}."}
+            for i, slot in enumerate(mod.SLOT_IDS)
+        ]},
+       {"prompt_tokens": 10, "completion_tokens": 10, "total_tokens": 20},
+        1.0,
+        1,
+       {"remaining_tokens": 7000, "limit_tokens": 8000, "reset_tokens_seconds": 1.0},
+    )
+lab2.request_groq = _fake_request
+mod.install_semantic_layer(lab2)
+fake_args = _argparse.Namespace(
+    endpoint="fake", model="openai/gpt-oss-120b", reasoning_effort="low",
+    timeout=1.0, max_completion_tokens=100, http_retries=0, content_retries=0,
+    input_usd_per_million=0.15, output_usd_per_million=0.60,
+)
+failed = lab2.run_packet(fake_args, bad_packet, "fake-key", [])
+ok("failed_surface_evidence_preserved", failed.get("status") == "FAIL" and len(failed.get("provider_surfaces") or []) == 1)
+
+canary_source = (HERE / "w123_canary.py").read_text(encoding="utf-8")
+ok("canary_one_content_retry", 'p.add_argument("--content-retries", type=int, default=1)' in canary_source)
+
 print(f"W12_3_CONTRACT_TESTS_FINAL_PASS {len(checks)}/{len(checks)}")

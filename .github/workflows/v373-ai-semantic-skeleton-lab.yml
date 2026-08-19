@@ -61,6 +61,7 @@ jobs:
             sha256sum \
               .ci/v373_ai_grounded_lab/semantic_skeleton_v3.py \
               .ci/v373_ai_grounded_lab/semantic_skeleton_v3_rules.py \
+              .ci/v373_ai_grounded_lab/semantic_skeleton_v3_rules_v3.py \
               .ci/v373_ai_grounded_lab/semantic_skeleton_v3_rules_v2.py \
               .ci/v373_ai_grounded_lab/semantic_skeleton_v3.json \
               .ci/v373_ai_grounded_lab/w123_regression_corpus.part*.b64 \
@@ -97,6 +98,7 @@ jobs:
             .ci/v373_ai_grounded_lab/fast_resume_v2.py \
             .ci/v373_ai_grounded_lab/semantic_skeleton_v3.py \
             .ci/v373_ai_grounded_lab/semantic_skeleton_v3_rules.py \
+            .ci/v373_ai_grounded_lab/semantic_skeleton_v3_rules_v3.py \
             .ci/v373_ai_grounded_lab/semantic_skeleton_v3_rules_v2.py \
             .ci/v373_ai_grounded_lab/w123_shadow_lab.py \
             .ci/v373_ai_grounded_lab/w123_checkpoint_migrate.py \
@@ -202,7 +204,7 @@ jobs:
             --timeout 40 \
             --max-completion-tokens 900 \
             --http-retries 1 \
-            --content-retries 0 \
+            --content-retries 1 \
             --rate-floor-tokens 1800 \
             --out-dir "$OUT_DIR" \
             2>&1 | tee "$OUT_DIR/W12_3_CANARY_LIVE.log"
@@ -212,40 +214,4 @@ jobs:
 
       - name: Run W12.3 full semantic skeleton lab
         if: inputs.run_scope == 'full'
-        shell: bash
-        run: |
-          set +e
-          python -u .ci/v373_ai_grounded_lab/semantic_skeleton_v3.py \
-            --model "${{ inputs.model }}" \
-            --reasoning-effort "${{ inputs.reasoning_effort }}" \
-            --timeout 40 \
-            --max-completion-tokens 900 \
-            --http-retries 1 \
-            --content-retries 0 \
-            --repair-rounds 1 \
-            --max-wall-seconds 1080 \
-            --min-request-budget-seconds 70 \
-            --rate-floor-tokens 1800 \
-            --out-dir "$OUT_DIR" \
-            2>&1 | tee "$OUT_DIR/W12_3_LIVE.log"
-          code=${PIPESTATUS[0]}
-          echo "full_runner_exit_code=${code}" | tee -a "$OUT_DIR/W12_3_EARLY_DIAGNOSTICS.txt"
-          exit "$code"
-
-      - name: Print W12.3 report
-        if: always()
-        run: |
-          test -f "$OUT_DIR/W12_3_SHADOW_LAB_RESULT.txt" && cat "$OUT_DIR/W12_3_SHADOW_LAB_RESULT.txt" || true
-          test -f "$OUT_DIR/W12_3_CHECKPOINT_MIGRATION.txt" && cat "$OUT_DIR/W12_3_CHECKPOINT_MIGRATION.txt" || true
-          test -f "$OUT_DIR/W12_3_REGRESSION_RESULT.txt" && cat "$OUT_DIR/W12_3_REGRESSION_RESULT.txt" || true
-          test -f "$OUT_DIR/W12_3_PROGRESS.txt" && cat "$OUT_DIR/W12_3_PROGRESS.txt" || true
-          test -f "$OUT_DIR/YORU_AI_GROUNDED_LAB_RESULT.txt" && cat "$OUT_DIR/YORU_AI_GROUNDED_LAB_RESULT.txt" || true
-
-      - name: Upload W12.3 artifacts and checkpoints
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: yoru-v373-w123-semantic-skeleton-lab
-          path: artifacts/ai_semantic_skeleton_lab/
-          if-no-files-found: warn
-          retention-days: 14
+        shellè‰…Í (€€€€€€€ÉÕ¸èð(€€€€€€€€€Í•Ð€­”(€€€€€€€€€ÁåÑ¡½¸€µÔ€¹¤½ØÌÜÍ}…¥}É½Õ¹‘•‘}±…ˆ½Í•µ…¹Ñ¥}Í­•±•Ñ½¹}ØÌ¹Áäp(€€€€€€€€€€€€´µµ½‘•°€ˆ‘íì¥¹ÁÕÑÌ¹µ½‘•°õôˆp(€€€€€€€€€€€€´µÉ•…Í½¹¥¹œµ•™™½ÉÐ€ˆ‘íì¥¹ÁÕÑÌ¹É•…Í½¹¥¹}•™™½ÉÐõôˆp(€€€€€€€€€€€€´µÑ¥µ•½ÕÐ€ÐÀp(€€€€€€€€€€€€´µµ…àµ½µÁ±•Ñ¥½¸µÑ½­•¹Ì€äÀÀp(€€€€€€€€€€€€´µ¡ÑÑÀµÉ•ÑÉ¥•Ì€Äp(€€€€€€€€€€€€´µ½¹Ñ•¹ÐµÉ•ÑÉ¥•Ì€Àp(€€€€€€€€€€€€´µÉ•Á…¥ÈµÉ½Õ¹‘Ì€Äp(€€€€€€€€€€€€´µµ…àµÝ…±°µÍ•½¹‘Ì€ÄÀàÀp(€€€€€€€€€€€€´µµ¥¸µÉ•ÅÕ•ÍÐµ‰Õ‘•ÐµÍ•½¹‘Ì€ÜÀp(€€€€€€€€€€€€´µÉ…Ñ”µ™±½½ÈµÑ½­•¹Ì€ÄàÀÀp(€€€€€€€€€€€€´µ½ÕÐµ‘¥È€ˆ‘=UQ}%Hˆp(€€€€€€€€€€€€Èø˜ÄðÑ•”€ˆ‘=UQ}%H½\ÄÉ|Í}1%Y¹±½œˆ((€€€€€€€€€½‘”ô‘íA%AMQQUMlÁuô(€€€€€€€€€•¡¼€‰™Õ±±}ÉÕ¹¹•É}•á¥Ñ}½‘”ô‘í½‘•ôˆðÑ•”€µ„€ˆ‘=UQ}%H½\ÄÉ|Í}I1e}%9=MQ%L¹ÑáÐˆ(€€€€€€€€€•á¥Ð€ˆ‘½‘”ˆ((€€€€€€´¹…µ”èAÉ¥¹Ð\ÄÈ¸ÌÉ•Á½ÉÐ(€€€€€€€¥˜è…±Ý…åÌ ¤(€€€€€€€ÉÕ¸èð(€€€€€€€€€Ñ•ÍÐ€µ˜€ˆ‘=UQ}%H½\ÄÉ|Í}M!=]}1	}IMU1P¹ÑáÐˆ€˜˜…Ð€ˆ‘=UQ}%H½\ÄÉ|Í}M!=]}1	}IMU1P¹ÑáÐˆñðÑÉÕ”(€€€€€€€€€Ñ•ÍÐ€µ˜€ˆ‘=UQ}%H½\ÄÉ|Í}!-A=%9Q}5%IQ%=8¹ÑáÐˆ€˜˜…Ð€ˆ‘=UQ}%H½\ÄÉ|Í}!-A=%9Q}5%IQ%=8¹ÑáÐˆñðÑÉÕ”(€€€€€€€€€Ñ•ÍÐ€µ˜€ˆ‘=UQ}%H½\ÄÉ|Í}IIMM%=9}IMU1P¹ÑáÐˆ€˜˜…Ð€ˆ‘=UQ}%H½\ÄÉ|Í}IIMM%=9}IMU1P¹ÑáÐˆñðÑÉÕ”(€€€€€€€€€Ñ•ÍÐ€µ˜€ˆ‘=UQ}%H½\ÄÉ|Í}AI=IML¹ÑáÐˆ€˜˜…Ð€ˆ‘=UQ}%H½\ÄÉ|Í}AI=IML¹ÑáÐˆñðÑÉÕ”(€€€€€€€€€Ñ•ÍÐ€µ˜€ˆ‘=UQ}%H½e=IU}%}I=U9}1	}IMU1P¹ÑáÐˆ€˜˜…Ð€ˆ‘=UQ}%H½e=IU}%}I=U9}1	}IMU1P¹ÑáÐˆñðÑÉÕ”((€€€€€€´¹…µ”èUÁ±½…\ÄÈ¸Ì…ÉÑ¥™…ÑÌ…¹¡•­Á½¥¹ÑÌ(€€€€€€€¥˜è…±Ý…åÌ ¤(€€€€€€€ÕÍ•Ìè…Ñ¥½¹Ì½ÕÁ±½…µ…ÉÑ¥™…ÑØÜ(€€€€€€€Ý¥Ñ è(€€€€€€€€€¹…µ”èå½ÉÔµØÌÜÌµÜÄÈÌµÍ•µ…¹Ñ¥ŒµÍ­•±•Ñ½¸µ±…ˆ(€€€€€€€€€Á…Ñ è…ÉÑ¥™…ÑÌ½…¥}Í•µ…¹Ñ¥}Í­•±•Ñ½¹}±…ˆ¼(€€€€€€€€€¥˜µ¹¼µ™¥±•Ìµ™½Õ¹èÝ…É¸(€€€€€€€€€É•Ñ•¹Ñ¥½¸µ‘…åÌè€ÄÐ(
