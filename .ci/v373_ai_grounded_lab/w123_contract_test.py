@@ -90,6 +90,28 @@ surface = {"items": [{"slot": s, "title": f"Csapatpróba {chr(65+i)}", "descript
 errs = lab.validate_payload(panic, mod.canonicalize_surface_payload(lab, panic, surface))
 ok("reject_panic_method_invention", any("panic_method_invention" in e for e in errs))
 
+# First-live W12.3 regressions from run 32255317034.
+warehouse = next(p for p in lab.PACKETS if p.key == "work_miskolc_warehouse")
+base = " ".join(g[0] for g in mod.packet_cfg(warehouse)["anchors"])
+for name, bad_phrase, expected in [
+    ("reject_live_heveredik", "raklap heveredik egymásra", "live_heveredik"),
+    ("reject_live_keso_jovoben", "egy késő jövőben érkező teherautó", "live_keso_jovoben"),
+    ("reject_live_known_location", "a raklap visszakerül a megfelelő helyére", "warehouse_known_location_invention"),
+]:
+    surface = {"items": [{"slot": s, "title": f"Raktárpróba {chr(65+i)}", "description": f"{base} {bad_phrase} {chr(97+i)}."} for i,s in enumerate(mod.SLOT_IDS)]}
+    errs = lab.validate_payload(warehouse, mod.canonicalize_surface_payload(lab, warehouse, surface))
+    ok(name, any(expected in e for e in errs))
+
+cleanup = next(p for p in lab.PACKETS if p.key == "work_eger_event_cleanup")
+base = " ".join(g[0] for g in mod.packet_cfg(cleanup)["anchors"])
+for name, bad_phrase, expected in [
+    ("reject_live_player_team_leadership", "a játékos irányítja a csapatot", "unsupported_player_team_leadership"),
+    ("reject_live_object_szaradjon", "a többit száradjon", "live_object_szaradjon"),
+]:
+    surface = {"items": [{"slot": s, "title": f"Bontáspróba {chr(65+i)}", "description": f"{base} {bad_phrase} {chr(97+i)}."} for i,s in enumerate(mod.SLOT_IDS)]}
+    errs = lab.validate_payload(cleanup, mod.canonicalize_surface_payload(lab, cleanup, surface))
+    ok(name, any(expected in e for e in errs))
+
 source = TARGET.read_text(encoding="utf-8")
 ok("dev_only_no_app_import", "from app" not in source and "import app" not in source)
 ok("production_ai_never_authorized", "production_ai_authorized\": False" in source or '"production_ai_authorized": False' in source)
