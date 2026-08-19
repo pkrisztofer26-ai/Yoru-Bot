@@ -13,6 +13,12 @@ on:
         type: choice
         options: [low, medium, high]
         default: low
+      run_scope:
+        description: Canary first; full only after human approval
+        required: true
+        type: choice
+        options: [canary, full]
+        default: canary
 
 permissions:
   contents: read
@@ -31,6 +37,7 @@ jobs:
       PYTHONUNBUFFERED: '1'
       ARTIFACT_NAME: yoru-v373-w123-semantic-skeleton-lab
       OUT_DIR: artifacts/ai_semantic_skeleton_lab
+      W123_RUN_SCOPE: ${{ inputs.run_scope }}
 
     steps:
       - name: Checkout repository
@@ -45,16 +52,22 @@ jobs:
         run: |
           mkdir -p "$OUT_DIR"
           {
-            echo "W12.3 SEMANTIC SKELETON DIAGNOSTICS"
+            echo "W12.3 SHADOW/CANARY/FULL DIAGNOSTICS"
             echo "commit=${GITHUB_SHA}"
             echo "run_id=${GITHUB_RUN_ID}"
+            echo "run_scope=${W123_RUN_SCOPE}"
             echo "runner_os=${RUNNER_OS}"
             python --version
             sha256sum \
               .ci/v373_ai_grounded_lab/semantic_skeleton_v3.py \
               .ci/v373_ai_grounded_lab/semantic_skeleton_v3_rules.py \
+              .ci/v373_ai_grounded_lab/semantic_skeleton_v3_rules_v2.py \
               .ci/v373_ai_grounded_lab/semantic_skeleton_v3.json \
               .ci/v373_ai_grounded_lab/w123_regression_corpus.part*.b64 \
+              .ci/v373_ai_grounded_lab/w123_shadow_golden.b64 \
+              .ci/v373_ai_grounded_lab/w123_shadow_lab.py \
+              .ci/v373_ai_grounded_lab/w123_checkpoint_migrate.py \
+              .ci/v373_ai_grounded_lab/w123_canary.py \
               .ci/v373_ai_grounded_lab/w123_contract_test.py
           } | tee "$OUT_DIR/W12_3_EARLY_DIAGNOSTICS.txt"
 
@@ -68,6 +81,15 @@ jobs:
       - name: W12.3 semantic regression contracts
         run: python -u .ci/v373_ai_grounded_lab/w123_contract_test.py | tee "$OUT_DIR/W12_3_CONTRACT_TEST.log"
 
+      - name: Zero-token W12.3 Shadow Lab
+        run: |
+          python -u .ci/v373_ai_grounded_lab/w123_shadow_lab.py \
+            --out-dir "$OUT_DIR" \
+            | tee "$OUT_DIR/W12_3_SHADOW_LAB.log"
+
+      - name: Checkpoint migration self-test
+        run: python -u .ci/v373_ai_grounded_lab/w123_checkpoint_migrate_test.py | tee "$OUT_DIR/W12_3_CHECKPOINT_MIGRATION_TEST.log"
+
       - name: Compile and W12.3 dry-run
         run: |
           python -m py_compile \
@@ -75,6 +97,10 @@ jobs:
             .ci/v373_ai_grounded_lab/fast_resume_v2.py \
             .ci/v373_ai_grounded_lab/semantic_skeleton_v3.py \
             .ci/v373_ai_grounded_lab/semantic_skeleton_v3_rules.py \
+            .ci/v373_ai_grounded_lab/semantic_skeleton_v3_rules_v2.py \
+            .ci/v373_ai_grounded_lab/w123_shadow_lab.py \
+            .ci/v373_ai_grounded_lab/w123_checkpoint_migrate.py \
+            .ci/v373_ai_grounded_lab/w123_canary.py \
             .ci/v373_ai_grounded_lab/w123_contract_test.py
           python -u .ci/v373_ai_grounded_lab/semantic_skeleton_v3.py \
             --dry-run \
@@ -139,7 +165,7 @@ jobs:
           print(f"previous_checkpoint_run_id={run_id}")
           PY
 
-      - name: Restore previous W12.3 PASS checkpoints
+      - name: Restore previous W12.3 checkpoints
         if: steps.resume-source.outputs.run_id != '0'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -155,7 +181,37 @@ jobs:
           done < <(find /tmp/w123_previous -type f -path '*/checkpoints/*.json' -print0 2>/dev/null)
           echo "restored_checkpoint_files=${restored}" | tee "$OUT_DIR/W12_3_RESUME.txt"
 
-      - name: Run W12.3 semantic skeleton lab
+      - name: Revalidate and migrate old PASS checkpoints
+        run: |
+          mkdir -p "$OUT_DIR/checkpoints"
+          python -u .ci/v373_ai_grounded_lab/w123_checkpoint_migrate.py \
+            --checkpoint-dir "$OUT_DIR/checkpoints" \
+            --out-dir "$OUT_DIR" \
+            --model "${{ inputs.model }}" \
+            --reasoning-effort "${{ inputs.reasoning_effort }}" \
+            | tee "$OUT_DIR/W12_3_CHECKPOINT_MIGRATION_RUN.log"
+
+      - name: Run W12.3 high-risk canary
+        if: inputs.run_scope == 'canary'
+        shell: bash
+        run: |
+          set +e
+          python -u .ci/v373_ai_grounded_lab/w123_canary.py \
+            --model "${{ inputs.model }}" \
+            --reasoning-effort "${{ inputs.reasoning_effort }}" \
+            --timeout 40 \
+            --max-completion-tokens 900 \
+            --http-retries 1 \
+            --content-retries 0 \
+            --rate-floor-tokens 1800 \
+            --out-dir "$OUT_DIR" \
+            2>&1 | tee "$OUT_DIR/W12_3_CANARY_LIVE.log"
+          code=${PIPESTATUS[0]}
+          echo "canary_runner_exit_code=${code}" | tee -a "$OUT_DIR/W12_3_EARLY_DIAGNOSTICS.txt"
+          exit "$code"
+
+      - name: Run W12.3 full semantic skeleton lab
+        if: inputs.run_scope == 'full'
         shell: bash
         run: |
           set +e
@@ -173,12 +229,14 @@ jobs:
             --out-dir "$OUT_DIR" \
             2>&1 | tee "$OUT_DIR/W12_3_LIVE.log"
           code=${PIPESTATUS[0]}
-          echo "live_runner_exit_code=${code}" | tee -a "$OUT_DIR/W12_3_EARLY_DIAGNOSTICS.txt"
+          echo "full_runner_exit_code=${code}" | tee -a "$OUT_DIR/W12_3_EARLY_DIAGNOSTICS.txt"
           exit "$code"
 
       - name: Print W12.3 report
         if: always()
         run: |
+          test -f "$OUT_DIR/W12_3_SHADOW_LAB_RESULT.txt" && cat "$OUT_DIR/W12_3_SHADOW_LAB_RESULT.txt" || true
+          test -f "$OUT_DIR/W12_3_CHECKPOINT_MIGRATION.txt" && cat "$OUT_DIR/W12_3_CHECKPOINT_MIGRATION.txt" || true
           test -f "$OUT_DIR/W12_3_REGRESSION_RESULT.txt" && cat "$OUT_DIR/W12_3_REGRESSION_RESULT.txt" || true
           test -f "$OUT_DIR/W12_3_PROGRESS.txt" && cat "$OUT_DIR/W12_3_PROGRESS.txt" || true
           test -f "$OUT_DIR/YORU_AI_GROUNDED_LAB_RESULT.txt" && cat "$OUT_DIR/YORU_AI_GROUNDED_LAB_RESULT.txt" || true

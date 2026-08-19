@@ -1,103 +1,80 @@
 from __future__ import annotations
 
-"""W12.3 semantic skeleton v2 live-derived hardening.
+"""W12.3 semantic skeleton v3 shadow-lab hardening.
 
-This wrapper preserves the frozen v1 rules module and applies the first-live
-regressions without mutating the W12.2/W12.3-v1 evidence source.
+v3 preserves the first-live v2 rules and adds semantic regressions discovered
+by the zero-token Shadow Lab. The provider remains a surface renderer only.
 """
 
 import copy as _copy
-import re as _re
-import semantic_skeleton_v3_rules_v1 as _v1
-from semantic_skeleton_v3_rules_v1 import *
+import semantic_skeleton_v3_rules_v2 as _v2
+from semantic_skeleton_v3_rules_v2 import *
 
-CONTRACT_VERSION = "w12.3-semantic-skeleton-v2"
-CONFIG = _copy.deepcopy(_v1.CONFIG)
+CONTRACT_VERSION = "w12.3-semantic-skeleton-v3"
+CONFIG = _copy.deepcopy(_v2.CONFIG)
 CONFIG["version"] = CONTRACT_VERSION
 
-# Live run 32255317034 exposed fluent-looking but invalid Hungarian / semantic drift.
-_extra_broken = [
-    ["live_heveredik", r"(?i)\bheveredik\w*\b"],
-    ["live_keso_jovoben", r"(?i)késő\s+jövőben\s+érkező"],
-    ["live_object_szaradjon", r"(?i)(?:maradékot|többit)\s+(?:pedig\s+)?száradjon"],
-]
-_seen = {name for name, _ in CONFIG["global"].get("broken_patterns", [])}
-CONFIG["global"].setdefault("broken_patterns", []).extend(row for row in _extra_broken if row[0] not in _seen)
-CONFIG["global"]["semantic_forbidden"] = [
-    [
-        "unsupported_player_team_leadership",
-        r"(?i)(?:(?:játékos|kisegítő|munkás)\w*.{0,28}(?:irányít|vezet)\w*.{0,18}csapat|csapat\w*.{0,18}(?:irányít|vezet)\w*.{0,28}(?:játékos|kisegítő|munkás))",
-    ]
-]
 
-_warehouse = CONFIG["packets"]["work_miskolc_warehouse"]
-if not any(name == "warehouse_known_location_invention" for name, _ in _warehouse.get("forbidden", [])):
-    _warehouse.setdefault("forbidden", []).append([
-        "warehouse_known_location_invention",
-        r"(?i)(?:megfelelő|helyes)\s+hely\w*",
-    ])
-
-# Functions imported from v1 retain v1's globals; point them at the merged config/version.
-_v1.CONFIG = CONFIG
-_v1.CONTRACT_VERSION = CONTRACT_VERSION
+def _add_forbidden(packet_key: str, name: str, pattern: str) -> None:
+    rows = CONFIG["packets"][packet_key].setdefault("forbidden", [])
+    if not any(existing == name for existing, _ in rows):
+        rows.append([name, pattern])
 
 
-def user_prompt_v3(packet, prior_keys: list[str]) -> str:
-    text = _v1.user_prompt_v3(packet, prior_keys)
-    return text.replace(
-        "Minden slot title + description felületi megfogalmazás legyen; a descriptionben minden required_anchor_groups csoportból legalább egy fogalom maradjon felismerhető. ",
-        "Minden slot title + description felületi megfogalmazás legyen. Egy leírásnak nem kell az összes anchor csoportot szó szerint ismételnie: legalább a csoportok többségét tartsa meg, az öt slot együtt pedig fedje le mindet. ",
-    )
+# Shadow Lab gap 1: archive labels are known to be inconsistent, so sorting by
+# the bad label itself contradicts the canonical constraint.
+_add_forbidden(
+    "work_mezokovesd_archive",
+    "archive_wrong_label_sort",
+    r"(?i)(?:hibás|rossz)\s+címk\w*.{0,28}(?:alapján|szerint).{0,28}(?:rendez|tesz|helyez|pakol)",
+)
 
+# Shadow Lab gap 2: the retail situation is explicitly professional/human, not
+# a disciplinary case.
+_add_forbidden(
+    "career_retail_training",
+    "retail_disciplinary_invention",
+    r"(?i)\b(?:fegyelmi(?:\s+(?:ügy|eljárás))?|büntet\w*|megrov\w*)\b",
+)
 
-def semantic_errors(lab, packet, payload: dict) -> list[str]:
-    # Keep every v1 structural, semantic and diversity rule except the overly strict
-    # per-item all-anchor requirement. That rule caused repetitive wording and one
-    # false-negative live packet for a single omitted noun.
-    errors = [
-        e for e in _v1.semantic_errors(lab, packet, payload)
-        if "missing semantic anchor group" not in e
-    ]
-    cfg = packet_cfg(packet)
-    items = payload.get("items", []) if isinstance(payload, dict) else []
+# Shadow Lab gap 3: suffixes/compounds bypassed the original supplier/ETA regex.
+_add_forbidden(
+    "career_mechanic_part_delay",
+    "supplier_eta_suffix_invention",
+    r"(?i)(?:szállító\w*|pontos\s+érkezési\s+idő\w*)",
+)
 
-    for i, item in enumerate(items):
-        if not isinstance(item, dict):
-            continue
-        here = f"items[{i}]"
-        title = _v1._clean_text(item.get("title"))
-        desc = _v1._clean_text(item.get("description"))
-        text = title + " " + desc
-        for name, pattern in CONFIG["global"].get("semantic_forbidden", []):
-            if _re.search(pattern, text):
-                errors.append(f"{here}: W12.3 global semantic regression: {name}")
+# Shadow Lab gap 4: Lilla only asks whether a later work-related coordination is
+# acceptable; no concrete job or exact appointment exists.
+_add_forbidden(
+    "npc_lilla_dispatcher",
+    "lilla_concrete_job_time_invention",
+    r"(?i)(?:konkrét\s+(?:fuvar|munka|műszak)\w*|pontos\s+időpont\w*|munkakezd\w*)",
+)
 
-        anchors = list(cfg.get("anchors", []))
-        matched = [gi for gi, group in enumerate(anchors, 1) if _v1._matches_group(desc, group)]
-        minimum = max(2, len(anchors) - 1) if anchors else 0
-        if len(matched) < minimum:
-            missing = [
-                f"{gi}:{'/'.join(group)}"
-                for gi, group in enumerate(anchors, 1)
-                if gi not in matched
-            ]
-            errors.append(
-                f"{here}: semantic anchor coverage too weak "
-                f"matched={len(matched)}/{len(anchors)} missing={';'.join(missing)}"
-            )
+# Shado Lab gap 5: Misi asks only whether the player is generally looking for a
+# car; a specific vehicle or price is new deal truth.
+_add_forbidden(
+    "npc_misi_car_dealer",
+    "misi_concrete_deal_suffix",
+    r"(?i)(?:konkrét\s+autó\w*|\b(?:ár|alku|kedvezmény)\w*)",
+)
 
-    # Packet-level coverage: every anchor must still be explicit in a majority of
-    # the five variants, so relaxing one variant cannot erase a canonical fact.
-    anchors = list(cfg.get("anchors", []))
-    for gi, group in enumerate(anchors, 1):
-        coverage = sum(
-            1 for item in items
-            if isinstance(item, dict)
-            and _v1._matches_group(_v1._clean_text(item.get("description")), group)
-        )
-        if coverage < 3:
-            errors.append(
-                f"packet anchor coverage too weak group={gi}:{'/'.join(group)} "
-                f"coverage={coverage}/5"
-            )
-    return errors
+# Shado Lab gap 6: the memory contains exactly one help event. Compounded car # repair / debt / invented joint-event wording is not a valid recall.
+_add_forbidden(
+    "memory_jani_tools",
+    "jani_memory_joint_event_invention",
+    r"(?i)(?:közös\s+(?:munka|esenény|javítás)\w*|autó\w*javít\w*|tartoz\w*|fizets\w*)",
+)
+
+# Imported v2 functions resolve CONFIG/CONTRACT_VERSION in the v2 module.
+_v2.CONFIG = CONFIG
+_v2.CONTRACT_VERSION = CONTRACT_VERSION
+
+# Re-exported functions call into v2 -> v1. Keep every layer aligned with the
+# current merged configuration/version.
+try:
+    _v2._v1.CONFIG = CONFIG
+    _v2._v1.CONTRACT_VERSION = CONTRACT_VERSION
+except Exception:
+    pass

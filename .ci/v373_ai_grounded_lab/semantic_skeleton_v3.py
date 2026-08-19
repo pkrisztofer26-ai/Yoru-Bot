@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from semantic_skeleton_v3_rules import *
+import os
 
 def install_semantic_layer(lab) -> None:
     base_validate = lab.validate_payload
@@ -169,6 +170,7 @@ def rewrite_gate_files(out: Path, regression: dict[str, Any]) -> None:
             data = json.loads(dry.read_text(encoding="utf-8"))
             data["gate"] = GATE_NAME
             data["contract_version"] = CONTRACT_VERSION
+            data["run_scope"] = os.environ.get("W123_RUN_SCOPE", "full")
             data["semantic_skeleton"] = {
                 "provider_fields": ["slot", "title", "description"],
                 "host_owned": ["key", "semantic_key", "choices", "tags", "grounding_ids", "entities_mentioned", "new_fact_claims"],
@@ -189,6 +191,7 @@ def rewrite_gate_files(out: Path, regression: dict[str, Any]) -> None:
                 summary["gate"] = GATE_NAME
                 summary["contract_version"] = CONTRACT_VERSION
                 summary["semantic_skeleton_enabled"] = True
+                summary["run_scope"] = os.environ.get("W123_RUN_SCOPE", "full")
                 summary["w122_regression_packets_rejected"] = regression["legacy_packets_rejected"]
                 summary["w122_blocker_packets_rejected"] = regression["blocker_packets_rejected"]
             result.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -214,6 +217,7 @@ def write_tpd_stop(out: Path, exc) -> None:
         "gate": GATE_NAME,
         "contract_version": CONTRACT_VERSION,
         "status": "INCOMPLETE",
+        "run_scope": os.environ.get("W123_RUN_SCOPE", "full"),
         "provider_blocked_reason": "daily_token_limit",
         "provider_retry_after_seconds": round(float(exc.retry_after_seconds), 3),
         "checkpoint_progress_preserved": True,

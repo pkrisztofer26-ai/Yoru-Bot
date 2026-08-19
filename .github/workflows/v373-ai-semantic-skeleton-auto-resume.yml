@@ -65,6 +65,7 @@ jobs:
           wait_seconds = 0
           raw_retry = 0.0
           model = 'openai/gpt-oss-120b'
+          run_scope = 'canary'
 
           if probe_files:
               try:
@@ -80,13 +81,16 @@ jobs:
                   blocked = str(summary.get('provider_blocked_reason', ''))
                   preserved = bool(summary.get('checkpoint_progress_preserved', False))
                   contract = str(summary.get('contract_version', ''))
+                  run_scope = str(summary.get('run_scope') or 'canary').lower()
+                  if run_scope not in {'canary', 'full'}:
+                      run_scope = 'canary'
                   raw_retry = float(summary.get('provider_retry_after_seconds') or 0.0)
                   if status == 'INCOMPLETE' and blocked == 'daily_token_limit' and preserved and contract.startswith('w12.3-'):
                       should = True
                       reason = 'daily_token_limit'
                       wait_seconds = max(60, min(int(math.ceil(raw_retry + 20.0)), 1800))
                   else:
-                      reason = f'not_resumable status={status} blocked={blocked} preserved={preserved} contract={contract}'
+                      reason = f'not_resumable status={status} blocked={blocked} preserved={preserved} contract={contract} scope={run_scope}'
               except Exception as exc:
                   reason = f'result_parse_error:{type(exc).__name__}'
 
@@ -120,10 +124,11 @@ jobs:
               fh.write(f'wait_seconds={wait_seconds}\n')
               fh.write(f'raw_retry_seconds={raw_retry:.3f}\n')
               fh.write(f'model={model}\n')
+              fh.write(f'run_scope={run_scope}\n')
               fh.write(f'reason={reason}\n')
 
           print(f'AUTO_RESUME_GATE should_resume={should} reason={reason}')
-          print(f'AUTO_RESUME_GATE retry_after={raw_retry:.1f}s wait_seconds={wait_seconds}s model={model}')
+          print(f'AUTO_RESUME_GATE retry_after={raw_retry:.1f}s wait_seconds={wait_seconds}s model={model} scope={run_scope}')
           PY
 
       - name: Wait for Groq token window
@@ -153,13 +158,15 @@ jobs:
         shell: bash
         env:
           MODEL: ${{ steps.gate.outputs.model }}
+          RUN_SCOPE: ${{ steps.gate.outputs.run_scope }}
         run: |
-          echo "AUTO_RESUME_DISPATCH workflow=${TARGET_WORKFLOW} ref=${TARGET_REF} model=${MODEL} reasoning=low"
+          echo "AUTO_RESUME_DISPATCH workflow=${TARGET_WORKFLOW} ref=${TARGET_REF} model=${MODEL} reasoning=low scope=${RUN_SCOPE}"
           gh workflow run "$TARGET_WORKFLOW" \
             --ref "$TARGET_REF" \
             -f model="$MODEL" \
-            -f reasoning_effort=low
-          echo "AUTO_RESUME_DISPATCHED source_run=${SOURCE_RUN_ID}"
+            -f reasoning_effort=low \
+            -f run_scope="$RUN_SCOPE"
+          echo "AUTO_RESUME_DISPATCHED source_run=${SOURCE_RUN_ID} scope=${RUN_SCOPE}"
 
       - name: Auto-resume summary
         if: always()
@@ -170,5 +177,6 @@ jobs:
           echo "artifact_available=${{ steps.download.outputs.artifact_available }}"
           echo "should_resume=${{ steps.gate.outputs.should_resume }}"
           echo "reason=${{ steps.gate.outputs.reason }}"
+          echo "run_scope=${{ steps.gate.outputs.run_scope }}"
           echo "wait_seconds=${{ steps.gate.outputs.wait_seconds }}"
           echo "active_target_runs=${{ steps.duplicate.outputs.active_target_runs }}"

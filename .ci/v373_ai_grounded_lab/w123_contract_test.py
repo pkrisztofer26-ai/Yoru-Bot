@@ -68,13 +68,13 @@ ok("w122_regression_gate", reg["acceptance"] == "PASS")
 # Concrete QA regressions.
 canteen = next(p for p in lab.PACKETS if p.key == "work_miskolc_canteen")
 base = " ".join(g[0] for g in mod.packet_cfg(canteen)["anchors"])
-surface = {"items": [{"slot": s, "title": f"Menza próba {chr(65+i)}", "description": f"{base} zöldséget választ a helyzetben {chr(97+i)}."} for i,s in enumerate(mod.SLOT_IDS)]}
+surface = {"items": [{"slot": s, "title": f"Menza próba {chr(65+i)}", "description": f"{base} zöldséget tálÎl ki a helyzetben {chr(97+i)}."} for i,s in enumerate(mod.SLOT_IDS)]}
 errs = lab.validate_payload(canteen, mod.canonicalize_surface_payload(lab, canteen, surface))
 ok("reject_canteen_ingredient_invention", any("ingredient_invention" in e for e in errs))
 
 envelope = next(p for p in lab.PACKETS if p.key == "crime_unknown_envelope")
 base = " ".join(g[0] for g in mod.packet_cfg(envelope)["anchors"])
-surface = {"items": [{"slot": s, "title": f"Boríték próba {chr(65+i)}", "description": f"{base} és azt mondja, hogy vedd át helyette {chr(97+i)}."} for i,s in enumerate(mod.SLOT_IDS)]}
+surface = {"items": [{"slot": s, "title": f"Boríék próba {chr(65+i)}", "description": f"{base} és azt mondja, hogy vedd át helyette {chr(97+i)}."} for i,s in enumerate(mod.SLOT_IDS)]}
 errs = lab.validate_payload(envelope, mod.canonicalize_surface_payload(lab, envelope, surface))
 ok("reject_envelope_direction_inversion", any("direction_inversion" in e for e in errs))
 
@@ -105,7 +105,7 @@ for name, bad_phrase, expected in [
 cleanup = next(p for p in lab.PACKETS if p.key == "work_eger_event_cleanup")
 base = " ".join(g[0] for g in mod.packet_cfg(cleanup)["anchors"])
 for name, bad_phrase, expected in [
-    ("reject_live_player_team_leadership", "a játékos irányítja a csapatot", "unsupported_player_team_leadership"),
+    ("reject_live_player_team_leadership", "a étékos irányítja a csapatot", "unsupported_player_team_leadership"),
     ("reject_live_object_szaradjon", "a többit száradjon", "live_object_szaradjon"),
 ]:
     surface = {"items": [{"slot": s, "title": f"Bontáspróba {chr(65+i)}", "description": f"{base} {bad_phrase} {chr(97+i)}."} for i,s in enumerate(mod.SLOT_IDS)]}
@@ -117,3 +117,24 @@ ok("dev_only_no_app_import", "from app" not in source and "import app" not in so
 ok("production_ai_never_authorized", "production_ai_authorized\": False" in source or '"production_ai_authorized": False' in source)
 
 print(f"W12_3_CONTRACT_TESTS_PASS {len(checks)}/{len(checks)}")
+
+# Zero-token Shadow Lab regressions discovered after W12.3.1.
+shadow_cases = [
+    ("work_mezokovesd_archive", "A mappákat a hibás címke alapján találgatva rendezi.", "archive_wrong_label_sort"),
+    ("career_retail_training", "Az új kolléga csúcsidőben fegyelmi ügyet kap.", "retail_disciplinary_invention"),
+    ("career_mechanic_part_delay", "Réka számára pontos érkezési időt kér a szállítótól.", "supplier_eta_suffix_invention"),
+    ("npc_lilla_dispatcher", "Lilla konkrét fuvart ajánl pontos időponttal.", "lilla_concrete_job_time_invention"),
+    ("npc_misi_car_dealer", "Misi konkrét autót és árat ajánl a játékosnak.", "misi_concrete_deal_suffix"),
+    ("memory_jani_tools", "Jani megemlíti a közös autójavítást és a tartozását.", "jani_memory_joint_event_invention"),
+]
+for packet_key, bad_phrase, expected in shadow_cases:
+    packet = next(p for p in lab.PACKETS if p.key == packet_key)
+    anchors = " ".join(g[0] for g in mod.packet_cfg(packet)["anchors"])
+    surface = {"items": [
+        {"slot": s, "title": f"Shadow próba {chr(65+i)}", "description": f"{anchors} {bad_phrase} {chr(97+i)}."}
+        for i, s in enumerate(mod.SLOT_IDS)
+    ]}
+    errs = lab.validate_payload(packet, mod.canonicalize_surface_payload(lab, packet, surface))
+    ok(f"reject_shadow_{packet_key}", any(expected in e for e in errs))
+
+print(f"W12_3_CONTRACT_TESTS_FINAL_PASS {len(checks)}/{len(checks)}")
