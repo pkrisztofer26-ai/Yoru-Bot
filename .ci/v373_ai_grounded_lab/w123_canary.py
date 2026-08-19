@@ -43,12 +43,42 @@ def _args() -> argparse.Namespace:
     p.add_argument("--timeout", type=float, default=40.0)
     p.add_argument("--max-completion-tokens", type=int, default=900)
     p.add_argument("--http-retries", type=int, default=1)
-    p.add_argument("--content-retries", type=int, default=1)
+    p.add_argument("--content-retries", type=int, default=0)
     p.add_argument("--rate-floor-tokens", type=int, default=1800)
     p.add_argument("--input-usd-per-million", type=float, default=0.15)
     p.add_argument("--output-usd-per-million", type=float, default=0.60)
     p.add_argument("--out-dir", default="artifacts/ai_semantic_skeleton_lab")
     return p.parse_args()
+
+
+def _surface_quality_summary(results: list[dict[str, Any]]) -> dict[str, Any]:
+    fallback_slots = 0
+    repaired_packets = 0
+    native_packets = 0
+    schema_recovered_packets = 0
+    for result in results:
+        quality = result.get("surface_quality") or {}
+        count = int(quality.get("golden_fallback_count", 0) or 0)
+        fallback_slots += count
+        if count:
+            repaired_packets += 1
+        elif result.get("status") == "PASS":
+            native_packets += 1
+        for event in result.get("provider_surface_events") or []:
+            if event.get("trigger") == "provider_json_schema_failed_generation":
+                schema_recovered_packets += 1
+                break
+    total_slots = sum(
+        len((r.get("payload") or {}).get("items", []))
+        for r in results if r.get("status") == "PASS"
+    )
+    return {
+        "golden_fallback_slots": fallback_slots,
+        "native_slots": max(0, total_slots - fallback_slots),
+        "repaired_packets": repaired_packets,
+        "native_packets": native_packets,
+        "schema_recovered_packets": schema_recovered_packets,
+    }
 
 
 def _write(out: Path, summary: dict[str, Any], results: list[dict[str, Any]]) -> None:
@@ -65,6 +95,10 @@ def _write(out: Path, summary: dict[str, Any], results: list[dict[str, Any]]) ->
             f"items={summary.get('items_validated', 0)}/{len(CANARY_PACKETS) * 5}",
             f"resumed_pass_packets={summary.get('resumed_pass_packets', 0)}",
             f"provider_requests_this_run={summary.get('provider_requests_this_run', 0)}",
+            f"native_slots={summary.get('native_slots', 0)}",
+            f"golden_fallback_slots={summary.get('golden_fallback_slots', 0)}",
+            f"repaired_packets={summary.get('repaired_packets', 0)}",
+            f"schema_recovered_packets={summary.get('schema_recovered_packets', 0)}",
             f"provider_blocked_reason={summary.get('provider_blocked_reason', '')}",
             f"provider_retry_after_seconds={summary.get('provider_retry_after_seconds', 0)}",
             "human_review_required=true",
@@ -139,6 +173,7 @@ def main() -> int:
                     "items_validated": sum(len((r.get("payload") or {}).get("items", [])) for r in ordered if r.get("status") == "PASS"),
                     "resumed_pass_packets": resumed,
                     "provider_requests_this_run": requests,
+                    **_surface_quality_summary(ordered),
                     "fail_fast": True,
                     "checkpoint_progress_preserved": True,
                     "human_review_required": True,
@@ -169,6 +204,7 @@ def main() -> int:
             "items_validated": sum(len((r.get("payload") or {}).get("items", [])) for r in ordered),
             "resumed_pass_packets": resumed,
             "provider_requests_this_run": requests,
+            **_surface_quality_summary(ordered),
             "human_review_required": True,
             "production_ai_authorized": False,
         }
@@ -192,6 +228,7 @@ def main() -> int:
         "global_validation_errors": global_errors,
         "resumed_pass_packets": resumed,
         "provider_requests_this_run": requests,
+        **_surface_quality_summary(ordered),
         "elapsed_seconds_this_run": round(time.perf_counter() - started, 3),
         "checkpoint_progress_preserved": True,
         "human_review_required": True,
