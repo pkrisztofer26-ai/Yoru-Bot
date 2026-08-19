@@ -40,178 +40,93 @@ jobs:
       W123_RUN_SCOPE: ${{ inputs.run_scope }}
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-
-      - name: Set up Python 3.14
-        uses: actions/setup-python@v6
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.14'
 
-      - name: Initialize W12.3 diagnostics
+      - name: Offline W12.3 preflight
+        shell: bash
         run: |
+          set -euo pipefail
           mkdir -p "$OUT_DIR"
           {
             echo "W12.3 SHADOW/CANARY/FULL DIAGNOSTICS"
             echo "commit=${GITHUB_SHA}"
             echo "run_id=${GITHUB_RUN_ID}"
             echo "run_scope=${W123_RUN_SCOPE}"
-            echo "runner_os=${RUNNER_OS}"
             python --version
             sha256sum \
               .ci/v373_ai_grounded_lab/semantic_skeleton_v3.py \
               .ci/v373_ai_grounded_lab/semantic_skeleton_v3_rules.py \
               .ci/v373_ai_grounded_lab/semantic_skeleton_v3_rules_v3.py \
-              .ci/v373_ai_grounded_lab/semantic_skeleton_v3_rules_v2.py \
-              .ci/v373_ai_grounded_lab/semantic_skeleton_v3.json \
-              .ci/v373_ai_grounded_lab/w123_regression_corpus.part*.b64 \
-              .ci/v373_ai_grounded_lab/w123_shadow_golden.b64 \
-              .ci/v373_ai_grounded_lab/w123_shadow_lab.py \
-              .ci/v373_ai_grounded_lab/w123_checkpoint_migrate.py \
               .ci/v373_ai_grounded_lab/w123_canary.py \
-              .ci/v373_ai_grounded_lab/w123_contract_test.py
+              .ci/v373_ai_grounded_lab/w123_contract_test.py \
+              .ci/v373_ai_grounded_lab/w123_contract_test_v4.py
           } | tee "$OUT_DIR/W12_3_EARLY_DIAGNOSTICS.txt"
-
-      - name: Restore and verify frozen W12.2 fixture
-        run: |
           python -u .ci/v373_ai_grounded_lab/bootstrap.py --out .ci/v373_ai_grounded_lab/runtime | tee "$OUT_DIR/W12_3_BOOTSTRAP.log"
-
-      - name: Frozen grounded contract tests
-        run: python -u .ci/v373_ai_grounded_lab/runtime/contract_test.py | tee "$OUT_DIR/W12_3_FROZEN_CONTRACT_TEST.log"
-
-      - name: W12.3 semantic regression contracts
-        run: python -u .ci/v373_ai_grounded_lab/w123_contract_test.py | tee "$OUT_DIR/W12_3_CONTRACT_TEST.log"
-
-      - name: Zero-token W12.3 Shadow Lab
-        run: |
-          python -u .ci/v373_ai_grounded_lab/w123_shadow_lab.py \
-            --out-dir "$OUT_DIR" \
-            | tee "$OUT_DIR/W12_3_SHADOW_LAB.log"
-
-      - name: Checkpoint migration self-test
-        run: python -u .ci/v373_ai_grounded_lab/w123_checkpoint_migrate_test.py | tee "$OUT_DIR/W12_3_CHECKPOINT_MIGRATION_TEST.log"
-
-      - name: Compile and W12.3 dry-run
-        run: |
+          python -u .ci/v373_ai_grounded_lab/runtime/contract_test.py | tee "$OUT_DIR/W12_3_FROZEN_CONTRACT_TEST.log"
+          python -u .ci/v373_ai_grounded_lab/w123_contract_test.py | tee "$OUT_DIR/W12_3_CONTRACT_TEST.log"
+          python -u .ci/v373_ai_grounded_lab/w123_contract_test_v4.py | tee "$OUT_DIR/W12_3_V4_CONTRACT_TEST.log"
+          python -u .ci/v373_ai_grounded_lab/w123_shadow_lab.py --out-dir "$OUT_DIR" | tee "$OUT_DIR/W12_3_SHADOW_LAB.log"
+          python -u .ci/v373_ai_grounded_lab/w123_checkpoint_migrate_test.py | tee "$OUT_DIR/W12_3_CHECKPOINT_MIGRATION_TEST.log"
           python -m py_compile \
-            .ci/v373_ai_grounded_lab/runtime/runner.py \
-            .ci/v373_ai_grounded_lab/fast_resume_v2.py \
             .ci/v373_ai_grounded_lab/semantic_skeleton_v3.py \
             .ci/v373_ai_grounded_lab/semantic_skeleton_v3_rules.py \
             .ci/v373_ai_grounded_lab/semantic_skeleton_v3_rules_v3.py \
-            .ci/v373_ai_grounded_lab/semantic_skeleton_v3_rules_v2.py \
-            .ci/v373_ai_grounded_lab/w123_shadow_lab.py \
-            .ci/v373_ai_grounded_lab/w123_checkpoint_migrate.py \
-            .ci/v373_ai_grounded_lab/w123_canary.py \
-            .ci/v373_ai_grounded_lab/w123_contract_test.py
+            .ci/v373_ai_grounded_lab/w123_canary.py
           python -u .ci/v373_ai_grounded_lab/semantic_skeleton_v3.py \
-            --dry-run \
-            --model "${{ inputs.model }}" \
+            --dry-run --model "${{ inputs.model }}" \
             --reasoning-effort "${{ inputs.reasoning_effort }}" \
-            --max-completion-tokens 900 \
-            --out-dir "$OUT_DIR" \
+            --max-completion-tokens 900 --out-dir "$OUT_DIR" \
             | tee "$OUT_DIR/W12_3_DRY_RUN.log"
+          test -n "$GROQ_API_KEY" || { echo "Missing GROQ_API_KEY"; exit 1; }
 
-      - name: Require Groq secret
+      - name: Restore and migrate prior checkpoints
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          if [ -z "$GROQ_API_KEY" ]; then
-            echo "Missing repository secret GROQ_API_KEY" | tee "$OUT_DIR/W12_3_SECRET_CHECK.log"
-            exit 1
+          set -euo pipefail
+          mkdir -p "$OUT_DIR/checkpoints" /tmp/w123_previous
+          prev=$(gh run list --workflow v373-ai-semantic-skeleton-lab.yml --limit 20 --json databaseId --jq '.[].databaseId' | grep -v "^${GITHUB_RUN_ID}$" | head -1 || true)
+          if [ -n "$prev" ]; then
+            gh run download "$prev" -n "$ARTIFACT_NAME" -D /tmp/w123_previous || true
+            find /tmp/w123_previous -type f -path '*/checkpoints/*.json' -exec cp {} "$OUT_DIR/checkpoints/" \; 2>/dev/null || true
           fi
-
-      - name: Probe Groq model access
-        env:
-          MODEL: ${{ inputs.model }}
-        run: |
-          python - <<'PY'
-          import json, os, pathlib, urllib.error, urllib.request
-          out = pathlib.Path(os.environ["OUT_DIR"])
-          model, key = os.environ["MODEL"], os.environ["GROQ_API_KEY"]
-          body = {"model": model, "messages": [{"role": "user", "content": "VÃ¡laszolj pontosan: OK"}], "reasoning_effort": "low", "include_reasoning": False, "max_completion_tokens": 8}
-          req = urllib.request.Request(
-              "https://api.groq.com/openai/v1/chat/completions",
-              data=json.dumps(body).encode("utf-8"),
-              headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json", "Accept": "application/json", "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/140 Safari/537.36"},
-              method="POST",
-          )
-          try:
-              with urllib.request.urlopen(req, timeout=20) as response:
-                  payload = json.loads(response.read().decode("utf-8"))
-              report = {"status": "PASS", "model": model, "http_status": 200, "response_id": payload.get("id", "")}
-              out.joinpath("GROQ_PROBE_RESULT.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-              print(f"Groq probe PASS: model={model}")
-          except urllib.error.HTTPError as exc:
-              error_body = exc.read().decode("utf-8", "replace")
-              report = {"status": "FAIL", "model": model, "http_status": exc.code, "reason": str(exc.reason), "groq_error": error_body[:4000]}
-              out.joinpath("GROQ_PROBE_RESULT.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-              raise
-          PY
-
-      - name: Find previous W12.3 checkpoint artifact
-        id: resume-source
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          python - <<'PY'
-          import json, os, subprocess
-          repo = os.environ["GITHUB_REPOSITORY"]
-          current = int(os.environ["GITHUB_RUN_ID"])
-          name = os.environ["ARTIFACT_NAME"]
-          raw = subprocess.check_output(["gh", "api", f"repos/{repo}/actions/artifacts?name={name}&per_page=50"], text=True)
-          artifacts = json.loads(raw).get("artifacts", [])
-          candidates = [a for a in artifacts if not a.get("expired") and int((a.get("workflow_run") or {}).get("id", 0)) != current]
-          candidates.sort(key=lambda a: str(a.get("created_at", "")), reverse=True)
-          run_id = int((candidates[0].get("workflow_run") or {}).get("id", 0)) if candidates else 0
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
-              fh.write(f"run_id={run_id}\n")
-          print(f"previous_checkpoint_run_id={run_id}")
-          PY
-
-      - name: Restore previous W12.3 checkpoints
-        if: steps.resume-source.outputs.run_id != '0'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PREVIOUS_RUN_ID: ${{ steps.resume-source.outputs.run_id }}
-        run: |
-          rm -rf /tmp/w123_previous
-          mkdir -p /tmp/w123_previous "$OUT_DIR/checkpoints"
-          gh run download "$PREVIOUS_RUN_ID" -n "$ARTIFACT_NAME" -D /tmp/w123_previous || true
-          restored=0
-          while IFS= read -r -d '' file; do
-            cp "$file" "$OUT_DIR/checkpoints/$(basename "$file")"
-            restored=$((restored + 1))
-          done < <(find /tmp/w123_previous -type f -path '*/checkpoints/*.json' -print0 2>/dev/null)
-          echo "restored_checkpoint_files=${restored}" | tee "$OUT_DIR/W12_3_RESUME.txt"
-
-      - name: Revalidate and migrate old PASS checkpoints
-        run: |
-          mkdir -p "$OUT_DIR/checkpoints"
+          echo "previous_checkpoint_run_id=${prev:-0}" | tee "$OUT_DIR/W12_3_RESUME.txt"
           python -u .ci/v373_ai_grounded_lab/w123_checkpoint_migrate.py \
-            --checkpoint-dir "$OUT_DIR/checkpoints" \
-            --out-dir "$OUT_DIR" \
-            --model "${{ inputs.model }}" \
-            --reasoning-effort "${{ inputs.reasoning_effort }}" \
+            --checkpoint-dir "$OUT_DIR/checkpoints" --out-dir "$OUT_DIR" \
+            --model "${{ inputs.model }}" --reasoning-effort "${{ inputs.reasoning_effort }}" \
             | tee "$OUT_DIR/W12_3_CHECKPOINT_MIGRATION_RUN.log"
 
-      - name: Run W12.3 high-risk canary
-        if: inputs.run_scope == 'canary'
+      - name: Run live scope
         shell: bash
         run: |
           set +e
-          python -u .ci/v373_ai_grounded_lab/w123_canary.py \
-            --model "${{ inputs.model }}" \
-            --reasoning-effort "${{ inputs.reasoning_effort }}" \
-            --timeout 40 \
-            --max-completion-tokens 900 \
-            --http-retries 1 \
-            --content-retries 1 \
-            --rate-floor-tokens 1800 \
-            --out-dir "$OUT_DIR" \
-            2>&1 | tee "$OUT_DIR/W12_3_CANARY_LIVE.log"
+          if [ "$W123_RUN_SCOPE" = "canary" ]; then
+            python -u .ci/v373_ai_grounded_lab/w123_canary.py \
+              --model "${{ inputs.model }}" --reasoning-effort "${{ inputs.reasoning_effort }}" \
+              --timeout 40 --max-completion-tokens 900 --http-retries 1 \
+              --content-retries 1 --rate-floor-tokens 1800 --out-dir "$OUT_DIR" \
+              2>&1 | tee "$OUT_DIR/W12_3_CANARY_LIVE.log"
+          else
+            python -u .ci/v373_ai_grounded_lab/semantic_skeleton_v3.py \
+              --model "${{ inputs.model }}" --reasoning-effort "${{ inputs.reasoning_effort }}" \
+              --timeout 40 --max-completion-tokens 900 --http-retries 1 \
+              --content-retries 0 --repair-rounds 1 --max-wall-seconds 1080 \
+              --min-request-budget-seconds 70 --rate-floor-tokens 1800 --out-dir "$OUT_DIR" \
+              2>&1 | tee "$OUT_DIR/W12_3_LIVE.log"
+          fi
           code=${PIPESTATUS[0]}
-          echo "canary_runner_exit_code=${code}" | tee -a "$OUT_DIR/W12_3_EARLY_DIAGNOSTICS.txt"
+          echo "live_runner_exit_code=${code}" | tee -a "$OUT_DIR/W12_3_EARLY_DIAGNOSTICS.txt"
           exit "$code"
 
-      - name: Run W12.3 full semantic skeleton lab
-        if: inputs.run_scope == 'full'
-        shellè‰…Í (€€€€€€€ÉÕ¸èð(€€€€€€€€€Í•Ð€­”(€€€€€€€€€ÁåÑ¡½¸€µÔ€¹¤½ØÌÜÍ}…¥}É½Õ¹‘•‘}±…ˆ½Í•µ…¹Ñ¥}Í­•±•Ñ½¹}ØÌ¹Áäp(€€€€€€€€€€€€´µµ½‘•°€ˆ‘íì¥¹ÁÕÑÌ¹µ½‘•°õôˆp(€€€€€€€€€€€€´µÉ•…Í½¹¥¹œµ•™™½ÉÐ€ˆ‘íì¥¹ÁÕÑÌ¹É•…Í½¹¥¹}•™™½ÉÐõôˆp(€€€€€€€€€€€€´µÑ¥µ•½ÕÐ€ÐÀp(€€€€€€€€€€€€´µµ…àµ½µÁ±•Ñ¥½¸µÑ½­•¹Ì€äÀÀp(€€€€€€€€€€€€´µ¡ÑÑÀµÉ•ÑÉ¥•Ì€Äp(€€€€€€€€€€€€´µ½¹Ñ•¹ÐµÉ•ÑÉ¥•Ì€Àp(€€€€€€€€€€€€´µÉ•Á…¥ÈµÉ½Õ¹‘Ì€Äp(€€€€€€€€€€€€´µµ…àµÝ…±°µÍ•½¹‘Ì€ÄÀàÀp(€€€€€€€€€€€€´µµ¥¸µÉ•ÅÕ•ÍÐµ‰Õ‘•ÐµÍ•½¹‘Ì€ÜÀp(€€€€€€€€€€€€´µÉ…Ñ”µ™±½½ÈµÑ½­•¹Ì€ÄàÀÀp(€€€€€€€€€€€€´µ½ÕÐµ‘¥È€ˆ‘=UQ}%Hˆp(€€€€€€€€€€€€Èø˜ÄðÑ•”€ˆ‘=UQ}%H½\ÄÉ|Í}1%Y¹±½œˆ((€€€€€€€€€½‘”ô‘íA%AMQQUMlÁuô(€€€€€€€€€•¡¼€‰™Õ±±}ÉÕ¹¹•É}•á¥Ñ}½‘”ô‘í½‘•ôˆðÑ•”€µ„€ˆ‘=UQ}%H½\ÄÉ|Í}I1e}%9=MQ%L¹ÑáÐˆ(€€€€€€€€€•á¥Ð€ˆ‘½‘”ˆ((€€€€€€´¹…µ”èAÉ¥¹Ð\ÄÈ¸ÌÉ•Á½ÉÐ(€€€€€€€¥˜è…±Ý…åÌ ¤(€€€€€€€ÉÕ¸èð(€€€€€€€€€Ñ•ÍÐ€µ˜€ˆ‘=UQ}%H½\ÄÉ|Í}M!=]}1	}IMU1P¹ÑáÐˆ€˜˜…Ð€ˆ‘=UQ}%H½\ÄÉ|Í}M!=]}1	}IMU1P¹ÑáÐˆñðÑÉÕ”(€€€€€€€€€Ñ•ÍÐ€µ˜€ˆ‘=UQ}%H½\ÄÉ|Í}!-A=%9Q}5%IQ%=8¹ÑáÐˆ€˜˜…Ð€ˆ‘=UQ}%H½\ÄÉ|Í}!-A=%9Q}5%IQ%=8¹ÑáÐˆñðÑÉÕ”(€€€€€€€€€Ñ•ÍÐ€µ˜€ˆ‘=UQ}%H½\ÄÉ|Í}IIMM%=9}IMU1P¹ÑáÐˆ€˜˜…Ð€ˆ‘=UQ}%H½\ÄÉ|Í}IIMM%=9}IMU1P¹ÑáÐˆñðÑÉÕ”(€€€€€€€€€Ñ•ÍÐ€µ˜€ˆ‘=UQ}%H½\ÄÉ|Í}AI=IML¹ÑáÐˆ€˜˜…Ð€ˆ‘=UQ}%H½\ÄÉ|Í}AI=IML¹ÑáÐˆñðÑÉÕ”(€€€€€€€€€Ñ•ÍÐ€µ˜€ˆ‘=UQ}%H½e=IU}%}I=U9}1	}IMU1P¹ÑáÐˆ€˜˜…Ð€ˆ‘=UQ}%H½e=IU}%}I=U9}1	}IMU1P¹ÑáÐˆñðÑÉÕ”((€€€€€€´¹…µ”èUÁ±½…\ÄÈ¸Ì…ÉÑ¥™…ÑÌ…¹¡•­Á½¥¹ÑÌ(€€€€€€€¥˜è…±Ý…åÌ ¤(€€€€€€€ÕÍ•Ìè…Ñ¥½¹Ì½ÕÁ±½…µ…ÉÑ¥™…ÑØÜ(€€€€€€€Ý¥Ñ è(€€€€€€€€€¹…µ”èå½ÉÔµØÌÜÌµÜÄÈÌµÍ•µ…¹Ñ¥ŒµÍ­•±•Ñ½¸µ±…ˆ(€€€€€€€€€Á…Ñ è…ÉÑ¥™…ÑÌ½…¥}Í•µ…¹Ñ¥}Í­•±•Ñ½¹}±…ˆ¼(€€€€€€€€€¥˜µ¹¼µ™¥±•Ìµ™½Õ¹èÝ…É¸(€€€€€€€€€É•Ñ•¹Ñ¥½¸µ‘…åÌè€ÄÐ(
+      - name: Upload W12.3 artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: yoru-v373-w123-semantic-skeleton-lab
+          path: artifacts/ai_semantic_skeleton_lab/
+          if-no-files-found: warn
+          retention-days: 14
