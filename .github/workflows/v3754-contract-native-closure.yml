@@ -39,17 +39,29 @@ jobs:
       - name: Checkout isolated proof branch
         uses: actions/checkout@v6
 
+      - name: Initialize CI diagnostics
+        shell: bash
+        run: |
+          mkdir -p .ci/v3754_contract_native_gate
+          echo 'CHECKOUT=PASS' > .ci/v3754_contract_native_gate/CI_STAGE_MARKERS.txt
+
       - name: Set up Python 3.14
         uses: actions/setup-python@v6
         with:
           python-version: '3.14'
+
+      - name: Record Python setup
+        shell: bash
+        run: |
+          echo "PYTHON_SETUP=PASS $(python --version 2>&1)" >> .ci/v3754_contract_native_gate/CI_STAGE_MARKERS.txt
 
       - name: Verify and unpack canonical Phase 3+4 source projection
         shell: bash
         run: |
           set -euo pipefail
           cd .ci/v3754_contract_native_gate
-          sha256sum -c Yoru_v3.75.4_W14.5N_PHASE34_SOURCE.tar.gz.sha256
+          : > SOURCE_VERIFY_RESULT.txt
+          sha256sum -c Yoru_v3.75.4_W14.5N_PHASE34_SOURCE.tar.gz.sha256 2>&1 | tee -a SOURCE_VERIFY_RESULT.txt
           rm -rf source
           mkdir source
           tar -xzf Yoru_v3.75.4_W14.5N_PHASE34_SOURCE.tar.gz -C source
@@ -58,7 +70,7 @@ jobs:
             echo "Refusing dirty CI source projection (cache/bytecode present)."
             exit 1
           fi
-          python - <<'PY2'
+          python - <<'PY2' | tee -a SOURCE_VERIFY_RESULT.txt
           from pathlib import Path
           import hashlib, json
           base=Path('.')
@@ -73,13 +85,32 @@ jobs:
               raise SystemExit(f"source projection mismatch: {actual} != {manifest['source_projection']}")
           print('SOURCE_PROJECTION_VERIFY=PASS', actual)
           PY2
+          echo 'SOURCE_VERIFY_STAGE=PASS' | tee -a SOURCE_VERIFY_RESULT.txt
+          echo 'SOURCE_VERIFY=PASS' >> CI_STAGE_MARKERS.txt
 
       - name: Install production dependencies + test runner
         working-directory: .ci/v3754_contract_native_gate/source
+        shell: bash
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
-          python -m pip install "pytest>=8,<9" "pytest-asyncio>=0.25,<1"
+          set -uo pipefail
+          result=../DEPENDENCY_INSTALL_RESULT.txt
+          : > "$result"
+          echo "PYTHON=$(python --version 2>&1)" | tee -a "$result"
+          echo "PIP_BEFORE=$(python -m pip --version 2>&1)" | tee -a "$result"
+          python -m pip install --upgrade pip 2>&1 | tee -a "$result"
+          rc=${PIPESTATUS[0]}
+          if [ "$rc" -ne 0 ]; then echo "DEPENDENCY_STAGE=pip-upgrade FAIL rc=$rc" | tee -a "$result"; exit "$rc"; fi
+          python -m pip install -r requirements.txt 2>&1 | tee -a "$result"
+          rc=${PIPESTATUS[0]}
+          if [ "$rc" -ne 0 ]; then echo "DEPENDENCY_STAGE=requirements FAIL rc=$rc" | tee -a "$result"; exit "$rc"; fi
+          python -m pip install "pytest>=8,<9" "pytest-asyncio>=0.25,<1" 2>&1 | tee -a "$result"
+          rc=${PIPESTATUS[0]}
+          if [ "$rc" -ne 0 ]; then echo "DEPENDENCY_STAGE=test-runner FAIL rc=$rc" | tee -a "$result"; exit "$rc"; fi
+          python -m pip check 2>&1 | tee -a "$result"
+          rc=${PIPESTATUS[0]}
+          if [ "$rc" -ne 0 ]; then echo "DEPENDENCY_STAGE=pip-check FAIL rc=$rc" | tee -a "$result"; exit "$rc"; fi
+          echo 'DEPENDENCY_INSTALL=PASS' | tee -a "$result"
+          echo 'DEPENDENCY_INSTALL=PASS' >> ../CI_STAGE_MARKERS.txt
 
       - name: Run native W14.5N MariaDB/InnoDB certification
         working-directory: .ci/v3754_contract_native_gate/source
@@ -165,6 +196,9 @@ jobs:
         with:
           name: yoru-v3754-w14-5n-contract-native-closure
           path: |
+            .ci/v3754_contract_native_gate/CI_STAGE_MARKERS.txt
+            .ci/v3754_contract_native_gate/SOURCE_VERIFY_RESULT.txt
+            .ci/v3754_contract_native_gate/DEPENDENCY_INSTALL_RESULT.txt
             .ci/v3754_contract_native_gate/NATIVE_MARIADB_RESULT.txt
             .ci/v3754_contract_native_gate/PHASE34_PYTEST_RESULT.txt
             .ci/v3754_contract_native_gate/PHASE34_STATIC_RESULT.txt
