@@ -1,0 +1,144 @@
+name: Yoru v3.77.6 W16.8N Phase 6 Native Closure Dispatcher
+
+run-name: W16.8N Phase 6 Native Closure — manual
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: yoru-v3776-w16-8n-phase6-native-closure
+  cancel-in-progress: false
+
+jobs:
+  phase6-native-closure:
+    name: W16.8N native MariaDB Phase 6 proof
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      mariadb:
+        image: mariadb:11.4
+        env:
+          MARIADB_DATABASE: yoru_phase6_ci_test
+          MARIADB_USER: yoru_ci
+          MARIADB_PASSWORD: yoru_ci_password
+          MARIADB_ROOT_PASSWORD: yoru_ci_root_password
+        ports:
+          - 3306/tcp
+        options: >-
+          --health-cmd "healthcheck.sh --connect --innodb_initialized"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 24
+
+    steps:
+      - name: Checkout isolated Phase 6 proof branch
+        uses: actions/checkout@v6
+        with:
+          ref: ci/v3776-phase6-native-closure
+
+      - name: Reconstruct frozen Phase 6 proof source
+        shell: bash
+        run: |
+          set -euo pipefail
+          unzip -tq .ci/v3776_phase6_native_gate/payload.zip
+          unzip -q .ci/v3776_phase6_native_gate/payload.zip -d .
+          test -f .ci/v3776_phase6_native_gate/phase6_source/phase6_verify.py
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+
+      - name: Install production and proof dependencies
+        working-directory: .ci/v3776_phase6_native_gate/phase6_source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install "pytest>=8,<9" "pytest-asyncio>=0.25,<1"
+          python -m pip check
+
+      - name: Verify frozen v3.77.6 Phase 6 source projection
+        working-directory: .ci/v3776_phase6_native_gate/phase6_source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python phase6_verify.py 2>&1 | tee ../PHASE6_SOURCE_VERIFY_RESULT.txt
+          grep -Fq 'PHASE6_SOURCE_VERIFY=PASS files=24 source_zip_sha256=6987de37babef413b78bb7467861a29b98781b41cda7c9c2a8d5d5b4e4e96656' ../PHASE6_SOURCE_VERIFY_RESULT.txt
+
+      - name: Verify Phase 6 native closure invariants
+        working-directory: .ci/v3776_phase6_native_gate/phase6_source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/release_v3776_phase6_native_closure_regressions.py 2>&1 | tee ../PHASE6_STATIC_RESULT.txt
+          grep -Fq 'W16.8N_PHASE6_NATIVE_STATIC=PASS' ../PHASE6_STATIC_RESULT.txt
+          grep -Fq 'HEIST_SETTLEMENT_BLOCK_SHA256=576d52dc2da49e24280d4577fe6564748c8b0599731116d62a242321c61b1524' ../PHASE6_STATIC_RESULT.txt
+
+      - name: Run Phase 6 native MariaDB certification
+        working-directory: .ci/v3776_phase6_native_gate/phase6_source
+        env:
+          YORU_TEST_MYSQL_CONFIRM: DISPOSABLE_SCHEMA
+          YORU_TEST_MYSQL_HOST: 127.0.0.1
+          YORU_TEST_MYSQL_PORT: ${{ job.services.mariadb.ports['3306'] }}
+          YORU_TEST_MYSQL_USER: yoru_ci
+          YORU_TEST_MYSQL_PASSWORD: yoru_ci_password
+          YORU_TEST_MYSQL_DATABASE: yoru_phase6_ci_test
+          MYSQL_POOL_SIZE: '8'
+          MYSQL_SSL_DISABLED: 'true'
+          MYSQL_CONNECT_TIMEOUT_SECONDS: '10'
+          MYSQL_POOL_ACQUIRE_TIMEOUT_SECONDS: '8'
+          MYSQL_LEGACY_LOCK_TIMEOUT: '8'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q tests/test_v3776_native_mariadb_phase6_closure.py 2>&1 | tee ../PHASE6_NATIVE_RESULT.txt
+          grep -Eq '6 passed' ../PHASE6_NATIVE_RESULT.txt
+
+      - name: Compile proof source
+        working-directory: .ci/v3776_phase6_native_gate/phase6_source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m compileall -q app scripts tests phase6_verify.py
+          printf '%s\n' 'PHASE6_COMPILEALL=PASS' | tee ../PHASE6_COMPILE_RESULT.txt
+
+      - name: Write Phase 6 closure summary
+        if: success()
+        working-directory: .ci/v3776_phase6_native_gate
+        shell: bash
+        run: |
+          printf '%s\n' \
+            'YORU v3.77.6 W16.8N PHASE 6' \
+            'SOURCE_PROJECTION=PASS' \
+            'NATIVE_MARIADB=6/6 PASS' \
+            'CASE_NATIVE=PASS' \
+            'PROCEEDS_NATIVE=PASS' \
+            'HEIST_PLAN_PREP_TACTICS_NATIVE=PASS' \
+            'HEIST_CURRENT_SOURCE_EXACTLY_ONCE=PASS' \
+            'HEIST_CURRENT_SOURCE_ROLLBACK=PASS' \
+            'EXPECTED_FAULT_QUERY_ERRORS=1' \
+            'COMPILEALL=PASS' \
+            'PHASE6_NATIVE_BLOCKER=CLOSED' \
+            'PHASE6_CLOSURE=PASS' \
+            > W16_8N_CLOSURE_RESULT.txt
+
+      - name: Upload Phase 6 proof evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: yoru-v3776-w16-8n-phase6-native-closure-proof
+          path: |
+            .ci/v3776_phase6_native_gate/PHASE6_SOURCE_VERIFY_RESULT.txt
+            .ci/v3776_phase6_native_gate/PHASE6_STATIC_RESULT.txt
+            .ci/v3776_phase6_native_gate/PHASE6_NATIVE_RESULT.txt
+            .ci/v3776_phase6_native_gate/PHASE6_COMPILE_RESULT.txt
+            .ci/v3776_phase6_native_gate/W16_8N_CLOSURE_RESULT.txt
+            .ci/v3776_phase6_native_gate/phase6_source/PHASE6_SOURCE_PROJECTION_MANIFEST.json
+          if-no-files-found: warn
+          retention-days: 14
