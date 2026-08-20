@@ -1,0 +1,175 @@
+name: Yoru v3.75.4 W14.5N Contract Native Closure
+
+on:
+  push:
+    branches:
+      - 'ci/v3754-w14-5n-contract-native-closure'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: yoru-v3754-w14-5n-contract-native-closure
+  cancel-in-progress: false
+
+jobs:
+  contract-native-closure:
+    name: Contract Economy MariaDB / Phase 3+4 dependency closure
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    services:
+      mariadb:
+        image: mariadb:11.4
+        env:
+          MARIADB_DATABASE: yoru_contract_ci_test
+          MARIADB_USER: yoru_ci
+          MARIADB_PASSWORD: yoru_ci_password
+          MARIADB_ROOT_PASSWORD: yoru_ci_root_password
+        ports:
+          - 3306/tcp
+        options: >-
+          --health-cmd "healthcheck.sh --connect --innodb_initialized"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 24
+
+    steps:
+      - name: Checkout isolated proof branch
+        uses: actions/checkout@v6
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+
+      - name: Verify and unpack canonical Phase 3+4 source projection
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd .ci/v3754_contract_native_gate
+          sha256sum -c Yoru_v3.75.4_W14.5N_PHASE34_SOURCE.tar.gz.sha256
+          rm -rf source
+          mkdir source
+          tar -xzf Yoru_v3.75.4_W14.5N_PHASE34_SOURCE.tar.gz -C source
+          test "$(cat source/VERSION)" = "3.75.4"
+          if find source -type d -name __pycache__ -o -type f -name '*.pyc' | grep -q .; then
+            echo "Refusing dirty CI source projection (cache/bytecode present)."
+            exit 1
+          fi
+          python - <<'PY2'
+          from pathlib import Path
+          import hashlib, json
+          base=Path('.')
+          root=base/'source'
+          manifest=json.loads((base/'YORU_v3.75.4_W14.5N_CI_EXECUTION_MANIFEST.json').read_text(encoding='utf-8'))
+          h=hashlib.sha256(); count=0; total=0
+          for p in sorted(x for x in root.rglob('*') if x.is_file()):
+              rel=p.relative_to(root).as_posix(); data=p.read_bytes()
+              count+=1; total+=len(data); h.update(rel.encode()+b'\0'+data+b'\0')
+          actual={'file_count':count,'bytes':total,'tree_sha256':h.hexdigest()}
+          if actual != manifest['source_projection']:
+              raise SystemExit(f"source projection mismatch: {actual} != {manifest['source_projection']}")
+          print('SOURCE_PROJECTION_VERIFY=PASS', actual)
+          PY2
+
+      - name: Install production dependencies + test runner
+        working-directory: .ci/v3754_contract_native_gate/source
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install "pytest>=8,<9" "pytest-asyncio>=0.25,<1"
+
+      - name: Run native W14.5N MariaDB/InnoDB certification
+        working-directory: .ci/v3754_contract_native_gate/source
+        env:
+          YORU_TEST_MYSQL_CONFIRM: DISPOSABLE_SCHEMA
+          YORU_TEST_MYSQL_HOST: 127.0.0.1
+          YORU_TEST_MYSQL_PORT: ${{ job.services.mariadb.ports['3306'] }}
+          YORU_TEST_MYSQL_USER: yoru_ci
+          YORU_TEST_MYSQL_PASSWORD: yoru_ci_password
+          YORU_TEST_MYSQL_DATABASE: yoru_contract_ci_test
+          MYSQL_POOL_SIZE: '8'
+          MYSQL_SSL_DISABLED: 'true'
+          MYSQL_CONNECT_TIMEOUT_SECONDS: '10'
+          MYSQL_POOL_ACQUIRE_TIMEOUT_SECONDS: '8'
+          MYSQL_LEGACY_LOCK_TIMEOUT: '15'
+        shell: bash
+        run: |
+          set -o pipefail
+          PYTHONPATH=. pytest -q tests/test_v3754_native_mariadb_contract_closure.py | tee ../NATIVE_MARIADB_RESULT.txt
+          grep -Eq '4 passed' ../NATIVE_MARIADB_RESULT.txt
+
+      - name: Run Phase 3+4 production-dependency regression suite
+        working-directory: .ci/v3754_contract_native_gate/source
+        shell: bash
+        run: |
+          set -o pipefail
+          PYTHONPATH=. pytest -q \
+            tests/test_v3740_memory_opportunity_core.py \
+            tests/test_v3741_memory_adapters_npc_notifications.py \
+            tests/test_v3742_npc_followups_phone.py \
+            tests/test_v3743_npc_content_domain_favors.py \
+            tests/test_v3744_npc_encounter_relationship_lifecycle.py \
+            tests/test_v3750_unified_contract_economy_foundation.py \
+            tests/test_v3751_player_contract_board_domain_wiring.py \
+            tests/test_v3752_public_freelance_domain_objectives.py \
+            tests/test_v3753_contract_modifiers_player_services.py \
+            tests/test_v3754_contract_restart_expiry_hardening.py \
+            | tee ../PHASE34_PYTEST_RESULT.txt
+          grep -Eq '86 passed' ../PHASE34_PYTEST_RESULT.txt
+
+      - name: Run Phase 3+4 static release contracts
+        working-directory: .ci/v3754_contract_native_gate/source
+        shell: bash
+        run: |
+          set -euo pipefail
+          : > ../PHASE34_STATIC_RESULT.txt
+          for script in \
+            scripts/release_v3740_memory_opportunity_regressions.py \
+            scripts/release_v3741_memory_npc_notification_regressions.py \
+            scripts/release_v3742_npc_followups_phone_regressions.py \
+            scripts/release_v3743_npc_content_domain_favors_regressions.py \
+            scripts/release_v3744_npc_encounter_relationship_lifecycle_regressions.py \
+            scripts/release_v3750_contract_economy_foundation_regressions.py \
+            scripts/release_v3751_player_contract_board_domain_wiring_regressions.py \
+            scripts/release_v3752_public_freelance_domain_objectives_regressions.py \
+            scripts/release_v3753_contract_modifiers_player_services_regressions.py \
+            scripts/release_v3754_contract_phase4_closure_regressions.py
+          do
+            PYTHONPATH=. python "$script" | tee -a ../PHASE34_STATIC_RESULT.txt
+          done
+
+      - name: Compile modern runtime and closure suite
+        working-directory: .ci/v3754_contract_native_gate/source
+        run: python -m compileall -q app scripts tests
+
+      - name: Write closure result
+        if: success()
+        working-directory: .ci/v3754_contract_native_gate
+        shell: bash
+        run: |
+          {
+            echo 'YORU v3.75.4 W14.5N'
+            echo 'NATIVE_MARIADB=4/4 PASS'
+            echo 'PHASE34_PRODUCTION_DEPENDENCY_PYTEST=86/86 PASS'
+            echo 'PHASE34_STATIC_RELEASE_CONTRACTS=PASS'
+            echo 'COMPILEALL=PASS'
+            echo 'PHASE4_CLOSURE_GATE=PASS'
+          } > YORU_V3754_W14_5N_CLOSURE_RESULT.txt
+
+      - name: Upload closure evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: yoru-v3754-w14-5n-contract-native-closure
+          path: |
+            .ci/v3754_contract_native_gate/NATIVE_MARIADB_RESULT.txt
+            .ci/v3754_contract_native_gate/PHASE34_PYTEST_RESULT.txt
+            .ci/v3754_contract_native_gate/PHASE34_STATIC_RESULT.txt
+            .ci/v3754_contract_native_gate/YORU_V3754_W14_5N_CLOSURE_RESULT.txt
+            .ci/v3754_contract_native_gate/Yoru_v3.75.4_W14.5N_PHASE34_SOURCE.tar.gz.sha256
+            .ci/v3754_contract_native_gate/YORU_v3.75.4_W14.5N_CI_EXECUTION_MANIFEST.json
+          if-no-files-found: warn
+          retention-days: 14
