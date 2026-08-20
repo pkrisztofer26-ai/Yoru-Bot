@@ -1,9 +1,6 @@
 name: Yoru v3.75.4 W14.5N Contract Native Closure
 
 on:
-  push:
-    branches:
-      - 'ci/v3754-w14-5n-contract-native-closure'
   workflow_dispatch:
 
 permissions:
