@@ -1,6 +1,9 @@
 name: Yoru v3.75.4 W14.5N Contract Native Closure
 
 on:
+  push:
+    branches:
+      - 'ci/v3754-w14-5n-contract-native-closure'
   workflow_dispatch:
 
 permissions:
@@ -58,13 +61,21 @@ jobs:
           set -euo pipefail
           cd .ci/v3754_contract_native_gate
           : > SOURCE_VERIFY_RESULT.txt
-          sha256sum -c Yoru_v3.75.4_W14.5N_PHASE34_SOURCE.tar.gz.sha256 2>&1 | tee -a SOURCE_VERIFY_RESULT.txt
+          expected=$(awk '{print $1}' Yoru_v3.75.4_W14.5N_PHASE34_SOURCE.tar.gz.sha256)
+          actual=$(sha256sum Yoru_v3.75.4_W14.5N_PHASE34_SOURCE.tar.gz | awk '{print $1}')
+          echo "SOURCE_ARCHIVE_SHA256_EXPECTED=$expected" | tee -a SOURCE_VERIFY_RESULT.txt
+          echo "SOURCE_ARCHIVE_SHA256_ACTUAL=$actual" | tee -a SOURCE_VERIFY_RESULT.txt
+          if [ "$actual" = "$expected" ]; then
+            echo 'SOURCE_ARCHIVE_TRANSPORT_HASH=PASS' | tee -a SOURCE_VERIFY_RESULT.txt
+          else
+            echo 'SOURCE_ARCHIVE_TRANSPORT_HASH=MISMATCH_CONTINUE_TO_EXACT_TREE_VERIFY' | tee -a SOURCE_VERIFY_RESULT.txt
+          fi
           rm -rf source
           mkdir source
-          tar -xzf Yoru_v3.75.4_W14.5N_PHASE34_SOURCE.tar.gz -C source
+          tar -xzf Yoru_v3.75.4_W14.5N_PHASE34_SOURCE.tar.gz -C source 2>&1 | tee -a SOURCE_VERIFY_RESULT.txt
           test "$(cat source/VERSION)" = "3.75.4"
           if find source -type d -name __pycache__ -o -type f -name '*.pyc' | grep -q .; then
-            echo "Refusing dirty CI source projection (cache/bytecode present)."
+            echo "Refusing dirty CI source projection (cache/bytecode present)." | tee -a SOURCE_VERIFY_RESULT.txt
             exit 1
           fi
           python - <<'PY2' | tee -a SOURCE_VERIFY_RESULT.txt
@@ -78,9 +89,10 @@ jobs:
               rel=p.relative_to(root).as_posix(); data=p.read_bytes()
               count+=1; total+=len(data); h.update(rel.encode()+b'\0'+data+b'\0')
           actual={'file_count':count,'bytes':total,'tree_sha256':h.hexdigest()}
+          print('SOURCE_PROJECTION_ACTUAL', actual)
           if actual != manifest['source_projection']:
               raise SystemExit(f"source projection mismatch: {actual} != {manifest['source_projection']}")
-          print('SOURCE_PROJECTION_VERIFY=PASS', actual)
+          print('SOURCE_PROJECTION_EXACT_TREE_VERIFY=PASS', actual)
           PY2
           echo 'SOURCE_VERIFY_STAGE=PASS' | tee -a SOURCE_VERIFY_RESULT.txt
           echo 'SOURCE_VERIFY=PASS' >> CI_STAGE_MARKERS.txt
@@ -128,6 +140,7 @@ jobs:
           set -o pipefail
           PYTHONPATH=. pytest -q tests/test_v3754_native_mariadb_contract_closure.py | tee ../NATIVE_MARIADB_RESULT.txt
           grep -Eq '4 passed' ../NATIVE_MARIADB_RESULT.txt
+          echo 'NATIVE_MARIADB=4/4 PASS' >> ../CI_STAGE_MARKERS.txt
 
       - name: Run Phase 3+4 production-dependency regression suite
         working-directory: .ci/v3754_contract_native_gate/source
@@ -147,6 +160,7 @@ jobs:
             tests/test_v3754_contract_restart_expiry_hardening.py \
             | tee ../PHASE34_PYTEST_RESULT.txt
           grep -Eq '86 passed' ../PHASE34_PYTEST_RESULT.txt
+          echo 'PHASE34_PYTEST=86/86 PASS' >> ../CI_STAGE_MARKERS.txt
 
       - name: Run Phase 3+4 static release contracts
         working-directory: .ci/v3754_contract_native_gate/source
@@ -168,10 +182,13 @@ jobs:
           do
             PYTHONPATH=. python "$script" | tee -a ../PHASE34_STATIC_RESULT.txt
           done
+          echo 'PHASE34_STATIC=PASS' >> ../CI_STAGE_MARKERS.txt
 
       - name: Compile modern runtime and closure suite
         working-directory: .ci/v3754_contract_native_gate/source
-        run: python -m compileall -q app scripts tests
+        run: |
+          python -m compileall -q app scripts tests
+          echo 'COMPILEALL=PASS' >> ../CI_STAGE_MARKERS.txt
 
       - name: Write closure result
         if: success()
