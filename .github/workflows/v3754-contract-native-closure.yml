@@ -1,4 +1,4 @@
-name: Yoru v3.75.4 W14.5N Contract Native Closure
+name: Yoru v3.75.4 W14.5N Phase 3+4 Closure
 
 on:
   workflow_dispatch:
@@ -7,14 +7,14 @@ permissions:
   contents: read
 
 concurrency:
-  group: yoru-v3754-w14-5n-contract-native-closure
+  group: yoru-v3754-w14-5n-phase34-closure
   cancel-in-progress: false
 
 jobs:
-  native-contract-closure:
-    name: W14.5N native Contract Economy proof
+  phase34-contract-closure:
+    name: W14.5N native + Phase 3+4 Contract Economy proof
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
 
     services:
       mariadb:
@@ -43,10 +43,12 @@ jobs:
         with:
           python-version: '3.14'
 
-      - name: Install native gate dependencies
+      - name: Install production and proof dependencies
         run: |
+          set -euo pipefail
           python -m pip install --upgrade pip
-          python -m pip install "mysql-connector-python>=9.5,<10" "aiosqlite==0.21.0" "pytest>=8,<9" "pytest-asyncio>=0.25,<1"
+          python -m pip install -r .ci/v3754_contract_native_gate/phase34_source/requirements.txt
+          python -m pip install "pytest>=8,<9" "pytest-asyncio>=0.25,<1"
           python -m pip check
 
       - name: Run W14.5N native MariaDB certification
@@ -65,30 +67,128 @@ jobs:
           MYSQL_LEGACY_LOCK_TIMEOUT: '15'
         shell: bash
         run: |
-          set -o pipefail
+          set -euo pipefail
           python w14_5n_bootstrap.py 2>&1 | tee W14_5N_NATIVE_RESULT.txt
           grep -Eq '4 passed' W14_5N_NATIVE_RESULT.txt
           grep -Eq 'W14_5N_SOURCE_PROJECTION_VERIFY=PASS' W14_5N_NATIVE_RESULT.txt
 
-      - name: Write proof summary
+      - name: Install verified W10 database backend into Phase34 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib
+          import shutil
+
+          expected = "2820a18cb05b355be3cc756b6871832fe1b3e1525aae791622933776b80ad7ca"
+          src = Path(".ci/v3754_contract_native_gate/source/app/db_backend.py")
+          dst = Path(".ci/v3754_contract_native_gate/phase34_source/app/db_backend.py")
+
+          if not src.is_file():
+              raise SystemExit("verified W10 db_backend.py was not produced by native bootstrap")
+          actual = hashlib.sha256(src.read_bytes()).hexdigest()
+          if actual != expected:
+              raise SystemExit(f"W10 db_backend source hash mismatch: {actual}")
+
+          shutil.copy2(src, dst)
+          copied = hashlib.sha256(dst.read_bytes()).hexdigest()
+          if copied != expected:
+              raise SystemExit(f"Phase34 db_backend copy hash mismatch: {copied}")
+          print(f"PHASE34_DB_BACKEND_FIXTURE=PASS sha256={copied}")
+          PY
+
+      - name: Verify frozen Phase34 source projection
+        working-directory: .ci/v3754_contract_native_gate/phase34_source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python phase34_verify.py 2>&1 | tee ../PHASE34_VERIFY_RESULT.txt
+          grep -Eq 'PHASE34_SOURCE_VERIFY=PASS files=175 bytes=1087801 tree=a31d8731eaee911bbe7add611c8d7a1cebe5f65d4a307dc7e829aa4df6c1762a' ../PHASE34_VERIFY_RESULT.txt
+
+      - name: Run Phase 3+4 targeted regression suite
+        working-directory: .ci/v3754_contract_native_gate/phase34_source
+        shell: bash
+        env:
+          PYTHONPATH: .
+        run: |
+          set -euo pipefail
+          python -m pytest -q \
+            tests/test_v3740_memory_opportunity_core.py \
+            tests/test_v3741_memory_adapters_npc_notifications.py \
+            tests/test_v3742_npc_followups_phone.py \
+            tests/test_v3743_npc_content_domain_favors.py \
+            tests/test_v3744_npc_encounter_relationship_lifecycle.py \
+            tests/test_v3750_unified_contract_economy_foundation.py \
+            tests/test_v3751_player_contract_board_domain_wiring.py \
+            tests/test_v3752_public_freelance_domain_objectives.py \
+            tests/test_v3753_contract_modifiers_player_services.py \
+            tests/test_v3754_contract_restart_expiry_hardening.py \
+            2>&1 | tee ../PHASE34_PYTEST_RESULT.txt
+          grep -Eq '86 passed' ../PHASE34_PYTEST_RESULT.txt
+
+      - name: Run Phase 3+4 static release gates
+        working-directory: .ci/v3754_contract_native_gate/phase34_source
+        shell: bash
+        run: |
+          set -euo pipefail
+          : > ../PHASE34_STATIC_RESULT.txt
+          scripts=(
+            scripts/release_v3740_memory_opportunity_regressions.py
+            scripts/release_v3741_memory_npc_notification_regressions.py
+            scripts/release_v3742_npc_followups_phone_regressions.py
+            scripts/release_v3743_npc_content_domain_favors_regressions.py
+            scripts/release_v3744_npc_encounter_relationship_lifecycle_regressions.py
+            scripts/release_v3750_contract_economy_foundation_regressions.py
+            scripts/release_v3751_player_contract_board_domain_wiring_regressions.py
+            scripts/release_v3752_public_freelance_domain_objectives_regressions.py
+            scripts/release_v3753_contract_modifiers_player_services_regressions.py
+            scripts/release_v3754_contract_phase4_closure_regressions.py
+          )
+          for script in "${scripts[@]}"; do
+            echo "RUN ${script}" | tee -a ../PHASE34_STATIC_RESULT.txt
+            python "${script}" 2>&1 | tee -a ../PHASE34_STATIC_RESULT.txt
+            echo "PASS ${script}" | tee -a ../PHASE34_STATIC_RESULT.txt
+          done
+          test "$(grep -c '^PASS scripts/' ../PHASE34_STATIC_RESULT.txt)" -eq 10
+
+      - name: Compile Phase34 proof source
+        working-directory: .ci/v3754_contract_native_gate/phase34_source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m compileall -q app scripts tests phase34_verify.py
+          printf '%s\n' 'COMPILEALL=PASS' | tee ../PHASE34_COMPILE_RESULT.txt
+
+      - name: Write Phase 4 closure summary
         if: success()
         working-directory: .ci/v3754_contract_native_gate
         run: |
           printf '%s\n' \
-            'YORU v3.75.4 W14.5N' \
+            'YORU v3.75.4 W14.5N PHASE 3+4' \
             'SOURCE_PROJECTION=PASS' \
             'NATIVE_MARIADB=4/4 PASS' \
+            'PHASE34_TARGETED=86/86 PASS' \
+            'STATIC_RELEASE_GATES=10/10 PASS' \
+            'COMPILEALL=PASS' \
             'PHASE4_NATIVE_BLOCKER=CLOSED' \
+            'PHASE4_CLOSURE=PASS' \
             > W14_5N_CLOSURE_RESULT.txt
 
-      - name: Upload proof evidence
+      - name: Upload Phase 3+4 proof evidence
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: yoru-v3754-w14-5n-native-proof
+          name: yoru-v3754-w14-5n-phase34-closure-proof
           path: |
             .ci/v3754_contract_native_gate/W14_5N_NATIVE_RESULT.txt
             .ci/v3754_contract_native_gate/W14_5N_CLOSURE_RESULT.txt
+            .ci/v3754_contract_native_gate/PHASE34_VERIFY_RESULT.txt
+            .ci/v3754_contract_native_gate/PHASE34_PYTEST_RESULT.txt
+            .ci/v3754_contract_native_gate/PHASE34_STATIC_RESULT.txt
+            .ci/v3754_contract_native_gate/PHASE34_COMPILE_RESULT.txt
             .ci/v3754_contract_native_gate/source/W14_5N_SOURCE_PROJECTION_MANIFEST.json
+            .ci/v3754_contract_native_gate/phase34_source/PHASE34_SOURCE_MANIFEST.json
+            .ci/v3754_contract_native_gate/phase34_source/PHASE34_SPLIT_AST_MANIFEST.json
           if-no-files-found: warn
           retention-days: 14
