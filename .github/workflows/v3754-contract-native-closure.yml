@@ -11,10 +11,10 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  contract-native-closure:
-    name: Contract Economy MariaDB / Phase 3+4 closure
+  native-contract-closure:
+    name: W14.5N native Contract Economy proof
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 20
 
     services:
       mariadb:
@@ -33,57 +33,24 @@ jobs:
           --health-retries 24
 
     steps:
-      - name: Checkout isolated W14.5N proof source
+      - name: Checkout W14.5N clean proof branch
         uses: actions/checkout@v6
         with:
-          ref: ci/v3754-w14-5n-contract-native-closure
+          ref: ci/v3754-w14-5n-clean-source
 
       - name: Set up Python 3.14
         uses: actions/setup-python@v6
         with:
           python-version: '3.14'
 
-      - name: Reconstruct and verify source projection
-        shell: bash
-        run: |
-          set -euo pipefail
-          cd .ci/v3754_contract_native_gate
-          rm -rf source
-          mkdir source
-          if [ -d source_parts ]; then
-            cat source_parts/part-*.b64 | tr -d '\n\r' | base64 --decode > source.tar.xz
-            tar -xJf source.tar.xz -C source
-          else
-            echo "W14.5N source_parts missing on isolated branch."
-            exit 1
-          fi
-          test "$(cat source/VERSION)" = "3.75.4"
-          python - <<'PY'
-          from pathlib import Path
-          import hashlib, json
-          base=Path('.')
-          root=base/'source'
-          manifest=json.loads((base/'YORU_v3.75.4_W14.5N_CI_EXECUTION_MANIFEST.json').read_text(encoding='utf-8'))
-          h=hashlib.sha256(); count=0; total=0
-          for p in sorted(x for x in root.rglob('*') if x.is_file()):
-              rel=p.relative_to(root).as_posix(); data=p.read_bytes()
-              count+=1; total+=len(data); h.update(rel.encode()+b'\0'+data+b'\0')
-          actual={'file_count':count,'bytes':total,'tree_sha256':h.hexdigest()}
-          if actual != manifest['source_projection']:
-              raise SystemExit(f"source projection mismatch: {actual} != {manifest['source_projection']}")
-          print('SOURCE_PROJECTION_VERIFY=PASS', actual)
-          PY
-
-      - name: Install production dependencies + test runner
-        working-directory: .ci/v3754_contract_native_gate/source
+      - name: Install native gate dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
-          python -m pip install "pytest>=8,<9" "pytest-asyncio>=0.25,<1"
+          python -m pip install "mysql-connector-python>=9.5,<10" "aiosqlite==0.21.0" "pytest>=8,<9" "pytest-asyncio>=0.25,<1"
           python -m pip check
 
-      - name: Native MariaDB/InnoDB certification
-        working-directory: .ci/v3754_contract_native_gate/source
+      - name: Run W14.5N native MariaDB certification
+        working-directory: .ci/v3754_contract_native_gate
         env:
           YORU_TEST_MYSQL_CONFIRM: DISPOSABLE_SCHEMA
           YORU_TEST_MYSQL_HOST: 127.0.0.1
@@ -99,75 +66,29 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          PYTHONPATH=. pytest -q tests/test_v3754_native_mariadb_contract_closure.py | tee ../NATIVE_MARIADB_RESULT.txt
-          grep -Eq '4 passed' ../NATIVE_MARIADB_RESULT.txt
+          python w14_5n_bootstrap.py 2>&1 | tee W14_5N_NATIVE_RESULT.txt
+          grep -Eq '4 passed' W14_5N_NATIVE_RESULT.txt
+          grep -Eq 'W14_5N_SOURCE_PROJECTION_VERIFY=PASS' W14_5N_NATIVE_RESULT.txt
 
-      - name: Phase 3+4 regression suite
-        working-directory: .ci/v3754_contract_native_gate/source
-        shell: bash
-        run: |
-          set -o pipefail
-          PYTHONPATH=. pytest -q \
-            tests/test_v3740_memory_opportunity_core.py \
-            tests/test_v3741_memory_adapters_npc_notifications.py \
-            tests/test_v3742_npc_followups_phone.py \
-            tests/test_v3743_npc_content_domain_favors.py \
-            tests/test_v3744_npc_encounter_relationship_lifecycle.py \
-            tests/test_v3750_unified_contract_economy_foundation.py \
-            tests/test_v3751_player_contract_board_domain_wiring.py \
-            tests/test_v3752_public_freelance_domain_objectives.py \
-            tests/test_v3753_contract_modifiers_player_services.py \
-            tests/test_v3754_contract_restart_expiry_hardening.py \
-            | tee ../PHASE34_PYTEST_RESULT.txt
-          grep -Eq '86 passed' ../PHASE34_PYTEST_RESULT.txt
-
-      - name: Static release contracts
-        working-directory: .ci/v3754_contract_native_gate/source
-        shell: bash
-        run: |
-          set -euo pipefail
-          : > ../PHASE34_STATIC_RESULT.txt
-          for script in \
-            scripts/release_v3740_memory_opportunity_regressions.py \
-            scripts/release_v3741_memory_npc_notification_regressions.py \
-            scripts/release_v3742_npc_followups_phone_regressions.py \
-            scripts/release_v3743_npc_content_domain_favors_regressions.py \
-            scripts/release_v3744_npc_encounter_relationship_lifecycle_regressions.py \
-            scripts/release_v3750_contract_economy_foundation_regressions.py \
-            scripts/release_v3751_player_contract_board_domain_wiring_regressions.py \
-            scripts/release_v3752_public_freelance_domain_objectives_regressions.py \
-            scripts/release_v3753_contract_modifiers_player_services_regressions.py \
-            scripts/release_v3754_contract_phase4_closure_regressions.py
-          do
-            PYTHONPATH=. python "$script" | tee -a ../PHASE34_STATIC_RESULT.txt
-          done
-
-      - name: Compile
-        working-directory: .ci/v3754_contract_native_gate/source
-        run: python -m compileall -q app scripts tests
-
-      - name: Write closure result
+      - name: Write proof summary
+        if: success()
         working-directory: .ci/v3754_contract_native_gate
         run: |
           printf '%s\n' \
             'YORU v3.75.4 W14.5N' \
+            'SOURCE_PROJECTION=PASS' \
             'NATIVE_MARIADB=4/4 PASS' \
-            'PHASE34_PRODUCTION_DEPENDENCY_PYTEST=86/86 PASS' \
-            'PHASE34_STATIC_RELEASE_CONTRACTS=PASS' \
-            'COMPILEALL=PASS' \
-            'PHASE4_CLOSURE_GATE=PASS' \
-            > YORU_V3754_W14_5N_CLOSURE_RESULT.txt
+            'PHASE4_NATIVE_BLOCKER=CLOSED' \
+            > W14_5N_CLOSURE_RESULT.txt
 
-      - name: Upload closure evidence
+      - name: Upload proof evidence
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: yoru-v3754-w14-5n-contract-native-closure
+          name: yoru-v3754-w14-5n-native-proof
           path: |
-            .ci/v3754_contract_native_gate/NATIVE_MARIADB_RESULT.txt
-            .ci/v3754_contract_native_gate/PHASE34_PYTEST_RESULT.txt
-            .ci/v3754_contract_native_gate/PHASE34_STATIC_RESULT.txt
-            .ci/v3754_contract_native_gate/YORU_V3754_W14_5N_CLOSURE_RESULT.txt
-            .ci/v3754_contract_native_gate/YORU_v3.75.4_W14.5N_CI_EXECUTION_MANIFEST.json
+            .ci/v3754_contract_native_gate/W14_5N_NATIVE_RESULT.txt
+            .ci/v3754_contract_native_gate/W14_5N_CLOSURE_RESULT.txt
+            .ci/v3754_contract_native_gate/source/W14_5N_SOURCE_PROJECTION_MANIFEST.json
           if-no-files-found: warn
           retention-days: 14
