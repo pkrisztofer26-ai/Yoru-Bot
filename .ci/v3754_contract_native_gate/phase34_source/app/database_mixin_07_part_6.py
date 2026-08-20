@@ -1,0 +1,31 @@
+from __future__ import annotations
+from app.database_support import *
+
+class DatabaseMixin7Part6:
+
+    async def _initialize_part_6(self, db) -> None:
+        await db.execute("CREATE TABLE IF NOT EXISTS community_suggestions (\n                    suggestion_id INTEGER PRIMARY KEY AUTOINCREMENT,\n                    guild_id INTEGER NOT NULL,\n                    channel_id INTEGER NOT NULL,\n                    message_id INTEGER,\n                    author_id INTEGER NOT NULL,\n                    anonymous INTEGER NOT NULL DEFAULT 0,\n                    content TEXT NOT NULL,\n                    status TEXT NOT NULL DEFAULT 'pending',\n                    staff_id INTEGER,\n                    staff_note TEXT,\n                    created_at TEXT NOT NULL,\n                    updated_at TEXT NOT NULL\n                )")
+        cursor = await db.execute('PRAGMA table_info(community_suggestions)')
+        community_suggestion_cols = {str(row[1]) for row in await cursor.fetchall()}
+        if 'anonymous' not in community_suggestion_cols:
+            await db.execute('ALTER TABLE community_suggestions ADD COLUMN anonymous INTEGER NOT NULL DEFAULT 0')
+        await db.execute('CREATE INDEX IF NOT EXISTS idx_community_suggestions_guild ON community_suggestions(guild_id,status,suggestion_id)')
+        await db.execute('CREATE TABLE IF NOT EXISTS community_suggestion_votes (\n                    suggestion_id INTEGER NOT NULL,\n                    user_id INTEGER NOT NULL,\n                    vote INTEGER NOT NULL,\n                    PRIMARY KEY (suggestion_id,user_id),\n                    FOREIGN KEY (suggestion_id) REFERENCES community_suggestions(suggestion_id) ON DELETE CASCADE\n                )')
+        await db.execute('CREATE TABLE IF NOT EXISTS community_polls (\n                    poll_id INTEGER PRIMARY KEY AUTOINCREMENT,\n                    guild_id INTEGER NOT NULL,\n                    channel_id INTEGER NOT NULL,\n                    message_id INTEGER,\n                    author_id INTEGER NOT NULL,\n                    question TEXT NOT NULL,\n                    options_json TEXT NOT NULL,\n                    closes_at TEXT NOT NULL,\n                    closed INTEGER NOT NULL DEFAULT 0,\n                    created_at TEXT NOT NULL\n                )')
+        await db.execute('CREATE INDEX IF NOT EXISTS idx_community_polls_active ON community_polls(guild_id,closed,closes_at)')
+        await db.execute('CREATE TABLE IF NOT EXISTS community_poll_votes (\n                    poll_id INTEGER NOT NULL,\n                    user_id INTEGER NOT NULL,\n                    option_index INTEGER NOT NULL,\n                    PRIMARY KEY (poll_id,user_id),\n                    FOREIGN KEY (poll_id) REFERENCES community_polls(poll_id) ON DELETE CASCADE\n                )')
+        await db.execute('CREATE TABLE IF NOT EXISTS community_giveaways (\n                    giveaway_id INTEGER PRIMARY KEY AUTOINCREMENT,\n                    guild_id INTEGER NOT NULL,\n                    channel_id INTEGER NOT NULL,\n                    message_id INTEGER,\n                    host_id INTEGER NOT NULL,\n                    prize TEXT NOT NULL,\n                    winner_count INTEGER NOT NULL,\n                    ends_at TEXT NOT NULL,\n                    ended INTEGER NOT NULL DEFAULT 0,\n                    created_at TEXT NOT NULL\n                )')
+        await db.execute('CREATE INDEX IF NOT EXISTS idx_community_giveaways_active ON community_giveaways(guild_id,ended,ends_at)')
+        await db.execute('CREATE TABLE IF NOT EXISTS community_giveaway_entries (\n                    giveaway_id INTEGER NOT NULL,\n                    user_id INTEGER NOT NULL,\n                    PRIMARY KEY (giveaway_id,user_id),\n                    FOREIGN KEY (giveaway_id) REFERENCES community_giveaways(giveaway_id) ON DELETE CASCADE\n                )')
+        await db.execute('CREATE TABLE IF NOT EXISTS community_afk (\n                    guild_id INTEGER NOT NULL,\n                    user_id INTEGER NOT NULL,\n                    reason TEXT NOT NULL,\n                    since TEXT NOT NULL,\n                    PRIMARY KEY (guild_id,user_id)\n                )')
+        await db.execute('CREATE TABLE IF NOT EXISTS community_starboard_posts (\n                    guild_id INTEGER NOT NULL,\n                    source_message_id INTEGER NOT NULL,\n                    source_channel_id INTEGER NOT NULL,\n                    starboard_message_id INTEGER NOT NULL,\n                    star_count INTEGER NOT NULL DEFAULT 0,\n                    PRIMARY KEY (guild_id,source_message_id)\n                )')
+        await db.execute('CREATE TABLE IF NOT EXISTS community_stickies (\n                    guild_id INTEGER NOT NULL,\n                    channel_id INTEGER NOT NULL,\n                    content TEXT NOT NULL,\n                    active INTEGER NOT NULL DEFAULT 1,\n                    last_message_id INTEGER,\n                    message_counter INTEGER NOT NULL DEFAULT 0,\n                    last_posted_at TEXT,\n                    created_by INTEGER NOT NULL,\n                    PRIMARY KEY (guild_id,channel_id)\n                )')
+        cursor = await db.execute('PRAGMA table_info(shop_items)')
+        shop_cols = {str(row[1]) for row in await cursor.fetchall()}
+        if 'rarity' not in shop_cols:
+            await db.execute("ALTER TABLE shop_items ADD COLUMN rarity TEXT NOT NULL DEFAULT 'common'")
+        if 'category' not in shop_cols:
+            await db.execute("ALTER TABLE shop_items ADD COLUMN category TEXT NOT NULL DEFAULT 'utility'")
+        await db.execute('UPDATE shop_items SET active=0')
+        shop_catalog = shop_cfg.catalog_rows()
+        await db.executemany('INSERT INTO shop_items (item_id,name,description,price,emoji,active,rarity,category)\n                   VALUES (?,?,?,?,?,1,?,?)\n                   ON CONFLICT(item_id) DO UPDATE SET\n                     name=excluded.name, description=excluded.description, price=excluded.price,\n                     emoji=excluded.emoji, active=1, rarity=excluded.rarity, category=excluded.category', shop_catalog)

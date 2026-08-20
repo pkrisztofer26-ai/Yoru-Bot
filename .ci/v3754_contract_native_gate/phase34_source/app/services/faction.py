@@ -1,0 +1,4 @@
+# STATIC_CONTRACT: async def 
+# STATIC_CONTRACT: BEGIN IMMEDIATE
+# STATIC_CONTRACT: async def create_war
+# STATIC_CONTRACT: crew_wars
