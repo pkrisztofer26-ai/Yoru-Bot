@@ -1,0 +1,187 @@
+arset": "utf8mb4",
+        "autocommit": False,
+        # Native mysql.connector.aio pooling amortizes DNS/TCP/TLS/auth setup
+        # across Yoru's many short compatibility contexts.
+        "pool_name": pool_name[:64],
+        "pool_size": pool_size,
+        "pool_reset_session": True,
+        "connection_timeout": _env_int("MYSQL_CONNECT_TIMEOUT_SECONDS", 10, minimum=2, maximum=60),
+        # mysql.connector.aio is the pure-Python asyncio implementation.
+        "use_pure": True,
+    }
+    # PebbleHost can expose either a local/plain DB endpoint or a TLS endpoint.
+    # Connector/Python uses ssl_disabled; default False keeps TLS enabled when
+    # the server supports/requires it.  Users can explicitly disable it for a
+    # local host endpoint.
+    result["ssl_disabled"] = _env_bool("MYSQL_SSL_DISABLED", False)
+    return result
+
+
+class _CompatRow(Mapping[str, Any], Sequence[Any]):
+    """Small aiosqlite.Row compatible object for dictionary MySQL cursors.
+
+    Supports ``row[0]``, ``row["column"]``, ``dict(row)`` and normal iteration.
+    """
+
+    def __init__(self, values: Mapping[str, Any] | Sequence[Any], columns: Sequence[str] | None = None) -> None:
+        if isinstance(values, Mapping):
+            self._keys = list(values.keys())
+            self._map = {str(k): _normalize_value(v) for k, v in values.items()}
+            self._values = [self._map[k] for k in self._keys]
+        else:
+            vals = [_normalize_value(v) for v in values]
+            keys = list(columns or [str(i) for i in range(len(vals))])
+            self._keys = keys
+            self._values = vals
+            self._map = dict(zip(keys, vals))
+
+    def __getitem__(self, key: str | int | slice) -> Any:
+        if isinstance(key, (int, slice)):
+            return self._values[key]
+        return self._map[key]
+
+    def __iter__(self) -> Iterator[str]:
+        # Mapping iteration is required for dict(row) compatibility.
+        return iter(self._keys)
+
+    def __len__(self) -> int:
+        return len(self._values)
+
+    def keys(self):
+        return list(self._keys)
+
+    def values(self):
+        return list(self._values)
+
+    def items(self):
+        return [(k, self._map[k]) for k in self._keys]
+
+
+# Public row-factory marker. SQLite receives its native Row callable; the MySQL
+# wrapper detects this marker and returns _CompatRow with the same indexing API.
+Row = _sqlite.Row
+
+# Type annotation compatibility for legacy modules.
+Connection = Any
+
+
+class IntegrityError(Exception):
+    """Backend-neutral integrity constraint error."""
+
+
+
+def _normalize_value(value: Any) -> Any:
+    if isinstance(value, Decimal):
+        if value == value.to_integral_value():
+            return int(value)
+        return value
+    if isinstance(value, list):
+        return [_normalize_value(v) for v in value]
+    if isinstance(value, tuple):
+        return tuple(_normalize_value(v) for v in value)
+    if isinstance(value, dict):
+        return {k: _normalize_value(v) for k, v in value.items()}
+    return value
+
+
+def _mysql_parameter(value: Any) -> Any:
+    """Prepare a Python value for Connector/Python without 64-bit int loss.
+
+    Connector/Python can bind Decimal exactly to DECIMAL columns. Converting
+    only integers outside signed BIGINT keeps normal IDs/LIMIT parameters as
+    plain ints while ensuring Yoru's >64-bit economy amounts are serialized as
+    arbitrary-precision decimal values instead of overflowing a client integer
+    codec before MySQL sees them.
+    """
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int) and not (-(2**63) <= value <= 2**63 - 1):
+        return Decimal(value)
+    return value
+
+
+def _mysql_parameters(params: Sequence[Any] | None) -> tuple[Any, ...] | None:
+    if params is None:
+        return None
+    return tuple(_mysql_parameter(value) for value in params)
+
+
+async def _maybe_await(value: Any) -> Any:
+    if inspect.isawaitable(value):
+        return await value
+    return value
+
+
+@dataclass
+class _SyntheticCursor:
+    rows: list[Any]
+    rowcount: int = 0
+    lastrowid: int | None = None
+    description: Any = None
+    _pos: int = 0
+
+    async def fetchone(self) -> Any:
+        if self._pos >= len(self.rows):
+            return None
+        row = self.rows[self._pos]
+        self._pos += 1
+        return row
+
+    async def fetchall(self) -> list[Any]:
+        rows = self.rows[self._pos :]
+        self._pos = len(self.rows)
+        return rows
+
+    async def fetchmany(self, size: int | None = None) -> list[Any]:
+        n = int(size or 1)
+        rows = self.rows[self._pos : self._pos + n]
+        self._pos += len(rows)
+        return rows
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        row = await self.fetchone()
+        if row is None:
+            raise StopAsyncIteration
+        return row
+
+    async def close(self) -> None:
+        return None
+
+
+class _MySQLCursor:
+    def __init__(self, raw: Any, *, row_mode: bool = False) -> None:
+        self._raw = raw
+        self._row_mode = row_mode
+
+    @property
+    def rowcount(self) -> int:
+        return int(getattr(self._raw, "rowcount", -1))
+
+    @property
+    def lastrowid(self) -> int | None:
+        value = getattr(self._raw, "lastrowid", None)
+        return int(value) if value is not None else None
+
+    @property
+    def description(self) -> Any:
+        return getattr(self._raw, "description", None)
+
+    def _columns(self) -> list[str]:
+        desc = self.description or []
+        return [str(item[0]) for item in desc]
+
+    def _convert(self, value: Any) -> Any:
+        if value is None:
+            return None
+        if self._row_mode:
+            if isinstance(value, Mapping):
+                return _CompatRow(value)
+            return _CompatRow(value, self._columns())
+        if isinstance(value, Mapping):
+            return {str(k): _normalize_value(v) for k, v in value.items()}
+        if isinstance(value, tuple):
+            return tuple(_normalize_value(v) for v in value)
+        i

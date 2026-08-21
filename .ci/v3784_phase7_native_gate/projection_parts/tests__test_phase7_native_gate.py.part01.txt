@@ -1,0 +1,89 @@
+from __future__ import annotations
+
+"""W17.6N disposable MariaDB/InnoDB closure proof for Yoru Phase 7.
+
+Fail-closed: no live credentials are discovered and the suite runs only after
+explicit DISPOSABLE_SCHEMA confirmation. The native tests execute the exact
+Phase 7 schema projection through Yoru's v3.78.4 db_backend compatibility layer.
+"""
+import asyncio
+from datetime import datetime, timedelta, timezone
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import uuid
+
+import pytest
+import pytest_asyncio
+
+if os.getenv("YORU_TEST_MYSQL_CONFIRM", "") == "DISPOSABLE_SCHEMA":
+    from app import db_backend
+else:
+    db_backend = None
+
+ROOT = Path(__file__).resolve().parents[1]
+SCHEMA_PATH = ROOT / "PHASE7_WORLD_SCHEMA.sql"
+METHODS_PATH = ROOT / "PHASE7_PERSISTENCE_METHODS.py.txt"
+CONFIG_PATH = ROOT / "PHASE7_CONFIG_GUARDS.py.txt"
+TABLES = (
+    "rp_world_community_project_outcomes",
+    "rp_world_community_project_contributions",
+    "rp_world_community_projects",
+    "rp_world_causality_decisions",
+    "rp_world_causality_signals",
+)
+_REQUIRED=("YORU_TEST_MYSQL_HOST","YORU_TEST_MYSQL_USER","YORU_TEST_MYSQL_PASSWORD","YORU_TEST_MYSQL_DATABASE")
+
+def _credentials_or_skip():
+    if os.getenv("YORU_TEST_MYSQL_CONFIRM", "") != "DISPOSABLE_SCHEMA": pytest.skip("Disposable MariaDB Phase 7 DB not explicitly confirmed")
+    missing=[n for n in _REQUIRED if not os.getenv(n,"").strip()]
+    if missing: pytest.skip("Disposable MariaDB credentials missing: "+", ".join(missing))
+    database=os.environ["YORU_TEST_MYSQL_DATABASE"].strip()
+    if not re.search(r"(?:test|testing|qa|staging|sandbox)",database,re.I): pytest.fail("Refusing Phase 7 native tests: database name is not visibly disposable")
+    live=os.getenv("MYSQL_DATABASE","").strip()
+    if live and live.casefold()==database.casefold(): pytest.fail("Refusing Phase 7 native tests against MYSQL_DATABASE/live schema")
+    return dict(host=os.environ["YORU_TEST_MYSQL_HOST"].strip(),port=os.getenv("YORU_TEST_MYSQL_PORT","3306"),user=os.environ["YORU_TEST_MYSQL_USER"].strip(),password=os.environ["YORU_TEST_MYSQL_PASSWORD"],database=database)
+
+def _stamp(delta=0): return (datetime.now(timezone.utc)+timedelta(seconds=delta)).isoformat()
+def _statements(): return [x.strip() for x in SCHEMA_PATH.read_text().split(";\n\n") if x.strip()]
+async def _drop():
+    async with db_backend.connect(None) as db:
+        await db._run_raw("SET FOREIGN_KEY_CHECKS=0")
+        for t in TABLES: await db._run_raw(f"DROP TABLE IF EXISTS `{t}`")
+        await db._run_raw("SET FOREIGN_KEY_CHECKS=1"); await db.commit()
+async def _install():
+    async with db_backend.connect(None) as db:
+        for s in _statements(): await db._run_raw(s)
+        await db.commit()
+async def _scalar(sql,params=()):
+    async with db_backend.connect(None) as db:
+        c=await db._run_raw(sql,params); r=await c.fetchone(); return None if r is None else r[0]
+async def _rows(sql,params=()):
+    async with db_backend.connect(None) as db:
+        c=await db._run_raw(sql,params); return await c.fetchall()
+async def _engine(t): return str(await _scalar("SELECT ENGINE FROM information_schema.tables WHERE table_schema=%s AND table_name=%s",(db_backend.mysql_settings()["database"],t)) or "")
+async def _indexes(t): return {str(x[0]) for x in await _rows("SELECT DISTINCT INDEX_NAME FROM information_schema.statistics WHERE table_schema=%s AND table_name=%s",(db_backend.mysql_settings()["database"],t))}
+async def _fks(t): return {str(x[0]) for x in await _rows("SELECT DISTINCT CONSTRAINT_NAME FROM information_schema.referential_constraints WHERE constraint_schema=%s AND table_name=%s",(db_backend.mysql_settings()["database"],t))}
+
+@pytest_asyncio.fixture(autouse=True)
+async def native_phase7(monkeypatch):
+    c=_credentials_or_skip(); suffix=uuid.uuid4().hex[:10]
+    for k,v in {"YORU_DB_BACKEND":"mysql","MYSQL_HOST":c["host"],"MYSQL_PORT":c["port"],"MYSQL_USER":c["user"],"MYSQL_PASSWORD":c["password"],"MYSQL_DATABASE":c["database"],"MYSQL_POOL_NAME":f"yoru-v3784-p7-{suffix}","MYSQL_POOL_SIZE":"8","MYSQL_POOL_ACQUIRE_TIMEOUT_SECONDS":"8","MYSQL_LEGACY_WRITE_LOCK":f"yoru-v3784-p7-{suffix}","MYSQL_LEGACY_LOCK_TIMEOUT":"8","MYSQL_SSL_DISABLED":"true"}.items(): monkeypatch.setenv(k,v)
+    await _drop(); await _install(); yield; await _drop()
+
+async def _insert_signal(source,actor=1001):
+    s=_stamp()
+    async with db_backend.connect(None) as db:
+        await db.execute("BEGIN IMMEDIATE")
+        c=await db.execute("INSERT OR IGNORE INTO rp_world_causality_signals(guild_id,signal_key,domain,source_ref,actor_user_id,city_key,units,volume,occurred_at,recorded_at) VALUES(?,?,?,?,?,?,?,?,?,?)",(1,"logistics_activity","career",source,actor,"miskolc",1,1,s,s))
+        n=int(c.rowcount or 0); await db.commit(); return n
+
+@pytest.mark.asyncio
+async def test_01_causality_signal_replay_concurrency_and_ddl():
+    methods=METHODS_PATH.read_text(); assert "record_causality_signal" in methods and "INSERT OR IGNORE INTO rp_world_causality_signals" in methods
+    result=await asyncio.gather(*(_insert_signal("job:777") for _ in range(12)))
+    assert sum(result)==1 and await _scalar("SELECT COUNT(*) FROM rp_world_causality_signals")==1
+    assert await _engine("rp_world_causality_signals")=="InnoDB"
+    

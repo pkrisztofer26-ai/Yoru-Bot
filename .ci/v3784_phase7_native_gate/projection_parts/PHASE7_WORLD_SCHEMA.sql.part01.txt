@@ -1,0 +1,54 @@
+CREATE TABLE IF NOT EXISTS rp_world_causality_signals (
+                    signal_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                    guild_id BIGINT UNSIGNED NOT NULL,
+                    signal_key VARCHAR(64) NOT NULL,
+                    domain VARCHAR(32) NOT NULL,
+                    source_ref VARCHAR(192) NOT NULL,
+                    actor_user_id BIGINT UNSIGNED NULL,
+                    city_key VARCHAR(32) NULL,
+                    units SMALLINT UNSIGNED NOT NULL,
+                    volume SMALLINT UNSIGNED NOT NULL,
+                    occurred_at VARCHAR(64) NOT NULL,
+                    recorded_at VARCHAR(64) NOT NULL,
+                    PRIMARY KEY (signal_id),
+                    UNIQUE KEY uq_rp_world_causality_source (guild_id, signal_key, source_ref),
+                    KEY idx_rp_world_causality_signal (guild_id, signal_key, occurred_at),
+                    KEY idx_rp_world_causality_actor (guild_id, actor_user_id, occurred_at)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS rp_world_causality_decisions (
+                    guild_id BIGINT UNSIGNED NOT NULL,
+                    cycle_id VARCHAR(32) NOT NULL,
+                    story_key VARCHAR(64) NOT NULL,
+                    from_beat_key VARCHAR(64) NOT NULL,
+                    chosen_beat_key VARCHAR(64) NOT NULL,
+                    signal_key VARCHAR(64) NULL,
+                    raw_pressure_bp INT UNSIGNED NOT NULL,
+                    smoothed_pressure_bp INT UNSIGNED NOT NULL,
+                    pressure_band VARCHAR(24) NOT NULL,
+                    threshold_met TINYINT(1) NOT NULL,
+                    anomaly_flags_json LONGTEXT NOT NULL,
+                    baseline_weights_json LONGTEXT NOT NULL,
+                    applied_weights_json LONGTEXT NOT NULL,
+                    decision_reason VARCHAR(32) NOT NULL,
+                    recorded_at VARCHAR(64) NOT NULL,
+                    PRIMARY KEY (guild_id, cycle_id),
+                    KEY idx_rp_world_causality_decision_story (guild_id, story_key, recorded_at)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS rp_world_community_projects (
+                    project_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                    guild_id BIGINT UNSIGNED NOT NULL,
+                    project_key VARCHAR(64) NOT NULL,
+                    city_key VARCHAR(32) NULL,
+                    source_cycle_id VARCHAR(32) NOT NULL,
+                    status VARCHAR(24) NOT NULL,
+                    target_units INT UNSIGNED NOT NULL,
+                    min_participants SMALLINT UNSIGNED NOT NULL,
+                    actor_cap_units SMALLINT UNSIGNED NOT NULL,
+                    contributed_units INT UNSIGNED NOT NULL DEFAULT 0,
+                    participant_count INT UNSIGNED NOT NULL DEFAULT 0,
+                    started_at VARCHAR(64) NOT NULL,
+                    deadline_at VARCHAR(64) NOT NULL,
+                    completed_at VARCHAR(64) NULL,
+                  

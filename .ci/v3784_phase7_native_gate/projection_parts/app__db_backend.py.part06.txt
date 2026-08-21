@@ -1,0 +1,151 @@
+-1 also acquires the same lock for legacy DML that did not
+        # explicitly issue BEGIN IMMEDIATE. This deliberately trades throughput
+        # for transport-migration safety; DB-2 can replace it with row locks.
+        if re.match(r"^(?:INSERT|UPDATE|DELETE|REPLACE)\b", upper, flags=re.IGNORECASE):
+            await self._acquire_legacy_lock()
+
+        translated = translate_sql_for_mysql(stripped)
+        dictionary = self._row_factory is Row
+        return await self._run_raw(translated, parameters, dictionary=dictionary)
+
+    async def executemany(self, sql: str, seq_of_parameters: Sequence[Sequence[Any]]) -> Any:
+        stripped = sql.strip()
+        upper = " ".join(stripped.upper().split())
+        if re.match(r"^(?:INSERT|UPDATE|DELETE|REPLACE)\b", upper, flags=re.IGNORECASE):
+            await self._acquire_legacy_lock()
+        translated = translate_sql_for_mysql(stripped)
+        started = time.perf_counter()
+        failed = False
+        try:
+            cur = await self._cursor(dictionary=False)
+            try:
+                await _maybe_await(cur.executemany(translated, [_mysql_parameters(p) for p in seq_of_parameters]))
+            except Exception as exc:
+                failed = True
+                errno = getattr(exc, "errno", None)
+                if exc.__class__.__name__.lower().endswith("integrityerror") or errno in {1048, 1062, 1451, 1452}:
+                    raise IntegrityError(str(exc)) from exc
+                raise
+        finally:
+            _record_mysql_query((time.perf_counter() - started) * 1000.0, sql=translated, failed=failed)
+        wrapped = _MySQLCursor(cur)
+        if wrapped.lastrowid is not None:
+            self._lastrowid = wrapped.lastrowid
+        return wrapped
+
+    async def commit(self) -> None:
+        try:
+            await _maybe_await(self._raw.commit())
+        finally:
+            await self._release_legacy_lock()
+
+    async def rollback(self) -> None:
+        try:
+            await _maybe_await(self._raw.rollback())
+        finally:
+            await self._release_legacy_lock()
+
+    async def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        try:
+            # A leaked legacy writer lock must never survive a connection context.
+            await self._release_legacy_lock()
+            await _maybe_await(self._raw.close())
+        finally:
+            if self._pool_lease is not None:
+                self._pool_lease.release()
+                self._pool_lease = None
+
+
+class _MySQLPoolLease:
+    """Own one application-side MySQL pool slot until the wrapped connection closes."""
+
+    def __init__(self, semaphore: asyncio.Semaphore) -> None:
+        self._semaphore = semaphore
+        self._released = False
+
+    def release(self) -> None:
+        if self._released:
+            return
+        self._released = True
+        _MYSQL_POOL_METRICS["active"] = max(0, int(_MYSQL_POOL_METRICS.get("active", 0)) - 1)
+        self._semaphore.release()
+
+
+_MYSQL_POOL_SEMAPHORE: asyncio.Semaphore | None = None
+_MYSQL_POOL_LOOP: asyncio.AbstractEventLoop | None = None
+_MYSQL_POOL_METRICS: dict[str, float | int] = {
+    "active": 0,
+    "peak_active": 0,
+    "acquires": 0,
+    "acquire_timeouts": 0,
+    "connect_failures": 0,
+    "connect_retries": 0,
+    "wait_ms_total": 0.0,
+    "wait_ms_max": 0.0,
+    "queries": 0,
+    "query_errors": 0,
+    "query_ms_total": 0.0,
+    "query_ms_max": 0.0,
+    "slow_queries": 0,
+    "legacy_lock_acquires": 0,
+    "legacy_lock_timeouts": 0,
+    "legacy_lock_wait_ms_total": 0.0,
+    "legacy_lock_wait_ms_max": 0.0,
+}
+_MYSQL_ACQUIRE_LATENCY = RollingLatency(max_samples=2048)
+_MYSQL_QUERY_LATENCY = RollingLatency(max_samples=4096)
+_MYSQL_QUERY_GROUP_MAX = 128
+_MYSQL_QUERY_GROUPS: OrderedDict[str, RollingLatency] = OrderedDict()
+_MYSQL_LEGACY_LOCK_LATENCY = RollingLatency(max_samples=2048)
+
+
+def _mysql_pool_semaphore() -> asyncio.Semaphore:
+    global _MYSQL_POOL_SEMAPHORE, _MYSQL_POOL_LOOP
+    loop = asyncio.get_running_loop()
+    size = int(mysql_settings().get("pool_size", 8))
+    if _MYSQL_POOL_SEMAPHORE is None or _MYSQL_POOL_LOOP is not loop:
+        _MYSQL_POOL_SEMAPHORE = asyncio.Semaphore(size)
+        _MYSQL_POOL_LOOP = loop
+    return _MYSQL_POOL_SEMAPHORE
+
+
+def mysql_runtime_metrics() -> dict[str, float | int]:
+    """Return non-secret process-local MySQL pool telemetry."""
+    data = dict(_MYSQL_POOL_METRICS)
+    acquires = int(data.get("acquires", 0) or 0)
+    data["wait_ms_avg"] = (float(data.get("wait_ms_total", 0.0)) / acquires) if acquires else 0.0
+    queries = int(data.get("queries", 0) or 0)
+    data["query_ms_avg"] = (float(data.get("query_ms_total", 0.0)) / queries) if queries else 0.0
+    acquire_latency = _MYSQL_ACQUIRE_LATENCY.snapshot()
+    query_latency = _MYSQL_QUERY_LATENCY.snapshot()
+    legacy_lock_latency = _MYSQL_LEGACY_LOCK_LATENCY.snapshot()
+    lock_acquires = int(data.get("legacy_lock_acquires", 0) or 0)
+    data["legacy_lock_wait_ms_avg"] = (
+        float(data.get("legacy_lock_wait_ms_total", 0.0)) / lock_acquires
+        if lock_acquires else 0.0
+    )
+    data.update({
+        "wait_ms_p50": acquire_latency.p50_ms,
+        "wait_ms_p95": acquire_latency.p95_ms,
+        "wait_ms_p99": acquire_latency.p99_ms,
+        "query_ms_p50": query_latency.p50_ms,
+        "query_ms_p95": query_latency.p95_ms,
+        "query_ms_p99": query_latency.p99_ms,
+        "query_latency_retained": _MYSQL_QUERY_LATENCY.retained_count,
+        "legacy_lock_wait_ms_p50": legacy_lock_latency.p50_ms,
+        "legacy_lock_wait_ms_p95": legacy_lock_latency.p95_ms,
+        "legacy_lock_wait_ms_p99": legacy_lock_latency.p99_ms,
+    })
+    query_groups: list[dict[str, float | int | str]] = []
+    for name, metric in _MYSQL_QUERY_GROUPS.items():
+        snap = metric.snapshot()
+        query_groups.append({
+            "group": name,
+            "count": snap.count,
+            "p50_ms": snap.p50_ms,
+            "p95_ms": snap.p95_ms,
+            "p99_ms": snap.p99_ms,
+        

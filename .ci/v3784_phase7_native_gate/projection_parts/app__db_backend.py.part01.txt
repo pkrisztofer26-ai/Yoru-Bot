@@ -1,0 +1,168 @@
+from __future__ import annotations
+
+"""Database compatibility layer for Yoru.
+
+DB-1 keeps the current service API stable while allowing the production backend
+ to move from SQLite to MySQL.  Existing code can continue to use the familiar
+ ``aiosqlite`` shaped API through this module:
+
+    from app import db_backend as aiosqlite
+
+SQLite is retained only as an isolated test/migration compatibility backend.
+The production entrypoint is MySQL/MariaDB-only and fails closed unless
+``YORU_DB_BACKEND=mysql`` (or ``mariadb``) is explicitly configured.
+
+Important DB-1 safety choice
+----------------------------
+The legacy SQLite code relies on database-wide writer serialization, both through
+``BEGIN IMMEDIATE`` blocks and through SQLite write transactions started by DML.
+InnoDB does not have the same database-wide writer lock. During DB-1 every legacy
+MySQL DML write therefore joins one MySQL advisory write lock, and explicit
+``BEGIN IMMEDIATE`` blocks acquire that same lock before the transaction starts.
+This is intentionally conservative (less concurrent than a row-locked redesign)
+but preserves the old writer-serialization safety while the backend is transported.
+DB-2 can replace this global compatibility lock with narrower row locks
+system-by-system.
+"""
+
+from collections import OrderedDict
+from collections.abc import Iterator, Mapping, Sequence
+from dataclasses import dataclass
+from decimal import Decimal
+import asyncio
+import inspect
+import logging
+import os
+import re
+import socket
+import time
+from typing import Any
+
+import aiosqlite as _sqlite
+
+from app.core.metrics import RollingLatency
+
+
+SQLITE_BACKEND = "sqlite"
+MYSQL_BACKEND = "mysql"
+
+logger = logging.getLogger("vaultbot.db")
+
+
+_TRANSIENT_MYSQL_ERRNOS = {2002, 2003, 2006, 2013, 2055}
+_TRANSIENT_OS_ERRNOS = {101, 110, 111, 113}
+
+
+def is_transient_mysql_connection_error(exc: BaseException) -> bool:
+    """Return True for short-lived DNS/network/connectivity failures.
+
+    Authentication/schema/programming errors are intentionally excluded.  The
+    helper also walks exception causes because Connector/Python may wrap the
+    original socket error depending on version.
+    """
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if isinstance(current, socket.gaierror):
+            if getattr(current, "errno", None) == getattr(socket, "EAI_AGAIN", -3):
+                return True
+        if isinstance(current, (asyncio.TimeoutError, TimeoutError)):
+            return True
+        errno = getattr(current, "errno", None)
+        if errno in _TRANSIENT_MYSQL_ERRNOS or errno in _TRANSIENT_OS_ERRNOS:
+            return True
+        current = current.__cause__ or current.__context__
+    return False
+
+
+def backend_name() -> str:
+    raw = os.getenv("YORU_DB_BACKEND", SQLITE_BACKEND).strip().lower()
+    if raw in {"mysql", "mariadb"}:
+        return MYSQL_BACKEND
+    return SQLITE_BACKEND
+
+
+def using_mysql() -> bool:
+    return backend_name() == MYSQL_BACKEND
+
+
+def require_production_mysql() -> dict[str, Any]:
+    """Fail closed unless the production runtime explicitly targets MySQL/MariaDB.
+
+    SQLite remains available to isolated tests and historical migration tooling,
+    but the real bot entrypoint must never silently fall back to a stale local
+    ``vaultbot.db`` snapshot when an environment variable is missing or mistyped.
+    The returned settings are already validated, but contain secrets; callers
+    must never log the mapping.
+    """
+    raw = os.getenv("YORU_DB_BACKEND", "").strip().lower()
+    if raw not in {"mysql", "mariadb"}:
+        shown = raw or "<nincs beállítva>"
+        raise RuntimeError(
+            "A Yoru production adatbázisa MySQL/MariaDB-only. "
+            f"YORU_DB_BACKEND={shown!r}; állítsd explicit 'mysql' értékre. "
+            "Az SQLite production fallback a v3.72.0-ban megszűnt."
+        )
+    return mysql_settings()
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on", "igen"}
+
+
+def _env_int(name: str, default: int, *, minimum: int | None = None, maximum: int | None = None) -> int:
+    raw = os.getenv(name)
+    if raw is None or not raw.strip():
+        value = int(default)
+    else:
+        try:
+            value = int(raw.strip())
+        except ValueError as exc:
+            raise RuntimeError(f"A {name} csak egész szám lehet.") from exc
+    if minimum is not None:
+        value = max(int(minimum), value)
+    if maximum is not None:
+        value = min(int(maximum), value)
+    return value
+
+
+def mysql_settings() -> dict[str, Any]:
+    """Return validated MySQL connection kwargs without exposing secrets."""
+    host = os.getenv("MYSQL_HOST", "").strip()
+    user = os.getenv("MYSQL_USER", "").strip()
+    password = os.getenv("MYSQL_PASSWORD", "")
+    database = os.getenv("MYSQL_DATABASE", "").strip()
+    port_raw = os.getenv("MYSQL_PORT", "3306").strip() or "3306"
+    missing = [
+        name
+        for name, value in (
+            ("MYSQL_HOST", host),
+            ("MYSQL_USER", user),
+            ("MYSQL_PASSWORD", password),
+            ("MYSQL_DATABASE", database),
+        )
+        if not value
+    ]
+    if missing:
+        raise RuntimeError(
+            "A MySQL backend aktív, de hiányzik: " + ", ".join(missing) + ". "
+            "Előbb töltsd ki a MySQL adatokat a .env fájlban és futtasd a migrációt."
+        )
+    try:
+        port = int(port_raw)
+    except ValueError as exc:
+        raise RuntimeError("A MYSQL_PORT csak egész szám lehet.") from exc
+
+    pool_size = _env_int("MYSQL_POOL_SIZE", 8, minimum=1, maximum=32)
+    pool_name = os.getenv("MYSQL_POOL_NAME", "yoru-main").strip() or "yoru-main"
+    result: dict[str, Any] = {
+        "host": host,
+        "port": port,
+        "user": user,
+        "password": password,
+        "database": database,
+        "ch

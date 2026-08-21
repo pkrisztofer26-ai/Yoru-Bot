@@ -1,0 +1,159 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
+
+WORLD_CYCLE_HOURS = 8
+WORLD_REFRESH_MINUTES = 15
+WORLD_STORY_START_CHANCE = 0.55
+WORLD_MAJOR_ACTIVITY_QUIET_MINUTES = 20
+
+WORLD_NEWS_ENABLED_KEY = "world_news_enabled"
+WORLD_NEWS_CHANNEL_KEY = "world_news_channel_id"
+WORLD_NEWS_LAST_CYCLE_KEY = "world_news_last_cycle_id"
+WORLD_NEWS_LAST_MESSAGE_KEY = "world_news_last_message_id"
+WORLD_NEWS_LAST_MESSAGE_CHANNEL_KEY = "world_news_last_message_channel_id"
+WORLD_NEWS_DEFAULT_ENABLED = False
+
+# Phase 7 / W17.1 — server-side causality ledger guardrails. These values are
+# intentionally internal; player-facing World UI must never expose raw pressure,
+# participant, volume, or anomaly metrics.
+WORLD_CAUSALITY_RETENTION_HOURS = 72
+WORLD_CAUSALITY_DEFAULT_WINDOW_HOURS = 24
+WORLD_CAUSALITY_CONCENTRATION_ALERT_BP = 5000
+
+# W17.2 — deterministic smoothing + bounded World Story branch influence.
+# Current-window participation/volume guards remain hard requirements: historical
+# pressure can smooth an already legitimate signal, but can never resurrect a
+# stale or whale-only signal into branch authority.
+WORLD_CAUSALITY_SMOOTHING_LOOKBACK_MULTIPLIER = 2
+WORLD_CAUSALITY_SMOOTHING_CURRENT_BP = 7500
+WORLD_CAUSALITY_BRANCH_MIN_SMOOTHED_BP = 1500
+WORLD_CAUSALITY_BRANCH_MAX_SHIFT_BP = 2000
+WORLD_CAUSALITY_BLOCKING_ANOMALIES = ("actor_concentration", "actor_burst")
+WORLD_CAUSALITY_PRESSURE_BANDS = (
+    (5500, "strong"),
+    (3000, "active"),
+    (1500, "forming"),
+    (0, "quiet"),
+)
+
+
+@dataclass(frozen=True, slots=True)
+class CausalitySignalDefinition:
+    key: str
+    domain: str
+    label: str
+    window_hours: int = WORLD_CAUSALITY_DEFAULT_WINDOW_HOURS
+    min_participants: int = 3
+    min_volume: int = 3
+    actor_cap_units: int = 8
+    actor_volume_cap: int = 6
+    global_cap_units: int = 24
+    max_event_units: int = 4
+    max_event_volume: int = 3
+
+
+@dataclass(frozen=True, slots=True)
+class CausalityBranchRule:
+    story_key: str
+    from_beat_key: str
+    signal_key: str
+    favored_beat_key: str
+    opposed_beat_key: str
+    max_shift_bp: int = WORLD_CAUSALITY_BRANCH_MAX_SHIFT_BP
+
+
+WORLD_CAUSALITY_SIGNALS: tuple[CausalitySignalDefinition, ...] = (
+    CausalitySignalDefinition(
+        "logistics_activity", "career", "Logisztikai aktivitás",
+        min_participants=3, min_volume=3, actor_cap_units=8, global_cap_units=24,
+    ),
+    CausalitySignalDefinition(
+        "service_activity", "career", "Szolgáltatói aktivitás",
+        min_participants=3, min_volume=3, actor_cap_units=8, global_cap_units=24,
+    ),
+    CausalitySignalDefinition(
+        "underworld_activity", "crime", "Alvilági aktivitás",
+        min_participants=3, min_volume=3, actor_cap_units=6, global_cap_units=18,
+    ),
+)
+WORLD_CAUSALITY_SIGNAL_BY_KEY = {item.key: item for item in WORLD_CAUSALITY_SIGNALS}
+WORLD_CAUSALITY_BRANCH_RULES: tuple[CausalityBranchRule, ...] = (
+    # Broad, independent logistics participation helps the existing supply-chain
+    # story recover sooner, but never guarantees that branch.
+    CausalityBranchRule(
+        "supply_chain_wave", "bottleneck", "logistics_activity",
+        "recovery", "workforce", 1800,
+    ),
+    # Continued broad underworld activity makes post-response scarcity more
+    # plausible than an immediate cooldown.
+    CausalityBranchRule(
+        "underworld_sweep", "response", "underworld_activity",
+        "scarcity", "cooldown", 1800,
+    ),
+    # Broad service participation helps the travel-pressure story normalize.
+    CausalityBranchRule(
+        "travel_peak", "pressure", "service_activity",
+        "normalizing", "workforce", 1800,
+    ),
+)
+WORLD_CAUSALITY_BRANCH_RULE_BY_POINT = {
+    (item.story_key, item.from_beat_key): item for item in WORLD_CAUSALITY_BRANCH_RULES
+}
+
+WORLD_CAUSALITY_JOB_SIGNAL_MAP: dict[str, str] = {
+    "warehouse": "logistics_activity",
+    "shelf_stocker": "logistics_activity",
+    "factory_operator": "logistics_activity",
+    "courier": "logistics_activity",
+    "forklift_operator": "logistics_activity",
+    "cleaner": "service_activity",
+    "kitchen_helper": "service_activity",
+    "taxi": "service_activity",
+    "security_guard": "service_activity",
+    "hospitality": "service_activity",
+}
+
+# W17.3 — Dynamic Black Market Demand + City Arbitrage context.  This is a
+# bounded context layer over the existing Community Feketepiac / wallet /
+# inventory authority.  No second market account or payout path is introduced.
+BLACK_MARKET_DEMAND_CAP_BP = 2400
+BLACK_MARKET_SELECTION_MAX_SHIFT_BP = 3000
+BLACK_MARKET_PRICE_MAX_SHIFT_BP = 450
+BLACK_MARKET_STOCK_MAX_SHIFT_BP = 2200
+BLACK_MARKET_ARBITRAGE_MIN_GAP_BP = 850
+
+BLACK_MARKET_FAMILY_LABELS: dict[str, str] = {
+    "rare_goods": "ritkább ládák és különleges tárgyak",
+    "protection": "védelmi és szerencsehozó holmik",
+    "luxury": "luxuscikkek és gyűjtői tárgyak",
+}
+
+BLACK_MARKET_ITEM_FAMILY: dict[str, str] = {
+    "mystery_box": "rare_goods",
+    "legendary_crate": "rare_goods",
+    "mythic_crate": "rare_goods",
+    "rob_shield": "protection",
+    "lucky_charm": "protection",
+    "luxury_watch": "luxury",
+    "collector_watch": "luxury",
+    "art_piece": "luxury",
+    "custom_jewelry": "luxury",
+}
+
+# Persistent city identity gives the arbitrage context a stable baseline while
+# the current local World situation moves it around from cycle to cycle.
+BLACK_MARKET_CITY_BASE_DEMAND_BP: dict[str, dict[str, int]] = {
+    "budapest": {"rare_goods": 300, "protection": -150, "luxury": 900},
+    "miskolc": {"rare_goods": 450, "protection": 650, "luxury": -450},
+    "debrecen": {"rare_goods": 250, "protection": 400, "luxury": 100},
+    "eger": {"rare_goods": 200, "protection": -200, "luxury": 850},
+    "szeged": {"rare_goods": 650, "protection": 100, "luxury": 450},
+}
+
+BLACK_MARKET_NATIONAL_DEMAND_BP: dict[str, dict[str, int]] = {
+    "scarce_special_goods": {"rare_goods": 1100, "protection": 250, "luxury": 600},
+    "underground_demand": {"rare_goods": 650, "protection": 500, "luxury": 650},
+    "police_operation": {"rare_goods": 100, "protection": 750, "luxury": -200},
+    "logistics_pressure": {"rare_goods": 450, "protection": 100, "luxury": 250},

@@ -1,0 +1,129 @@
+ed KEY keyword itself from
+    # being mistaken for the legacy ``key`` column.
+    text = _quote_legacy_mysql_identifiers(text)
+    # ``key`` is also a legacy column name, but in native MySQL UPSERT syntax
+    # the KEY token is grammar, not an identifier.  Undo quoting only for this
+    # exact SQL clause so direct MySQL statements remain valid too.
+    text = re.sub(r"\bON\s+DUPLICATE\s+`KEY`\s+UPDATE\b", "ON DUPLICATE KEY UPDATE", text, flags=re.IGNORECASE)
+    text = re.sub(r"^INSERT\s+OR\s+IGNORE\s+INTO\b", "INSERT IGNORE INTO", text, count=1, flags=re.IGNORECASE)
+    text = re.sub(r"^INSERT\s+OR\s+REPLACE\s+INTO\b", "REPLACE INTO", text, count=1, flags=re.IGNORECASE)
+    text = _translate_on_conflict(text)
+    text = _replace_qmark_placeholders(text)
+    # SQLite allows scalar MAX(a,b)/MIN(a,b). MySQL reserves MAX/MIN for
+    # aggregate use and uses GREATEST/LEAST for scalar comparisons. Keep
+    # aggregate MAX(expr) untouched by only matching calls that contain a
+    # top-level-looking comma after a simple first argument.
+    text = re.sub(r"\bMAX\s*\(\s*(0|[A-Za-z_][A-Za-z0-9_\.]*)\s*,", r"GREATEST(\1,", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bMIN\s*\(\s*(0|[A-Za-z_][A-Za-z0-9_\.]*)\s*,", r"LEAST(\1,", text, flags=re.IGNORECASE)
+    return text
+
+
+def _classify_ddl(sql: str) -> tuple[str, str | None]:
+    s = " ".join(sql.strip().split())
+    patterns = [
+        ("create_table", r"^CREATE TABLE IF NOT EXISTS [`\"]?([A-Za-z_][A-Za-z0-9_]*)"),
+        ("create_index", r"^CREATE(?: UNIQUE)? INDEX IF NOT EXISTS [`\"]?([A-Za-z_][A-Za-z0-9_]*)"),
+    ]
+    for kind, pattern in patterns:
+        m = re.match(pattern, s, flags=re.IGNORECASE)
+        if m:
+            return kind, m.group(1)
+    if re.match(r"^ALTER TABLE\b", s, flags=re.IGNORECASE):
+        return "alter", None
+    return "", None
+
+
+def _mysql_query_operation(sql: str) -> str:
+    stripped = str(sql or "").lstrip()
+    if not stripped:
+        return "UNKNOWN"
+    return stripped.split(None, 1)[0].upper()[:24]
+
+
+def _mysql_query_group(sql: str) -> str:
+    """Return a bounded, parameter-free operation/table label for live telemetry."""
+    compact = " ".join(str(sql or "").strip().split())
+    operation = _mysql_query_operation(compact)
+    patterns = {
+        "SELECT": r'\bFROM\s+[`"]?([A-Za-z_][A-Za-z0-9_]*)',
+        "INSERT": r'\bINTO\s+[`"]?([A-Za-z_][A-Za-z0-9_]*)',
+        "REPLACE": r'\bINTO\s+[`"]?([A-Za-z_][A-Za-z0-9_]*)',
+        "UPDATE": r'^UPDATE\s+[`"]?([A-Za-z_][A-Za-z0-9_]*)',
+        "DELETE": r'\bFROM\s+[`"]?([A-Za-z_][A-Za-z0-9_]*)',
+    }
+    pattern = patterns.get(operation)
+    if pattern:
+        match = re.search(pattern, compact, flags=re.IGNORECASE)
+        if match:
+            return f"{operation}:{match.group(1).lower()}"[:96]
+    return operation[:96]
+
+
+def _record_mysql_query(duration_ms: float, *, sql: str = "", failed: bool = False) -> None:
+    _MYSQL_QUERY_LATENCY.observe(duration_ms)
+    group = _mysql_query_group(sql)
+    metric = _MYSQL_QUERY_GROUPS.get(group)
+    if metric is None:
+        if len(_MYSQL_QUERY_GROUPS) >= _MYSQL_QUERY_GROUP_MAX:
+            _MYSQL_QUERY_GROUPS.popitem(last=False)
+        metric = RollingLatency(max_samples=256)
+        _MYSQL_QUERY_GROUPS[group] = metric
+    else:
+        _MYSQL_QUERY_GROUPS.move_to_end(group)
+    metric.observe(duration_ms)
+    _MYSQL_POOL_METRICS["queries"] = int(_MYSQL_POOL_METRICS.get("queries", 0)) + 1
+    _MYSQL_POOL_METRICS["query_ms_total"] = float(_MYSQL_POOL_METRICS.get("query_ms_total", 0.0)) + duration_ms
+    _MYSQL_POOL_METRICS["query_ms_max"] = max(float(_MYSQL_POOL_METRICS.get("query_ms_max", 0.0)), duration_ms)
+    if failed:
+        _MYSQL_POOL_METRICS["query_errors"] = int(_MYSQL_POOL_METRICS.get("query_errors", 0)) + 1
+    slow_ms = float(_env_int("MYSQL_SLOW_QUERY_MS", 250, minimum=25, maximum=60_000))
+    if duration_ms >= slow_ms:
+        _MYSQL_POOL_METRICS["slow_queries"] = int(_MYSQL_POOL_METRICS.get("slow_queries", 0)) + 1
+
+
+class _MySQLConnection:
+    def __init__(self, raw: Any, *, pool_lease: "_MySQLPoolLease | None" = None) -> None:
+        self._raw = raw
+        self._pool_lease = pool_lease
+        self._closed = False
+        self._row_factory: Any = None
+        self._legacy_write_lock = False
+        self._lastrowid: int | None = None
+        db_name = str(mysql_settings()["database"])
+        lock_scope = os.getenv("MYSQL_LEGACY_WRITE_LOCK", "").strip() or f"yoru:{db_name}:legacy-write"
+        self._write_lock_name = lock_scope[:64]
+        self._lock_timeout = max(1, int(os.getenv("MYSQL_LEGACY_LOCK_TIMEOUT", "30")))
+
+    @property
+    def row_factory(self) -> Any:
+        return self._row_factory
+
+    @row_factory.setter
+    def row_factory(self, value: Any) -> None:
+        self._row_factory = value
+
+    async def _cursor(self, *, dictionary: bool = False) -> Any:
+        try:
+            return await _maybe_await(self._raw.cursor(buffered=True, dictionary=dictionary))
+        except TypeError:
+            # Older Connector/Python async variants may not expose buffered in
+            # cursor(); fall back while preserving dictionary rows.
+            return await _maybe_await(self._raw.cursor(dictionary=dictionary))
+
+    async def _run_raw(self, sql: str, params: Sequence[Any] | None = None, *, dictionary: bool = False) -> _MySQLCursor:
+        started = time.perf_counter()
+        failed = False
+        try:
+            cur = await self._cursor(dictionary=dictionary)
+            try:
+                if params is None:
+                    await _maybe_await(cur.execute(sql))
+                else:
+                    await _maybe_await(cur.execute(sql, _mysql_parameters(params)))
+            except Exception as exc:
+                failed = True
+                errno = getattr(exc, "errno", None)
+                if exc.__class__.__name__.lower().endswith("integrityerror") or errno in {1048, 1062, 1451, 1452}:
+                    raise IntegrityError(str(exc)) from exc
+                raise
+            wrap

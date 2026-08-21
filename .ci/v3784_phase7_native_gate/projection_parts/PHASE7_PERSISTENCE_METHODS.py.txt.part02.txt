@@ -1,0 +1,135 @@
+])),
+                )
+
+        cur = await db.execute(
+            """SELECT p.project_id,p.guild_id,p.project_key,p.city_key,p.source_cycle_id,p.status,p.target_units,
+                      p.min_participants,p.actor_cap_units,p.contributed_units,p.participant_count,
+                      p.started_at,p.deadline_at,p.completed_at
+               FROM rp_world_community_projects p
+               LEFT JOIN rp_world_community_project_outcomes o ON o.project_id=p.project_id
+               WHERE p.guild_id=? AND p.status IN ('completed','expired') AND o.project_id IS NULL
+               ORDER BY p.project_id""",
+            (int(guild_id),),
+        )
+        rows = await cur.fetchall()
+        for row in rows:
+            project = self._community_project_row(row)
+            event_stamp = str(project.completed_at or stamp) if project.status == "completed" else stamp
+            await self._ensure_community_project_outcome_db(db, project, stamp=event_stamp)
+            created += 1
+        await db.commit()
+    return created
+
+# SOURCE app/services/world.py::current_community_project lines 482-494
+async def current_community_project(self, guild_id: int) -> CommunityProjectSnapshot | None:
+    await self.recover_community_project_outcomes(guild_id)
+    async with aiosqlite.connect(self.database.path) as db:
+        cur = await db.execute(
+            """SELECT project_id,guild_id,project_key,city_key,source_cycle_id,status,target_units,
+                      min_participants,actor_cap_units,contributed_units,participant_count,
+                      started_at,deadline_at,completed_at
+               FROM rp_world_community_projects
+               WHERE guild_id=? AND status='active' ORDER BY project_id DESC LIMIT 1""",
+            (int(guild_id),),
+        )
+        row = await cur.fetchone()
+    return None if row is None else self._community_project_row(row)
+
+# SOURCE app/services/world.py::news_revision_key lines 582-585
+def news_revision_key(snapshot: WorldSnapshot, project_outcome: CommunityProjectOutcome | None) -> str:
+    if project_outcome is None:
+        return str(snapshot.cycle_id)
+    return f"{snapshot.cycle_id}:p{int(project_outcome.outcome_id)}"
+
+# SOURCE app/services/world.py::ensure_community_project lines 597-634
+async def ensure_community_project(
+    self, guild_id: int, *, snapshot: WorldSnapshot | None = None
+) -> CommunityProjectSnapshot | None:
+    active = await self.current_community_project(guild_id)
+    if active is not None:
+        return active
+    world = snapshot or await self.ensure_current(guild_id)
+    definition, city_key = self._project_seed_choice(guild_id, world.cycle_id)
+    started = _utcnow()
+    deadline = started + timedelta(hours=int(definition.duration_hours))
+    async with aiosqlite.connect(self.database.path) as db:
+        await db.execute("BEGIN IMMEDIATE")
+        # A world cycle may seed at most one shared project. INSERT OR IGNORE
+        # makes concurrent/restart creation converge on the same state.
+        await db.execute(
+            """INSERT OR IGNORE INTO rp_world_community_projects(
+                   guild_id,project_key,city_key,source_cycle_id,status,target_units,min_participants,
+                   actor_cap_units,contributed_units,participant_count,started_at,deadline_at,completed_at,updated_at
+               ) VALUES(?,?,?,?,?,?,?,?,0,0,?,?,NULL,?)""",
+            (
+                int(guild_id), definition.key, city_key, str(world.cycle_id), "active",
+                int(definition.target_units), int(definition.min_participants), int(definition.actor_cap_units),
+                _iso(started), _iso(deadline), _iso(started),
+            ),
+        )
+        cur = await db.execute(
+            """SELECT project_id,guild_id,project_key,city_key,source_cycle_id,status,target_units,
+                      min_participants,actor_cap_units,contributed_units,participant_count,
+                      started_at,deadline_at,completed_at
+               FROM rp_world_community_projects WHERE guild_id=? AND source_cycle_id=?""",
+            (int(guild_id), str(world.cycle_id)),
+        )
+        row = await cur.fetchone()
+        await db.commit()
+    if row is None:
+        return None
+    project = self._community_project_row(row)
+    return project if project.status == "active" else None
+
+# SOURCE app/services/world.py::record_community_project_contribution lines 653-763
+async def record_community_project_contribution(
+    self,
+    guild_id: int,
+    user_id: int,
+    *,
+    source_ref: str,
+    domain: str,
+    city_key: str | None,
+    units: int,
+    job_signal: str | None = None,
+    business_category: str | None = None,
+    business_property_id: int | None = None,
+) -> CommunityProjectContribution | None:
+    source = str(source_ref or "").strip()
+    if not source or len(source) > 192:
+        raise ValueError("Érvénytelen community-project source referencia.")
+    requested = max(1, min(4, int(units)))
+    project = await self.ensure_community_project(guild_id)
+    if project is None or not self._project_accepts(
+        project, domain=str(domain), city_key=city_key,
+        job_signal=job_signal, business_category=business_category,
+    ):
+        return None
+    crew_id = await self._crew_attribution(guild_id, user_id)
+    stamp = _iso()
+    async with aiosqlite.connect(self.database.path) as db:
+        await db.execute("BEGIN IMMEDIATE")
+        cur = await db.execute(
+            "SELECT source_ref,actor_user_id,domain,city_key,crew_id,business_property_id,units FROM rp_world_community_project_contributions WHERE project_id=? AND source_ref=?",
+            (int(project.project_id), source),
+        )
+        existing = await cur.fetchone()
+        if existing is None:
+            cur = await db.execute(
+                "SELECT status,deadline_at,actor_cap_units FROM rp_world_community_projects WHERE project_id=?",
+                (int(project.project_id),),
+            )
+            live = await cur.fetchone()
+            if live is None or str(live[0]) != "active":
+                await db.rollback()
+                return None
+            deadline = _parse(str(live[1]))
+            if deadline is not None and deadline <= _utcnow():
+                await db.execute(
+                    "UPDATE rp_world_community_projects SET status='expired',updated_at=? WHERE project_id=? AND status='active'",
+                    (stamp, int(project.project_id)),
+                )
+                await db.commit()
+                return None
+            cur = await db.execute(
+                "SELECT COALESCE(SUM(units),0) FROM rp_world_community_proje

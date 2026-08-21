@@ -1,0 +1,122 @@
+ped = _MySQLCursor(cur, row_mode=dictionary)
+            if wrapped.lastrowid is not None:
+                self._lastrowid = wrapped.lastrowid
+            return wrapped
+        finally:
+            _record_mysql_query((time.perf_counter() - started) * 1000.0, sql=sql, failed=failed)
+
+    async def _table_exists(self, table: str) -> bool:
+        cur = await self._run_raw(
+            "SELECT 1 FROM information_schema.tables WHERE table_schema=%s AND table_name=%s LIMIT 1",
+            (mysql_settings()["database"], table),
+        )
+        return await cur.fetchone() is not None
+
+    async def _pragma_table_info(self, table: str) -> _SyntheticCursor:
+        cur = await self._run_raw(
+            """
+            SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_DEFAULT, COLUMN_KEY, ORDINAL_POSITION
+            FROM information_schema.columns
+            WHERE table_schema=%s AND table_name=%s
+            ORDER BY ORDINAL_POSITION
+            """,
+            (mysql_settings()["database"], table),
+            dictionary=True,
+        )
+        rows = await cur.fetchall()
+        # SQLite PRAGMA table_info format: cid, name, type, notnull, dflt, pk
+        converted = [
+            (
+                int(row["ORDINAL_POSITION"]) - 1,
+                str(row["COLUMN_NAME"]),
+                str(row["COLUMN_TYPE"]),
+                0 if str(row["IS_NULLABLE"]).upper() == "YES" else 1,
+                row["COLUMN_DEFAULT"],
+                1 if str(row["COLUMN_KEY"]).upper() == "PRI" else 0,
+            )
+            for row in rows
+        ]
+        return _SyntheticCursor(converted, rowcount=len(converted))
+
+    async def _acquire_legacy_lock(self) -> None:
+        if self._legacy_write_lock:
+            return
+        started = time.perf_counter()
+        cur = await self._run_raw("SELECT GET_LOCK(%s, %s)", (self._write_lock_name, self._lock_timeout))
+        row = await cur.fetchone()
+        waited_ms = (time.perf_counter() - started) * 1000.0
+        _MYSQL_LEGACY_LOCK_LATENCY.observe(waited_ms)
+        _MYSQL_POOL_METRICS["legacy_lock_acquires"] = int(_MYSQL_POOL_METRICS.get("legacy_lock_acquires", 0)) + 1
+        _MYSQL_POOL_METRICS["legacy_lock_wait_ms_total"] = float(_MYSQL_POOL_METRICS.get("legacy_lock_wait_ms_total", 0.0)) + waited_ms
+        _MYSQL_POOL_METRICS["legacy_lock_wait_ms_max"] = max(
+            float(_MYSQL_POOL_METRICS.get("legacy_lock_wait_ms_max", 0.0)), waited_ms
+        )
+        value = row[0] if row else 0
+        if int(value or 0) != 1:
+            _MYSQL_POOL_METRICS["legacy_lock_timeouts"] = int(_MYSQL_POOL_METRICS.get("legacy_lock_timeouts", 0)) + 1
+            raise RuntimeError("Nem sikerült megszerezni a Yoru MySQL tranzakciós zárját. Próbáld újra.")
+        self._legacy_write_lock = True
+
+    async def _release_legacy_lock(self) -> None:
+        if not self._legacy_write_lock:
+            return
+        try:
+            cur = await self._run_raw("SELECT RELEASE_LOCK(%s)", (self._write_lock_name,))
+            await cur.fetchone()
+        finally:
+            self._legacy_write_lock = False
+
+    async def execute(self, sql: str, parameters: Sequence[Any] | None = None) -> Any:
+        stripped = sql.strip()
+        upper = " ".join(stripped.upper().split())
+
+        if upper.startswith("PRAGMA TABLE_INFO"):
+            m = re.search(r"PRAGMA\s+TABLE_INFO\s*\(\s*[`\"']?([A-Za-z_][A-Za-z0-9_]*)", stripped, flags=re.IGNORECASE)
+            if not m:
+                raise RuntimeError(f"Nem értelmezhető PRAGMA table_info: {sql}")
+            return await self._pragma_table_info(m.group(1))
+
+        if upper.startswith("PRAGMA FOREIGN_KEYS") or upper.startswith("PRAGMA JOURNAL_MODE=WAL") or upper == "PRAGMA OPTIMIZE":
+            return _SyntheticCursor([], rowcount=0)
+        if upper == "PRAGMA QUICK_CHECK":
+            return _SyntheticCursor([("ok",)], rowcount=1)
+        if upper == "PRAGMA JOURNAL_MODE":
+            return _SyntheticCursor([("InnoDB",)], rowcount=1)
+        if upper in {"PRAGMA PAGE_COUNT", "PRAGMA PAGE_SIZE", "PRAGMA FREELIST_COUNT"}:
+            return _SyntheticCursor([(0,)], rowcount=1)
+
+        if upper == "BEGIN IMMEDIATE":
+            await self._acquire_legacy_lock()
+            await _maybe_await(self._raw.start_transaction())
+            return _SyntheticCursor([], rowcount=0)
+        if upper in {"BEGIN", "BEGIN TRANSACTION"}:
+            await _maybe_await(self._raw.start_transaction())
+            return _SyntheticCursor([], rowcount=0)
+
+        if re.match(r"^SELECT\s+LAST_INSERT_ROWID\s*\(\s*\)\s*;?$", stripped, flags=re.IGNORECASE):
+            return _SyntheticCursor([((self._lastrowid or 0),)], rowcount=1, lastrowid=self._lastrowid)
+
+        ddl_kind, ddl_name = _classify_ddl(stripped)
+        if ddl_kind == "create_table":
+            assert ddl_name is not None
+            if not await self._table_exists(ddl_name):
+                raise RuntimeError(
+                    f"A MySQL séma nincs kész: hiányzik a(z) {ddl_name} tábla. "
+                    "Állítsd le a botot, készíts MySQL backupot, majd futtasd a MySQL schema/verifier eszközt."
+                )
+            return _SyntheticCursor([], rowcount=0)
+        if ddl_kind == "create_index":
+            # All current indexes are created by the migration schema builder.
+            return _SyntheticCursor([], rowcount=0)
+        if ddl_kind == "alter":
+            # Current DB-1 source snapshot already contains every legacy column.
+            # If this fires after migration, running SQLite-shaped ALTER DDL
+            # blindly could create an incompatible column type. Fail loudly.
+            raise RuntimeError(
+                "MySQL alatt legacy ALTER TABLE futott. A séma eltér a migrált DB-1 baseline-tól; "
+                "futtasd újra a MySQL séma/verifier eszközt."
+            )
+
+        # SQLite serializes *all* writers while a BEGIN IMMEDIATE transaction
+        # is active. An advisory lock only works if every Yoru writer joins it,
+        # so DB

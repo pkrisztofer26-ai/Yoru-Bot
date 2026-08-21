@@ -1,0 +1,132 @@
+ct_contributions WHERE project_id=? AND actor_user_id=?",
+                (int(project.project_id), int(user_id)),
+            )
+            used = int((await cur.fetchone())[0] or 0)
+            effective = max(0, min(requested, int(live[2]) - used))
+            await db.execute(
+                """INSERT OR IGNORE INTO rp_world_community_project_contributions(
+                       project_id,guild_id,source_ref,actor_user_id,domain,city_key,crew_id,business_property_id,units,recorded_at
+                   ) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    int(project.project_id), int(guild_id), source, int(user_id), str(domain),
+                    str(city_key or "").strip().lower() or None, crew_id,
+                    None if business_property_id is None else int(business_property_id), effective, stamp,
+                ),
+            )
+        cur = await db.execute(
+            """SELECT COALESCE(SUM(units),0),COUNT(DISTINCT CASE WHEN units>0 THEN actor_user_id END)
+               FROM rp_world_community_project_contributions WHERE project_id=?""",
+            (int(project.project_id),),
+        )
+        total, participants = await cur.fetchone()
+        total, participants = int(total or 0), int(participants or 0)
+        completed = total >= int(project.target_units) and participants >= int(project.min_participants)
+        await db.execute(
+            """UPDATE rp_world_community_projects
+               SET contributed_units=?,participant_count=?,status=?,completed_at=?,updated_at=?
+               WHERE project_id=? AND status='active'""",
+            (
+                total, participants, "completed" if completed else "active",
+                stamp if completed else None, stamp, int(project.project_id),
+            ),
+        )
+        cur = await db.execute(
+            """SELECT project_id,guild_id,project_key,city_key,source_cycle_id,status,target_units,
+                      min_participants,actor_cap_units,contributed_units,participant_count,
+                      started_at,deadline_at,completed_at
+               FROM rp_world_community_projects WHERE project_id=?""",
+            (int(project.project_id),),
+        )
+        project_row = await cur.fetchone()
+        if project_row is not None:
+            finalized = self._community_project_row(project_row)
+            if finalized.status == "completed":
+                await self._ensure_community_project_outcome_db(db, finalized, stamp=stamp)
+        cur = await db.execute(
+            "SELECT source_ref,actor_user_id,domain,city_key,crew_id,business_property_id,units FROM rp_world_community_project_contributions WHERE project_id=? AND source_ref=?",
+            (int(project.project_id), source),
+        )
+        contribution_row = await cur.fetchone()
+        await db.commit()
+    if project_row is None or contribution_row is None:
+        return None
+    updated = self._community_project_row(project_row)
+    return CommunityProjectContribution(
+        project_id=updated.project_id, source_ref=str(contribution_row[0]),
+        actor_user_id=int(contribution_row[1]), domain=str(contribution_row[2]),
+        city_key=None if contribution_row[3] is None else str(contribution_row[3]),
+        crew_id=None if contribution_row[4] is None else int(contribution_row[4]),
+        business_property_id=None if contribution_row[5] is None else int(contribution_row[5]),
+        units=int(contribution_row[6]), project=updated,
+    )
+
+# SOURCE app/services/world.py::_causality_definition lines 809-814
+def _causality_definition(signal_key: str) -> cfg.CausalitySignalDefinition:
+    key = str(signal_key or "").strip().lower()
+    definition = cfg.WORLD_CAUSALITY_SIGNAL_BY_KEY.get(key)
+    if definition is None:
+        raise ValueError("Ismeretlen Yoru Világ aktivitási jel.")
+    return definition
+
+# SOURCE app/services/world.py::record_causality_signal lines 816-877
+async def record_causality_signal(
+    self,
+    guild_id: int,
+    *,
+    signal_key: str,
+    source_ref: str,
+    actor_user_id: int | None,
+    city_key: str | None = None,
+    units: int = 1,
+    volume: int = 1,
+    occurred_at: datetime | str | None = None,
+) -> bool:
+    """Record one immutable, replay-safe Player -> World signal.
+
+    This ledger is *not* a wallet, reward path, or player-visible score. Domain
+    settlement remains authoritative; callers should use this only after the
+    owning action committed. Duplicate source replay is ignored.
+    """
+    definition = self._causality_definition(signal_key)
+    source = str(source_ref or "").strip()
+    if not source or len(source) > 192:
+        raise ValueError("Érvénytelen world-causality source referencia.")
+    actor = None if actor_user_id is None else int(actor_user_id)
+    if actor is not None and actor <= 0:
+        raise ValueError("Érvénytelen world-causality actor.")
+    event_units = int(units)
+    event_volume = int(volume)
+    if event_units < 1 or event_units > int(definition.max_event_units):
+        raise ValueError("Érvénytelen world-causality signal erősség.")
+    if event_volume < 1 or event_volume > int(definition.max_event_volume):
+        raise ValueError("Érvénytelen world-causality signal volumen.")
+    city = str(city_key or "").strip().lower() or None
+    if isinstance(occurred_at, datetime):
+        event_time = occurred_at if occurred_at.tzinfo is not None else occurred_at.replace(tzinfo=timezone.utc)
+        occurred = _iso(event_time.astimezone(timezone.utc))
+    elif occurred_at:
+        parsed = _parse(str(occurred_at))
+        if parsed is None:
+            raise ValueError("Érvénytelen world-causality időbélyeg.")
+        occurred = _iso(parsed)
+    else:
+        occurred = _iso()
+    recorded = _iso()
+    cutoff = _iso(_utcnow() - timedelta(hours=cfg.WORLD_CAUSALITY_RETENTION_HOURS))
+    async with aiosqlite.connect(self.database.path) as db:
+        await db.execute("BEGIN IMMEDIATE")
+        cur = await db.execute(
+            """INSERT OR IGNORE INTO rp_world_causality_signals(
+                   guild_id,signal_key,domain,source_ref,actor_user_id,city_key,units,volume,occurred_at,recorded_at
+               ) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+            (
+                int(guild_id), definition.key, definition.domain, source, actor, city,
+                event_units, event_volume, occurred, recorded,
+            ),
+        )
+        inserted = int(cur.rowcount or 0) == 1
+        await db.execute(
+            "DELETE FROM rp_world_causality_signals WHERE guild_id=? AND occurred_at<?",
+            (int(guild_id), cutoff),
+        )
+        await db

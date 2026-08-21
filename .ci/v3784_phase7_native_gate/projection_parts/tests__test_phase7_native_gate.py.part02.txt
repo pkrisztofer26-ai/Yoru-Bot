@@ -1,0 +1,53 @@
+assert {"uq_rp_world_causality_source","idx_rp_world_causality_signal","idx_rp_world_causality_actor"} <= await _indexes("rp_world_causality_signals")
+
+async def _decision(cycle,chosen):
+    s=_stamp()
+    async with db_backend.connect(None) as db:
+        await db.execute("BEGIN IMMEDIATE")
+        await db.execute("INSERT INTO rp_world_causality_decisions(guild_id,cycle_id,story_key,from_beat_key,chosen_beat_key,signal_key,raw_pressure_bp,smoothed_pressure_bp,pressure_band,threshold_met,anomaly_flags_json,baseline_weights_json,applied_weights_json,decision_reason,recorded_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(guild_id,cycle_id) DO NOTHING",(1,cycle,"supply_chain_wave","bottleneck",chosen,"logistics_activity",3200,2800,"active",1,"[]",'{"recovery":5000,"workforce":5000}','{"recovery":6500,"workforce":3500}',"causality",s))
+        await db.commit()
+
+@pytest.mark.asyncio
+async def test_02_causality_decision_cycle_idempotency_current_source_race():
+    assert "_save_causality_decision" in METHODS_PATH.read_text()
+    cycle="2026-08-21T08"; await asyncio.gather(*(_decision(cycle,"recovery" if i%2==0 else "workforce") for i in range(16)))
+    rows=await _rows("SELECT chosen_beat_key FROM rp_world_causality_decisions WHERE guild_id=%s AND cycle_id=%s",(1,cycle)); assert len(rows)==1
+    first=str(rows[0][0]); await _decision(cycle,"workforce" if first=="recovery" else "recovery")
+    assert str((await _rows("SELECT chosen_beat_key FROM rp_world_causality_decisions WHERE guild_id=%s AND cycle_id=%s",(1,cycle)))[0][0])==first
+    assert "idx_rp_world_causality_decision_story" in await _indexes("rp_world_causality_decisions")
+
+async def _seed_project(cycle,key):
+    s=_stamp(); deadline=_stamp(3600)
+    async with db_backend.connect(None) as db:
+        await db.execute("BEGIN IMMEDIATE")
+        await db.execute("INSERT OR IGNORE INTO rp_world_community_projects(guild_id,project_key,city_key,source_cycle_id,status,target_units,min_participants,actor_cap_units,contributed_units,participant_count,started_at,deadline_at,completed_at,updated_at) VALUES(?,?,?,?,?,?,?,?,0,0,?,?,NULL,?)",(1,key,"miskolc",cycle,"active",6,2,4,s,deadline,s)); await db.commit()
+
+@pytest.mark.asyncio
+async def test_03_community_project_one_per_cycle_and_active_race():
+    assert "ensure_community_project" in METHODS_PATH.read_text()
+    cycle="2026-08-21T16"; await asyncio.gather(*(_seed_project(cycle,"logistics_terminal" if i%2==0 else "city_investment") for i in range(20)))
+    assert await _scalar("SELECT COUNT(*) FROM rp_world_community_projects WHERE guild_id=%s AND source_cycle_id=%s",(1,cycle))==1
+    assert "uq_rp_world_project_cycle" in await _indexes("rp_world_community_projects") and "idx_rp_world_project_active" in await _indexes("rp_world_community_projects")
+
+async def _contribute(project,source,actor,requested):
+    s=_stamp()
+    async with db_backend.connect(None) as db:
+        await db.execute("BEGIN IMMEDIATE")
+        c=await db.execute("SELECT status,actor_cap_units FROM rp_world_community_projects WHERE project_id=?",(project,)); live=await c.fetchone()
+        c=await db.execute("SELECT COALESCE(SUM(units),0) FROM rp_world_community_project_contributions WHERE project_id=? AND actor_user_id=?",(project,actor)); used=int((await c.fetchone())[0] or 0)
+        effective=max(0,min(int(requested),int(live[1])-used)) if live and str(live[0])=="active" else 0
+        await db.execute("INSERT OR IGNORE INTO rp_world_community_project_contributions(project_id,guild_id,source_ref,actor_user_id,domain,city_key,crew_id,business_property_id,units,recorded_at) VALUES(?,?,?,?,?,?,?,?,?,?)",(project,1,source,actor,"career","miskolc",None,None,effective,s))
+        c=await db.execute("SELECT COALESCE(SUM(units),0),COUNT(DISTINCT CASE WHEN units>0 THEN actor_user_id END) FROM rp_world_community_project_contributions WHERE project_id=?",(project,)); total,parts=await c.fetchone(); total=int(total); parts=int(parts)
+        done=total>=6 and parts>=2
+        await db.execute("UPDATE rp_world_community_projects SET contributed_units=?,participant_count=?,status=?,completed_at=?,updated_at=? WHERE project_id=? AND status='active'",(total,parts,"completed" if done else "active",s if done else None,s,project)); await db.commit()
+
+@pytest.mark.asyncio
+async def test_04_project_contribution_source_idempotency_actor_cap_completion_fk():
+    assert "record_community_project_contribution" in METHODS_PATH.read_text(); await _seed_project("cycle-c","logistics_terminal")
+    pid=int(await _scalar("SELECT project_id FROM rp_world_community_projects"))
+    await asyncio.gather(*(_contribute(pid,"job:1",1001,4) for _ in range(8)))
+    await asyncio.gather(*(_contribute(pid,f"job:2:{i}",1001,4) for i in range(4)))
+    assert await _scalar("SELECT COALESCE(SUM(units),0) FROM rp_world_community_project_contributions WHERE project_id=%s AND actor_user_id=%s",(pid,1001))==4
+    await _contribute(pid,"job:3",1002,2)
+    row=(await _rows("SELECT contributed_units,participant_count,status FROM rp_world_community_projects WHERE project_id=%s",(pid,)))[0]; assert (int(row[0]),int(row[1]),str(row[2]))==(6,2,"completed")
+    assert {"uq_rp_world_project_source","idx_rp_world_project_actor","idx_rp_world_project_guild"} <= await

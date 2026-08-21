@@ -1,0 +1,7 @@
+# SOURCE app/launch_reset_config.py
+RESET_GUILD_TABLES includes:
+rp_world_causality_signals
+rp_world_causality_decisions
+rp_world_community_projects
+rp_world_community_project_contributions
+rp_world_community_project_outcomes

@@ -1,0 +1,198 @@
+{
+  "files": [
+    {
+      "bytes": 12578,
+      "parts": [
+        {
+          "bytes": 6190,
+          "path": ".ci/v3784_phase7_native_gate/projection_parts/PHASE7_CONFIG_GUARDS.py.txt.part01.txt",
+          "sha256": "0bc422f7b99ccc6774fcd1c637433775932ccf57ce42458bc32fbb1c035520df"
+        },
+        {
+          "bytes": 6196,
+          "path": ".ci/v3784_phase7_native_gate/projection_parts/PHASE7_CONFIG_GUARDS.py.txt.part02.txt",
+          "sha256": "c3baf806aafb937008ca7cbb43d32f73c925c037a31dc4e4cfaed27b8c9fddcd"
+        },
+        {
+          "bytes": 192,
+          "path": ".ci/v3784_phase7_native_gate/projection_parts/PHASE7_CONFIG_GUARDS.py.txt.part03.txt",
+          "sha256": "03b68bf811984ffaf5bdb7a80d2b3834ddc23cc5831a4567e0c13300e4db9ce7"
+        }
+      ],
+      "path": "PHASE7_CONFIG_GUARDS.py.txt",
+      "sha256": "3bcf8b6ca63b9d6e47afc46ab84fcd141a78f48df247e7f51ebaa7000ea0be26"
+    },
+    {
+      "bytes": 26527,
+      "parts": [
+        {
+          "bytes": 6632,
+          "path": ".ci/v3784_phase7_native_gate/projection_parts/PHASE7_PERSISTENCE_METHODS.py.txt.part01.txt",
+          "sha256": "ee20e90c1affd5ac3d599ff37b250499172cf1276674bd131a4400e7b24d393e"
+        },
+        {
+          "bytes": 6632,
+          "path": ".ci/v3784_phase7_native_gate/projection_parts/PHASE7_PERSISTENCE_METHODS.py.txt.part02.txt",
+          "sha256": "ae04dfe5edd83ae058320c45552eee6866a3e9861ed115db519a46f613aa651c"
+        },
+        {
+          "bytes": 6632,
+          "path": ".ci/v3784_phase7_native_gate/projection_parts/PHASE7_PERSISTENCE_METHODS.py.txt.part03.txt",
+          "sha256": "153cb06e60fd4ae912ee10d7d181d0be0377ffc490d1c43b98ac202e5cdec7f8"
+        },
+        {
+          "bytes": 6631,
+          "path": ".ci/v3784_phase7_native_gate/projection_parts/PHASE7_PERSISTENCE_METHODS.py.txt.part04.txt",
+          "sha256": "494f7139e802f0aa89c0f7a23d2d45f5aabaf58d7fc2c42fc3b82abd796f0e7b"
+        }
+      ],
+      "path": "PHASE7_PERSISTENCE_METHODS.py.txt",
+      "sha256": "b93e36adae14de6157033100e94680f583bdbe5026e1b830ea50be6aa71f19b7"
+    },
+    {
+      "bytes": 226,
+      "parts": [
+        {
+          "bytes": 226,
+          "path": ".ci/v3784_phase7_native_gate/projection_parts/PHASE7_RESET_CLASSIFICATION.txt.part01.txt",
+          "sha256": "84ea51f37d0195129a2d8d5a8bec1751abc6560ea1654de5f42617b47138cff8"
+        }
+      ],
+      "path": "PHASE7_RESET_CLASSIFICATION.txt",
+      "sha256": "84ea51f37d0195129a2d8d5a8bec1751abc6560ea1654de5f42617b47138cff8"
+    },
+    {
+      "bytes": 6204,
+      "parts": [
+        {
+          "bytes": 3102,
+          "path": ".ci/v3784_phase7_native_gate/projection_parts/PHASE7_WORLD_SCHEMA.sql.part01.txt",
+          "sha256": "30172b59a8149d973cf89cd546aadb73c790a6366771efc236b274f3d3a37b34"
+        },
+        {
+          "bytes": 3102,
+          "path": ".ci/v3784_phase7_native_gate/projection_parts/PHASE7_WORLD_SCHEMA.sql.part02.txt",
+          "sha256": "2b8a91fb2ed935e306408905c8020b61c5bdcf9d9d22badfc30ae183067f0c2c"
+        }
+      ],
+      "path": "PHASE7_WORLD_SCHEMA.sql",
+      "sha256": "792e18744133560a73587fffaa1b89f5d04521141e277351872c6333e0187d3e"
+    },
+    {
+      "bytes": 1045,
+      "parts": [
+        {
+          "bytes": 1045,
+          "path": ".ci/v3784_phase7_native_gate/projection_parts/SOURCE_FINGERPRINTS.json.part01.txt",
+          "sha256": "d0fa7e2fbe9e027de8003574096200f83d0a9a3fd71cbde20a6ed6d992017365"
+        }
+      ],
+      "path": "SOURCE_FINGERPRINTS.json",
+      "sha256": "d0fa7e2fbe9e027de8003574096200f83d0a9a3fd71cbde20a6ed6d992017365"
+    },
+    {
+      "bytes": 0,
+      "parts": [
+        {
+          "bytes": 0,
+          "path": ".ci/v3784_phase7_native_gate/projection_parts/app____init__.py.part01.txt",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ],
+      "path": "app/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 2443,
+      "parts": [
+        {
+          "bytes": 2443,
+          "path": ".ci/v3784_phase7_native_gate/projection_parts/app__core__metrics.py.part01.txt",
+          "sha256": "fc7b9a463d8219186960098f0684972c95aaa673c1b2692f72637991440dd75c"
+        }
+      ],
+      "path": "app/core/metrics.py",
+      "sha256": "fc7b9a463d8219186960098f0684972c95aaa673c1b2692f72637991440dd75c"
+    },
+    {
+      "bytes": 42174,
+      "parts": [
+        {
+          "bytes": 6025,
+          "path": ".ci/v3784_phase7_native_gate/projection_parts/app__db_backend.py.part01.txt",
+          "sha256": "a3d79b525f932cf4dd484653ce139dba6288d5ab6ac29da137935c915c0e3329"
+        },
+        {
+          "bytes": 6025,
+          "path": ".ci/v3784_phase7_native_gate/projection_parts/app__db_backend.py.part02.txt",
+          "sha256": "fb734887048f1a08edbf39bef359ac7499ebf74f36bce6f985cad3d8ae204aae"
+        },
+        {
+          "bytes": 6025,
+          "path": ".ci/v3784_phase7_native_gate/projection_parts/app__db_backend.py.part03.txt",
+          "sha256": "bc4d10914c38a090e2b41032788f295a4d992bd8adabb1d001b5bee79fc36c6a"
+        },
+        {
+          "bytes": 6025,
+          "path": ".ci/v3784_phase7_native_gate/projection_parts/app__db_backend.py.part04.txt",
+          "sha256": "a4349efc924750b9e74f8a5331d2671a7b8bacc015c18b5ffd3f105c41a1ad1b"
+        },
+        {
+          "bytes": 6025,
+          "path": ".ci/v3784_phase7_native_gate/projection_parts/app__db_backend.py.part05.txt",
+          "sha256": "cf410f0935e806646a5eea01c4630fa1bde11e69e0b38f1638b9ec923f7d5585"
+        },
+        {
+          "bytes": 6025,
+          "path": ".ci/v3784_phase7_native_gate/projection_parts/app__db_backend.py.part06.txt",
+          "sha256": "6e5d3cac685945fa7bab0acb58880b00a81dab276957bfdbea40e029b6a3894e"
+        },
+        {
+          "bytes": 6024,
+          "path": ".ci/v3784_phase7_native_gate/projection_parts/app__db_backend.py.part07.txt",
+          "sha256": "47a4dfb3b97b0b76902009090ad184dbaba7db38ad06d4b8fcf1bc33a7b191c8"
+        }
+      ],
+      "path": "app/db_backend.py",
+      "sha256": "2820a18cb05b355be3cc756b6871832fe1b3e1525aae791622933776b80ad7ca"
+    },
+    {
+      "bytes": 83,
+      "parts": [
+        {
+          "bytes": 83,
+          "path": ".ci/v3784_phase7_native_gate/projection_parts/requirements.txt.part01.txt",
+          "sha256": "b110bb7318f59ea2c4f385df8a69fdb7a3202c595b49bc09b67a5d8bf75ee8b2"
+        }
+      ],
+      "path": "requirements.txt",
+      "sha256": "b110bb7318f59ea2c4f385df8a69fdb7a3202c595b49bc09b67a5d8bf75ee8b2"
+    },
+    {
+      "bytes": 15858,
+      "parts": [
+        {
+          "bytes": 5286,
+          "path": ".ci/v3784_phase7_native_gate/projection_parts/tests__test_phase7_native_gate.py.part01.txt",
+          "sha256": "3697e2f3c883dcea5557e31366c9420f9ce26bd0c0692c162e062e64156a1e43"
+        },
+        {
+          "bytes": 5286,
+          "path": ".ci/v3784_phase7_native_gate/projection_parts/tests__test_phase7_native_gate.py.part02.txt",
+          "sha256": "ae0fb121442a1829f746ad8182e7961f5ab7a11ecdfe17e7a1818bbe6ca966d4"
+        },
+        {
+          "bytes": 5286,
+          "path": ".ci/v3784_phase7_native_gate/projection_parts/tests__test_phase7_native_gate.py.part03.txt",
+          "sha256": "16dad38ff4948e356d4bf73cef8bd2b54634dc1c20ca9433f313f9cd75c5ad02"
+        }
+      ],
+      "path": "tests/test_phase7_native_gate.py",
+      "sha256": "9bd14ccd73898ce9ecdb6d560be8cbb17a0c2510b4447a22c1603396d1f79862"
+    }
+  ],
+  "format": "yoru-phase7-text-source-projection-v1",
+  "source_build": "YoruBot_v3.78.4_DEV_FULL_BUILD_W17.5_BRANCHING_COMMUNITY_EVENTS_PROJECT_NEWS_WORLD_MEMORY_2026-08-21.zip",
+  "source_build_sha256": "c73214a6797e1db3dbef586e9d867ad956020d7fc6898c3bf7755bd1e7bc2d8e",
+  "source_version": "3.78.4"
+}

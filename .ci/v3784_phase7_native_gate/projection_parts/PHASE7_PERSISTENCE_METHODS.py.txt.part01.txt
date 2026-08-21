@@ -1,0 +1,129 @@
+# SOURCE app/services/world.py::_community_project_row lines 309-317
+def _community_project_row(row) -> CommunityProjectSnapshot:
+    return CommunityProjectSnapshot(
+        project_id=int(row[0]), guild_id=int(row[1]), project_key=str(row[2]),
+        city_key=None if row[3] is None else str(row[3]), source_cycle_id=str(row[4]),
+        status=str(row[5]), target_units=int(row[6]), min_participants=int(row[7]),
+        actor_cap_units=int(row[8]), contributed_units=int(row[9]), participant_count=int(row[10]),
+        started_at=str(row[11]), deadline_at=str(row[12]),
+        completed_at=None if row[13] is None else str(row[13]),
+    )
+
+# SOURCE app/services/world.py::_community_project_outcome_row lines 320-332
+def _community_project_outcome_row(row) -> CommunityProjectOutcome:
+    try:
+        weights = json.loads(str(row[10]) or "{}")
+    except json.JSONDecodeError:
+        weights = {}
+    return CommunityProjectOutcome(
+        outcome_id=int(row[0]), project_id=int(row[1]), guild_id=int(row[2]),
+        project_key=str(row[3]), city_key=None if row[4] is None else str(row[4]),
+        result_status=str(row[5]), branch_key=str(row[6]), career_units=int(row[7]),
+        business_units=int(row[8]), participant_count=int(row[9]),
+        branch_weights={str(k): int(v) for k, v in dict(weights).items()},
+        event_started_at=str(row[11]), active_until=str(row[12]), recorded_at=str(row[13]),
+    )
+
+# SOURCE app/services/world.py::_ensure_community_project_outcome_db lines 360-439
+async def _ensure_community_project_outcome_db(
+    self, db, project: CommunityProjectSnapshot, *, stamp: str
+) -> CommunityProjectOutcome:
+    cur = await db.execute(
+        """SELECT outcome_id,project_id,guild_id,project_key,city_key,result_status,branch_key,
+                  career_units,business_units,participant_count,branch_weights_json,event_started_at,
+                  active_until,recorded_at
+           FROM rp_world_community_project_outcomes WHERE project_id=?""",
+        (int(project.project_id),),
+    )
+    existing = await cur.fetchone()
+    if existing is not None:
+        return self._community_project_outcome_row(existing)
+
+    cur = await db.execute(
+        """SELECT domain,COALESCE(SUM(units),0)
+           FROM rp_world_community_project_contributions
+           WHERE project_id=? AND units>0 GROUP BY domain""",
+        (int(project.project_id),),
+    )
+    totals = {str(row[0]): int(row[1] or 0) for row in await cur.fetchall()}
+    career_units = int(totals.get("career", 0))
+    business_units = int(totals.get("business", 0))
+
+    if project.status == "completed":
+        branches = tuple(cfg.COMMUNITY_PROJECT_EVENT_BRANCHES.get(project.project_key, ()))
+        if len(branches) < 2:
+            raise RuntimeError(f"Community Project event branches missing: {project.project_key}")
+        if business_units > career_units:
+            weights = {branches[0].key: 3500, branches[1].key: 6500}
+        elif career_units > business_units:
+            weights = {branches[0].key: 6500, branches[1].key: 3500}
+        else:
+            weights = {branches[0].key: 5000, branches[1].key: 5000}
+        if max(weights.values()) > int(cfg.COMMUNITY_PROJECT_EVENT_MAX_BRANCH_WEIGHT):
+            raise RuntimeError("Community Project branch weight exceeded safety cap")
+        seed = (
+            f"{int(project.guild_id)}:{int(project.project_id)}:{project.source_cycle_id}:"
+            f"{career_units}:{business_units}:{int(project.participant_count)}:w17.5"
+        )
+        roll = int.from_bytes(hashlib.sha256(seed.encode("utf-8")).digest()[:8], "big") % 10000
+        cursor = 0
+        chosen = branches[-1]
+        for branch in branches:
+            cursor += int(weights.get(branch.key, 0))
+            if roll < cursor:
+                chosen = branch
+                break
+        branch_key = chosen.key
+        active_until = _iso((_parse(stamp) or _utcnow()) + timedelta(hours=int(chosen.duration_hours)))
+    else:
+        branch_key = "expired"
+        weights = {"expired": 10000}
+        active_until = _iso(
+            (_parse(stamp) or _utcnow()) + timedelta(hours=int(cfg.COMMUNITY_PROJECT_EVENT_EXPIRED_HOURS))
+        )
+
+    await db.execute(
+        """INSERT OR IGNORE INTO rp_world_community_project_outcomes(
+               project_id,guild_id,project_key,city_key,result_status,branch_key,career_units,business_units,
+               participant_count,branch_weights_json,event_started_at,active_until,recorded_at
+           ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (
+            int(project.project_id), int(project.guild_id), project.project_key, project.city_key,
+            project.status, branch_key, career_units, business_units, int(project.participant_count),
+            json.dumps(weights, ensure_ascii=False, separators=(",", ":"), sort_keys=True),
+            stamp, active_until, stamp,
+        ),
+    )
+    cur = await db.execute(
+        """SELECT outcome_id,project_id,guild_id,project_key,city_key,result_status,branch_key,
+                  career_units,business_units,participant_count,branch_weights_json,event_started_at,
+                  active_until,recorded_at
+           FROM rp_world_community_project_outcomes WHERE project_id=?""",
+        (int(project.project_id),),
+    )
+    row = await cur.fetchone()
+    if row is None:
+        raise RuntimeError("Community Project outcome write failed")
+    return self._community_project_outcome_row(row)
+
+# SOURCE app/services/world.py::recover_community_project_outcomes lines 441-480
+async def recover_community_project_outcomes(self, guild_id: int) -> int:
+    """Finalize overdue projects and backfill exactly one outcome per finalized project."""
+    now = _utcnow()
+    stamp = _iso(now)
+    created = 0
+    async with aiosqlite.connect(self.database.path) as db:
+        await db.execute("BEGIN IMMEDIATE")
+        cur = await db.execute(
+            """SELECT project_id,guild_id,project_key,city_key,source_cycle_id,status,target_units,
+                      min_participants,actor_cap_units,contributed_units,participant_count,
+                      started_at,deadline_at,completed_at
+               FROM rp_world_community_projects WHERE guild_id=? AND status='active'""",
+            (int(guild_id),),
+        )
+        for row in await cur.fetchall():
+            deadline = _parse(str(row[12]))
+            if deadline is not None and deadline <= now:
+                await db.execute(
+                    "UPDATE rp_world_community_projects SET status='expired',updated_at=? WHERE project_id=? AND status='active'",
+                    (stamp, int(row[0

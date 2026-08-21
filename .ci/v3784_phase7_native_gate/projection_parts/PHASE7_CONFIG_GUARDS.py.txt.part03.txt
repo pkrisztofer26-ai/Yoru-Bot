@@ -1,0 +1,7 @@
+    ),
+}
+COMMUNITY_PROJECT_EVENT_BRANCH_BY_KEY = {
+    (project_key, branch.key): branch
+    for project_key, branches in COMMUNITY_PROJECT_EVENT_BRANCHES.items()
+    for branch in branches
+}

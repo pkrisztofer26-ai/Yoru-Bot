@@ -1,0 +1,180 @@
+f isinstance(value, list):
+            return [_normalize_value(v) for v in value]
+        return _normalize_value(value)
+
+    async def fetchone(self) -> Any:
+        return self._convert(await _maybe_await(self._raw.fetchone()))
+
+    async def fetchall(self) -> list[Any]:
+        rows = await _maybe_await(self._raw.fetchall())
+        return [self._convert(row) for row in rows]
+
+    async def fetchmany(self, size: int | None = None) -> list[Any]:
+        if size is None:
+            rows = await _maybe_await(self._raw.fetchmany())
+        else:
+            rows = await _maybe_await(self._raw.fetchmany(size))
+        return [self._convert(row) for row in rows]
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        row = await self.fetchone()
+        if row is None:
+            raise StopAsyncIteration
+        return row
+
+    async def close(self) -> None:
+        await _maybe_await(self._raw.close())
+
+
+_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _quote_identifier(name: str) -> str:
+    if not _IDENTIFIER_RE.match(name):
+        raise ValueError(f"Érvénytelen SQL azonosító: {name!r}")
+    return f"`{name}`"
+
+
+def _replace_qmark_placeholders(sql: str) -> str:
+    """Convert SQLite ? placeholders to MySQL %s without touching strings."""
+    out: list[str] = []
+    quote: str | None = None
+    i = 0
+    while i < len(sql):
+        ch = sql[i]
+        if quote is not None:
+            out.append(ch)
+            if ch == quote:
+                # SQL escapes a quote by doubling it.
+                if i + 1 < len(sql) and sql[i + 1] == quote:
+                    out.append(sql[i + 1])
+                    i += 2
+                    continue
+                quote = None
+            elif ch == "\\" and i + 1 < len(sql):
+                # Preserve backslash escape pairs for MySQL strings.
+                out.append(sql[i + 1])
+                i += 2
+                continue
+            i += 1
+            continue
+        if ch in {"'", '"'}:
+            quote = ch
+            out.append(ch)
+        elif ch == "?":
+            out.append("%s")
+        else:
+            out.append(ch)
+        i += 1
+    return "".join(out)
+
+
+def _translate_on_conflict(sql: str) -> str:
+    """Translate SQLite UPSERT syntax used by the current Yoru codebase."""
+    # DO NOTHING => INSERT IGNORE and remove the conflict tail.
+    do_nothing = re.search(
+        r"\s+ON\s+CONFLICT\s*(?:\([^)]*\))?\s+DO\s+NOTHING\s*;?\s*$",
+        sql,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if do_nothing:
+        base = sql[: do_nothing.start()].rstrip().rstrip(";")
+        base = re.sub(r"^\s*INSERT\s+INTO\b", "INSERT IGNORE INTO", base, count=1, flags=re.IGNORECASE)
+        return base
+
+    match = re.search(
+        r"\s+ON\s+CONFLICT\s*(?:\([^)]*\))?\s+DO\s+UPDATE\s+SET\s+(.+?)\s*;?\s*$",
+        sql,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if not match:
+        return sql
+    update = match.group(1).strip()
+    # SQLite's excluded.column maps directly to MySQL's incoming VALUES(column)
+    # for the MySQL/MariaDB versions used by game hosting providers.  This is
+    # kept in DB-1 for broad compatibility; DB-2 can move to explicit aliases.
+    update = re.sub(
+        r"\bexcluded\.\`?([A-Za-z_][A-Za-z0-9_]*)\`?",
+        lambda m: f"VALUES({_quote_identifier(m.group(1))})",
+        update,
+        flags=re.IGNORECASE,
+    )
+    # SQLite MAX(a,b)/MIN(a,b) are scalar functions; MySQL uses
+    # GREATEST/LEAST for the same two-value UPSERT pattern.
+    update = re.sub(r"\bMAX\s*\(", "GREATEST(", update, flags=re.IGNORECASE)
+    update = re.sub(r"\bMIN\s*\(", "LEAST(", update, flags=re.IGNORECASE)
+    return sql[: match.start()].rstrip().rstrip(";") + " ON DUPLICATE KEY UPDATE " + update
+
+
+_MYSQL_LEGACY_IDENTIFIER_WORDS = {"key", "value", "rank", "position", "role"}
+
+
+def _quote_legacy_mysql_identifiers(sql: str) -> str:
+    """Quote legacy column names that collide with MySQL keywords/functions.
+
+    DB-1 intentionally keeps the existing SQLite schema names.  A few of those
+    names (for example ``key``, ``rank`` and ``role``) are unsafe or ambiguous
+    on MySQL.  Quote only bare identifier tokens outside SQL string/backtick
+    literals.  Function calls such as RANK(...) or POSITION(...) are left
+    alone so future SQL can still use those built-ins.
+    """
+    out: list[str] = []
+    i = 0
+    quote: str | None = None
+    n = len(sql)
+    while i < n:
+        ch = sql[i]
+        if quote is not None:
+            out.append(ch)
+            if ch == quote:
+                if quote in {"'", '"'} and i + 1 < n and sql[i + 1] == quote:
+                    out.append(sql[i + 1])
+                    i += 2
+                    continue
+                quote = None
+            elif quote in {"'", '"'} and ch == "\\" and i + 1 < n:
+                out.append(sql[i + 1])
+                i += 2
+                continue
+            i += 1
+            continue
+
+        if ch in {"'", '"', "`"}:
+            quote = ch
+            out.append(ch)
+            i += 1
+            continue
+
+        if ch.isalpha() or ch == "_":
+            j = i + 1
+            while j < n and (sql[j].isalnum() or sql[j] == "_"):
+                j += 1
+            token = sql[i:j]
+            lower = token.lower()
+            if lower in _MYSQL_LEGACY_IDENTIFIER_WORDS:
+                k = j
+                while k < n and sql[k].isspace():
+                    k += 1
+                if lower in {"rank", "position"} and k < n and sql[k] == "(":
+                    out.append(token)
+                else:
+                    out.append(f"`{token}`")
+            else:
+                out.append(token)
+            i = j
+            continue
+
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
+def translate_sql_for_mysql(sql: str) -> str:
+    text = sql.strip()
+    if not text:
+        return text
+    # Quote old SQLite identifiers before ON CONFLICT becomes
+    # ``ON DUPLICATE KEY``; this prevents the generat

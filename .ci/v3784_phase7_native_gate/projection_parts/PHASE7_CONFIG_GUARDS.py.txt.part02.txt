@@ -1,0 +1,125 @@
+    "travel_wave": {"rare_goods": 150, "protection": 0, "luxury": 450},
+}
+
+BLACK_MARKET_CITY_EVENT_DEMAND_BP: dict[str, dict[str, int]] = {
+    "miskolc_industry_rush": {"rare_goods": 150, "protection": 300, "luxury": -100},
+    "miskolc_delivery_gap": {"rare_goods": 350, "protection": 250, "luxury": -150},
+    "miskolc_checks": {"rare_goods": -150, "protection": 650, "luxury": -250},
+    "budapest_evening_flow": {"rare_goods": 200, "protection": 0, "luxury": 500},
+    "budapest_business_event": {"rare_goods": 100, "protection": -100, "luxury": 650},
+    "budapest_raids": {"rare_goods": -200, "protection": 750, "luxury": -300},
+    "debrecen_industry": {"rare_goods": 100, "protection": 250, "luxury": 100},
+    "debrecen_transport": {"rare_goods": 250, "protection": 100, "luxury": 100},
+    "debrecen_checks": {"rare_goods": -100, "protection": 600, "luxury": -200},
+    "eger_tourism": {"rare_goods": 100, "protection": -100, "luxury": 650},
+    "eger_event_prep": {"rare_goods": 200, "protection": 0, "luxury": 500},
+    "eger_supply_rush": {"rare_goods": -150, "protection": 0, "luxury": 350},
+    "szeged_event_week": {"rare_goods": 350, "protection": 0, "luxury": 500},
+    "szeged_warehouse": {"rare_goods": -150, "protection": 100, "luxury": 100},
+    "szeged_checks": {"rare_goods": -100, "protection": 600, "luxury": -200},
+}
+
+# Only already-guarded causality signals may move demand. Market purchases are
+# deliberately absent: buying from the Feketepiac cannot self-pump demand.
+BLACK_MARKET_CAUSALITY_FAMILY_SHIFT_BP: dict[str, dict[str, int]] = {
+    "underworld_activity": {"rare_goods": 900, "protection": 550, "luxury": 700},
+    "logistics_activity": {"rare_goods": -600, "protection": -150, "luxury": -350},
+    "service_activity": {"rare_goods": 150, "protection": 0, "luxury": 650},
+}
+
+
+# W17.4 — Community Project Engine foundation. Projects are World-owned shared
+# progress state, not wallets, escrows, donation accounts, or daily checklists.
+# Only already-settled owning-domain actions may create contribution rows.
+COMMUNITY_PROJECT_DURATION_HOURS = 24
+COMMUNITY_PROJECT_PROGRESS_BANDS = (
+    (10000, "complete"),
+    (7500, "final_stretch"),
+    (4000, "moving"),
+    (1, "started"),
+    (0, "waiting"),
+)
+
+
+@dataclass(frozen=True, slots=True)
+class CommunityProjectDefinition:
+    key: str
+    name: str
+    emoji: str
+    summary: str
+    target_units: int
+    min_participants: int
+    actor_cap_units: int
+    duration_hours: int = COMMUNITY_PROJECT_DURATION_HOURS
+    city_scoped: bool = False
+    accepted_job_signals: tuple[str, ...] = ()
+    accepted_business_categories: tuple[str, ...] = ()
+
+
+COMMUNITY_PROJECTS: tuple[CommunityProjectDefinition, ...] = (
+    CommunityProjectDefinition(
+        "logistics_terminal", "Közösségi logisztikai terminál", "🏗️",
+        "A szerver közösen épít ki egy nagyobb logisztikai csomópontot. A valódi munka- és vállalkozási aktivitás viszi előre.",
+        target_units=36, min_participants=4, actor_cap_units=9,
+        accepted_job_signals=("logistics_activity",),
+        accepted_business_categories=("Logisztika", "Kereskedelem", "Technológia"),
+    ),
+    CommunityProjectDefinition(
+        "city_investment", "Városi beruházás", "🏙️",
+        "Egy kijelölt város közösségi fejlesztése halad. Helyi munkák és helyi vállalkozások teljesítménye számít bele.",
+        target_units=30, min_participants=4, actor_cap_units=7, city_scoped=True,
+        accepted_job_signals=("logistics_activity", "service_activity"),
+        accepted_business_categories=(),
+    ),
+)
+COMMUNITY_PROJECT_BY_KEY = {item.key: item for item in COMMUNITY_PROJECTS}
+
+
+# W17.5 — completed projects branch into a bounded, temporary World event.
+# These are modifiers on the existing Job/Business World influence only; they
+# never own money settlement, inventory, project rewards or a new event backend.
+COMMUNITY_PROJECT_EVENT_MAX_BRANCH_WEIGHT = 6500
+COMMUNITY_PROJECT_EVENT_EXPIRED_HOURS = 6
+
+
+@dataclass(frozen=True, slots=True)
+class CommunityProjectEventBranch:
+    key: str
+    title: str
+    emoji: str
+    summary: str
+    duration_hours: int
+    job_keys: tuple[str, ...] = ()
+    job_multiplier_bp: int = 10000
+    business_categories: tuple[str, ...] = ()
+    business_multiplier_bp: int = 10000
+
+
+COMMUNITY_PROJECT_EVENT_BRANCHES: dict[str, tuple[CommunityProjectEventBranch, ...]] = {
+    "logistics_terminal": (
+        CommunityProjectEventBranch(
+            "freight_corridor", "Új fuvarfolyosó nyílt", "🚚",
+            "A közösen elkészült terminál után több fuvar és raktári megbízás indult meg. A hatás átmeneti, de most érezhetően mozgalmasabb a logisztikai piac.",
+            12, ("warehouse", "forklift_operator", "courier"), 10300,
+            ("Logisztika", "Kereskedelem"), 10300,
+        ),
+        CommunityProjectEventBranch(
+            "distribution_network", "Bővült az elosztóhálózat", "📦",
+            "A projektből új beszállítói és elosztási kapcsolatok nőttek ki. A kereskedelmi és technológiai háttér rövid ideig élénkebb keresletet kap.",
+            12, ("warehouse", "courier"), 10200,
+            ("Kereskedelem", "Technológia", "Logisztika"), 10400,
+        ),
+    ),
+    "city_investment": (
+        CommunityProjectEventBranch(
+            "local_services", "Felélénkültek a helyi szolgáltatások", "✨",
+            "A városi beruházás után több helyi szolgáltatás és vendégforgalom indult meg. A hatás csak az érintett városban és csak átmenetileg érezhető.",
+            12, ("taxi", "cleaner", "hospitality", "kitchen_helper"), 10300,
+            ("Vendéglátás", "Szolgáltatás", "Turizmus"), 10300,
+        ),
+        CommunityProjectEventBranch(
+            "business_district", "Lendületet kapott az üzleti negyed", "🏢",
+            "A közösségi beruházás új üzleti mozgást hozott a városba. A kereskedelmi, technológiai és logisztikai cégek rövid időre erősebb helyi keresletet érezhetnek.",
+            12, ("warehouse", "courier", "forklift_operator"), 10200,
+            ("Kereskedelem", "Technológia", "Logisztika"), 10400,
+        ),

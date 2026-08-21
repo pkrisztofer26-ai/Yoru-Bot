@@ -1,0 +1,135 @@
+    "max_ms": snap.max_ms,
+        })
+    query_groups.sort(key=lambda row: (float(row["p95_ms"]), int(row["count"])), reverse=True)
+    data["slowest_query_groups"] = query_groups[:12]
+    data["query_group_count"] = len(_MYSQL_QUERY_GROUPS)
+
+    try:
+        data["pool_size"] = int(mysql_settings().get("pool_size", 0)) if using_mysql() else 0
+    except Exception:
+        data["pool_size"] = 0
+    return data
+
+
+class _ConnectContext:
+    def __init__(self, path: str | None = None, *args: Any, **kwargs: Any) -> None:
+        self.path = path
+        self.args = args
+        self.kwargs = kwargs
+        self._conn: Any = None
+        self._sqlite_ctx: Any = None
+        self._mysql_pool_lease: _MySQLPoolLease | None = None
+
+    async def __aenter__(self) -> Any:
+        if not using_mysql():
+            self._sqlite_ctx = _sqlite.connect(self.path, *self.args, **self.kwargs)
+            self._conn = await self._sqlite_ctx.__aenter__()
+            return self._conn
+
+        try:
+            from mysql.connector.aio import connect as mysql_async_connect  # type: ignore
+        except ImportError as exc:
+            raise RuntimeError(
+                "A MySQL backendhez hiányzik a mysql-connector-python csomag. "
+                "Telepítsd a friss requirements.txt fájlt."
+            ) from exc
+
+        settings = mysql_settings()
+        semaphore = _mysql_pool_semaphore()
+        acquire_timeout = float(_env_int("MYSQL_POOL_ACQUIRE_TIMEOUT_SECONDS", 8, minimum=1, maximum=60))
+        wait_started = time.perf_counter()
+        try:
+            await asyncio.wait_for(semaphore.acquire(), timeout=acquire_timeout)
+            self._mysql_pool_lease = _MySQLPoolLease(semaphore)
+        except asyncio.TimeoutError as exc:
+            _MYSQL_POOL_METRICS["acquire_timeouts"] = int(_MYSQL_POOL_METRICS["acquire_timeouts"]) + 1
+            raise RuntimeError(
+                "A Yoru MySQL connection pool megtelt. Próbáld újra néhány másodperc múlva."
+            ) from exc
+
+        waited_ms = (time.perf_counter() - wait_started) * 1000.0
+        _MYSQL_ACQUIRE_LATENCY.observe(waited_ms)
+        _MYSQL_POOL_METRICS["acquires"] = int(_MYSQL_POOL_METRICS["acquires"]) + 1
+        _MYSQL_POOL_METRICS["wait_ms_total"] = float(_MYSQL_POOL_METRICS["wait_ms_total"]) + waited_ms
+        _MYSQL_POOL_METRICS["wait_ms_max"] = max(float(_MYSQL_POOL_METRICS["wait_ms_max"]), waited_ms)
+        _MYSQL_POOL_METRICS["active"] = int(_MYSQL_POOL_METRICS["active"]) + 1
+        _MYSQL_POOL_METRICS["peak_active"] = max(
+            int(_MYSQL_POOL_METRICS["peak_active"]), int(_MYSQL_POOL_METRICS["active"])
+        )
+
+        # A short DNS/network hiccup should not fail the first DB access outright.
+        # Retry only connection-establishment failures; no query/transaction is
+        # replayed here, so this cannot duplicate economy writes. Native aio
+        # pooling returns the physical connection to the pool on close().
+        retry_delays = (0.50, 1.50, 3.00)
+        try:
+            for attempt in range(len(retry_delays) + 1):
+                try:
+                    raw = await mysql_async_connect(**settings)
+                    self._conn = _MySQLConnection(raw, pool_lease=self._mysql_pool_lease)
+                    self._mysql_pool_lease = None  # ownership transferred to the connection
+                    return self._conn
+                except Exception as exc:
+                    if not is_transient_mysql_connection_error(exc) or attempt >= len(retry_delays):
+                        _MYSQL_POOL_METRICS["connect_failures"] = int(_MYSQL_POOL_METRICS["connect_failures"]) + 1
+                        raise
+                    _MYSQL_POOL_METRICS["connect_retries"] = int(_MYSQL_POOL_METRICS.get("connect_retries", 0)) + 1
+                    await asyncio.sleep(retry_delays[attempt])
+        except Exception:
+            if self._mysql_pool_lease is not None:
+                self._mysql_pool_lease.release()
+                self._mysql_pool_lease = None
+            raise
+        raise RuntimeError("A MySQL kapcsolat létrehozása váratlanul megszakadt.")
+
+    async def __aexit__(self, exc_type: Any, exc: Any, tb: Any) -> bool:
+        if self._conn is None:
+            if self._mysql_pool_lease is not None:
+                self._mysql_pool_lease.release()
+                self._mysql_pool_lease = None
+            return False
+        if using_mysql():
+            if exc_type is not None:
+                try:
+                    await self._conn.rollback()
+                except Exception:
+                    pass
+            await self._conn.close()
+        else:
+            if self._sqlite_ctx is not None:
+                await self._sqlite_ctx.__aexit__(exc_type, exc, tb)
+            else:
+                await self._conn.close()
+        return False
+
+    def __await__(self):
+        async def _open() -> Any:
+            return await self.__aenter__()
+        return _open().__await__()
+
+
+async def execute_backend_ddl(
+    db: Any,
+    *,
+    sqlite_sql: str,
+    mysql_sql: str | None = None,
+) -> Any:
+    """Execute additive application-owned schema DDL on the active backend.
+
+    DB-1 deliberately blocks arbitrary SQLite-shaped CREATE/ALTER statements on
+    MySQL so a legacy startup cannot silently mutate the verified cutover
+    schema. New post-cutover modules, however, still need a controlled way to
+    add their own tables. This helper is that narrow escape hatch: callers must
+    provide explicit native MySQL DDL instead of relying on the legacy SQL
+    translator.
+    """
+    if not using_mysql():
+        return await db.execute(sqlite_sql)
+    if not isinstance(db, _MySQLConnection):
+        raise RuntimeError("Érvénytelen MySQL kapcsolat az új Yoru séma létrehozásakor.")
+    statement = mysql_sql if mysql_sql is not None else sqlite_sql
+    return await db._run_raw(statement)
+
+
+def connect(path: str | None = None, *args: Any, **kwargs: Any) -> _ConnectContext:
+    return _ConnectContext(path, *args, **kwargs)

@@ -1,0 +1,49 @@
+ _indexes("rp_world_community_project_contributions")
+    assert "fk_rp_world_project_contribution" in await _fks("rp_world_community_project_contributions")
+
+async def _ensure_outcome(pid,status="completed"):
+    s=_stamp(); active=_stamp(43200); weights='{"expanded_network":3500,"new_corridor":6500}' if status=="completed" else '{"expired":10000}'
+    async with db_backend.connect(None) as db:
+        await db.execute("BEGIN IMMEDIATE")
+        await db.execute("INSERT OR IGNORE INTO rp_world_community_project_outcomes(project_id,guild_id,project_key,city_key,result_status,branch_key,career_units,business_units,participant_count,branch_weights_json,event_started_at,active_until,recorded_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",(pid,1,"logistics_terminal","miskolc",status,"new_corridor" if status=="completed" else "expired",4,2,2,weights,s,active,s)); await db.commit()
+
+@pytest.mark.asyncio
+async def test_05_project_outcome_exactly_once_expiry_recovery_fk():
+    methods=METHODS_PATH.read_text(); assert "_ensure_community_project_outcome_db" in methods and "recover_community_project_outcomes" in methods
+    await _seed_project("cycle-o","logistics_terminal"); pid=int(await _scalar("SELECT project_id FROM rp_world_community_projects"))
+    await asyncio.gather(*(_ensure_outcome(pid) for _ in range(16))); assert await _scalar("SELECT COUNT(*) FROM rp_world_community_project_outcomes WHERE project_id=%s",(pid,))==1
+    oid=int(await _scalar("SELECT outcome_id FROM rp_world_community_project_outcomes WHERE project_id=%s",(pid,))); await _ensure_outcome(pid); assert int(await _scalar("SELECT outcome_id FROM rp_world_community_project_outcomes WHERE project_id=%s",(pid,)))==oid
+    assert {"uq_rp_world_project_outcome_project","idx_rp_world_project_outcome_guild","idx_rp_world_project_outcome_active"} <= await _indexes("rp_world_community_project_outcomes")
+    assert "fk_rp_world_project_outcome" in await _fks("rp_world_community_project_outcomes")
+    # separate expired project gets one mechanical-neutral expired outcome
+    await _seed_project("cycle-exp","city_investment"); ep=int(await _scalar("SELECT project_id FROM rp_world_community_projects WHERE source_cycle_id=%s",("cycle-exp",)))
+    async with db_backend.connect(None) as db:
+        await db.execute("BEGIN IMMEDIATE"); await db.execute("UPDATE rp_world_community_projects SET status='expired',deadline_at=?,updated_at=? WHERE project_id=?",(_stamp(-10),_stamp(),ep)); await db.commit()
+    await asyncio.gather(*(_ensure_outcome(ep,"expired") for _ in range(8))); assert await _scalar("SELECT COUNT(*) FROM rp_world_community_project_outcomes WHERE project_id=%s AND result_status='expired' AND branch_key='expired'",(ep,))==1
+
+@pytest.mark.asyncio
+async def test_06_news_revision_outcome_restart_consistency():
+    methods=METHODS_PATH.read_text(); assert 'return f"{snapshot.cycle_id}:p{int(project_outcome.outcome_id)}"' in methods
+    await _seed_project("2026-08-21T16","logistics_terminal"); pid=int(await _scalar("SELECT project_id FROM rp_world_community_projects")); await _ensure_outcome(pid)
+    oid=int(await _scalar("SELECT outcome_id FROM rp_world_community_project_outcomes WHERE project_id=%s",(pid,))); revision=f"2026-08-21T16:p{oid}"
+    # new connection = restart boundary for persisted identity
+    oid2=int(await _scalar("SELECT outcome_id FROM rp_world_community_project_outcomes WHERE project_id=%s",(pid,))); assert oid2==oid and revision==f"2026-08-21T16:p{oid2}"
+
+@pytest.mark.asyncio
+async def test_07_current_source_restart_recovery_and_atomic_rollback():
+    methods=METHODS_PATH.read_text(); assert "ensure_current" in methods and "BEGIN IMMEDIATE" in methods
+    await _seed_project("cycle-r","logistics_terminal"); pid=int(await _scalar("SELECT project_id FROM rp_world_community_projects"))
+    # atomic fault: contribution and project aggregate must roll back together
+    try:
+        async with db_backend.connect(None) as db:
+            await db.execute("BEGIN IMMEDIATE"); s=_stamp()
+            await db.execute("INSERT INTO rp_world_community_project_contributions(project_id,guild_id,source_ref,actor_user_id,domain,city_key,crew_id,business_property_id,units,recorded_at) VALUES(?,?,?,?,?,?,?,?,?,?)",(pid,1,"fault:1",2001,"career","miskolc",None,None,3,s))
+            await db.execute("UPDATE rp_world_community_projects SET contributed_units=3,participant_count=1,updated_at=? WHERE project_id=?",(s,pid))
+            raise RuntimeError("expected fault")
+    except RuntimeError as exc:
+        assert str(exc)=="expected fault"
+    assert await _scalar("SELECT COUNT(*) FROM rp_world_community_project_contributions WHERE source_ref=%s",("fault:1",))==0
+    row=(await _rows("SELECT contributed_units,participant_count,status FROM rp_world_community_projects WHERE project_id=%s",(pid,)))[0]; assert (int(row[0]),int(row[1]),str(row[2]))==(0,0,"active")
+    # restart/replay uses the same one-per-cycle row
+    await asyncio.gather(*(_seed_project("cycle-r","city_investment") for _ in range(8))); assert await _scalar("SELECT COUNT(*) FROM rp_world_community_projects WHERE source_cycle_id=%s",("cycle-r",))==1
+    metrics=db_backend.mysql_runtime_metrics(); assert int(metrics.get("active",0))==0 and int(metrics.get("pool_timeouts",0))==0

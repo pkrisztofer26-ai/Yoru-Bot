@@ -1,0 +1,50 @@
+  updated_at VARCHAR(64) NOT NULL,
+                    PRIMARY KEY (project_id),
+                    UNIQUE KEY uq_rp_world_project_cycle (guild_id, source_cycle_id),
+                    KEY idx_rp_world_project_active (guild_id, status, deadline_at)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS rp_world_community_project_contributions (
+                    contribution_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                    project_id BIGINT UNSIGNED NOT NULL,
+                    guild_id BIGINT UNSIGNED NOT NULL,
+                    source_ref VARCHAR(192) NOT NULL,
+                    actor_user_id BIGINT UNSIGNED NOT NULL,
+                    domain VARCHAR(32) NOT NULL,
+                    city_key VARCHAR(32) NULL,
+                    crew_id BIGINT UNSIGNED NULL,
+                    business_property_id BIGINT UNSIGNED NULL,
+                    units SMALLINT UNSIGNED NOT NULL,
+                    recorded_at VARCHAR(64) NOT NULL,
+                    PRIMARY KEY (contribution_id),
+                    UNIQUE KEY uq_rp_world_project_source (project_id, source_ref),
+                    KEY idx_rp_world_project_actor (project_id, actor_user_id),
+                    KEY idx_rp_world_project_guild (guild_id, recorded_at),
+                    CONSTRAINT fk_rp_world_project_contribution
+                        FOREIGN KEY (project_id) REFERENCES rp_world_community_projects(project_id)
+                        ON UPDATE CASCADE ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS rp_world_community_project_outcomes (
+                    outcome_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                    project_id BIGINT UNSIGNED NOT NULL,
+                    guild_id BIGINT UNSIGNED NOT NULL,
+                    project_key VARCHAR(64) NOT NULL,
+                    city_key VARCHAR(32) NULL,
+                    result_status VARCHAR(24) NOT NULL,
+                    branch_key VARCHAR(64) NOT NULL,
+                    career_units INT UNSIGNED NOT NULL,
+                    business_units INT UNSIGNED NOT NULL,
+                    participant_count INT UNSIGNED NOT NULL,
+                    branch_weights_json LONGTEXT NOT NULL,
+                    event_started_at VARCHAR(64) NOT NULL,
+                    active_until VARCHAR(64) NOT NULL,
+                    recorded_at VARCHAR(64) NOT NULL,
+                    PRIMARY KEY (outcome_id),
+                    UNIQUE KEY uq_rp_world_project_outcome_project (project_id),
+                    KEY idx_rp_world_project_outcome_guild (guild_id, recorded_at),
+                    KEY idx_rp_world_project_outcome_active (guild_id, result_status, active_until),
+                    CONSTRAINT fk_rp_world_project_outcome
+                        FOREIGN KEY (project_id) REFERENCES rp_world_community_projects(project_id)
+                        ON UPDATE CASCADE ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

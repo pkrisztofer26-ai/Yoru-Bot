@@ -1,0 +1,127 @@
+.commit()
+    return inserted
+
+# SOURCE app/services/world.py::_save_causality_decision lines 1502-1521
+async def _save_causality_decision(
+    db, guild_id: int, cycle_id: str, decision: WorldCausalityBranchDecision, recorded_at: str
+) -> None:
+    await db.execute(
+        """INSERT INTO rp_world_causality_decisions(
+               guild_id,cycle_id,story_key,from_beat_key,chosen_beat_key,signal_key,
+               raw_pressure_bp,smoothed_pressure_bp,pressure_band,threshold_met,
+               anomaly_flags_json,baseline_weights_json,applied_weights_json,decision_reason,recorded_at
+           ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+           ON CONFLICT(guild_id,cycle_id) DO NOTHING""",
+        (
+            int(guild_id), str(cycle_id), decision.story_key, decision.from_beat_key,
+            decision.chosen_beat_key, decision.signal_key, int(decision.raw_pressure_bp),
+            int(decision.smoothed_pressure_bp), decision.pressure_band, int(decision.threshold_met),
+            json.dumps(list(decision.anomaly_flags), ensure_ascii=False),
+            json.dumps(decision.baseline_weights, ensure_ascii=False, sort_keys=True),
+            json.dumps(decision.applied_weights, ensure_ascii=False, sort_keys=True),
+            decision.decision_reason, str(recorded_at),
+        ),
+    )
+
+# SOURCE app/services/world.py::causality_decision_history lines 1523-1547
+async def causality_decision_history(self, guild_id: int, *, limit: int = 20) -> list[dict[str, object]]:
+    """Internal/admin explainability for Player -> World branch weighting."""
+    async with aiosqlite.connect(self.database.path) as db:
+        cur = await db.execute(
+            """SELECT cycle_id,story_key,from_beat_key,chosen_beat_key,signal_key,raw_pressure_bp,
+                      smoothed_pressure_bp,pressure_band,threshold_met,anomaly_flags_json,
+                      baseline_weights_json,applied_weights_json,decision_reason,recorded_at
+               FROM rp_world_causality_decisions
+               WHERE guild_id=? ORDER BY recorded_at DESC LIMIT ?""",
+            (int(guild_id), max(1, min(100, int(limit)))),
+        )
+        rows = await cur.fetchall()
+    result: list[dict[str, object]] = []
+    for row in rows:
+        result.append({
+            "cycle_id": str(row[0]), "story_key": str(row[1]), "from_beat_key": str(row[2]),
+            "chosen_beat_key": str(row[3]), "signal_key": None if row[4] is None else str(row[4]),
+            "raw_pressure_bp": int(row[5]), "smoothed_pressure_bp": int(row[6]),
+            "pressure_band": str(row[7]), "threshold_met": bool(row[8]),
+            "anomaly_flags": json.loads(str(row[9]) or "[]"),
+            "baseline_weights": json.loads(str(row[10]) or "{}"),
+            "applied_weights": json.loads(str(row[11]) or "{}"),
+            "decision_reason": str(row[12]), "recorded_at": str(row[13]),
+        })
+    return result
+
+# SOURCE app/services/world.py::ensure_current lines 1578-1650
+async def ensure_current(self, guild_id: int) -> WorldSnapshot:
+    now = _utcnow()
+    async with aiosqlite.connect(self.database.path) as db:
+        await db.execute("BEGIN IMMEDIATE")
+        cur = await db.execute(
+            "SELECT guild_id,cycle_id,national_key,city_events_json,started_at,expires_at FROM rp_world_state WHERE guild_id=?",
+            (guild_id,),
+        )
+        row = await cur.fetchone()
+        story_progress = await self._load_story_progress(db, guild_id)
+        if row is not None:
+            expires = _parse(str(row[5]))
+            if expires is not None and expires > now:
+                await db.commit()
+                story_row = None if story_progress is None else (
+                    story_progress.story_key, story_progress.beat_key, story_progress.step_number,
+                    story_progress.started_at, story_progress.updated_at,
+                )
+                return self._row_to_snapshot(row, story_row)
+
+        previous_national = str(row[2]) if row is not None else None
+        try:
+            previous_cities = json.loads(str(row[3]) or "{}") if row is not None else {}
+        except json.JSONDecodeError:
+            previous_cities = {}
+
+        rng = random.SystemRandom()
+        started = _iso(now)
+        causality = await self._causality_snapshot_from_db(db, guild_id, now=now)
+        national, next_story, branch_decision = self._next_national(
+            rng, previous_national, story_progress, started, causality
+        )
+        city_map: dict[str, str] = {}
+        for city_key in character_config.STARTING_CITY_KEYS:
+            items = cfg.CITY_SITUATIONS.get(city_key, ())
+            if not items:
+                continue
+            picked = self._pick_different(rng, items, str(previous_cities.get(city_key) or ""))
+            city_map[city_key] = picked.key
+
+        cycle_id = uuid.uuid4().hex[:16]
+        expires = _iso(now + timedelta(hours=cfg.WORLD_CYCLE_HOURS))
+        payload = json.dumps(city_map, ensure_ascii=False, sort_keys=True)
+        await db.execute(
+            """INSERT INTO rp_world_state(guild_id,cycle_id,national_key,city_events_json,started_at,expires_at,updated_at)
+               VALUES(?,?,?,?,?,?,?)
+               ON CONFLICT(guild_id) DO UPDATE SET
+                   cycle_id=excluded.cycle_id,national_key=excluded.national_key,
+                   city_events_json=excluded.city_events_json,started_at=excluded.started_at,
+                   expires_at=excluded.expires_at,updated_at=excluded.updated_at""",
+            (guild_id, cycle_id, national.key, payload, started, expires, started),
+        )
+        await self._save_story_progress(db, guild_id, next_story)
+        if branch_decision is not None:
+            await self._save_causality_decision(db, guild_id, cycle_id, branch_decision, started)
+        if next_story is not None:
+            await db.execute(
+                """INSERT INTO rp_world_story_history(
+                       guild_id,cycle_id,story_key,beat_key,step_number,national_key,recorded_at
+                   ) VALUES(?,?,?,?,?,?,?)""",
+                (
+                    guild_id, cycle_id, next_story.story_key, next_story.beat_key,
+                    next_story.step_number, national.key, started,
+                ),
+            )
+        await db.commit()
+        return WorldSnapshot(
+            guild_id, cycle_id, national.key, city_map, started, expires,
+            next_story.story_key if next_story else None,
+            next_story.beat_key if next_story else None,
+            next_story.step_number if next_story else 0,
+            next_story.started_at if next_story else None,
+        )
+
