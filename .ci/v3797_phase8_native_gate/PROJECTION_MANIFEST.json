@@ -1,0 +1,37 @@
+{
+  "files": [
+    {
+      "bytes": 7,
+      "path": "VERSION",
+      "sha256": "0fdb50c46e6ac760c3b074e5f52cbc760fcc8bc6ee24d5a7f7f715a23b4bff63"
+    },
+    {
+      "bytes": 9700,
+      "path": "PHASE8_SCHEMA.sql",
+      "sha256": "97418e5ebcb68786348338d5513c2bfde0bec105ba93973caa0b0906a523f3d4"
+    },
+    {
+      "bytes": 3229,
+      "path": "SOURCE_FINGERPRINTS.json",
+      "sha256": "adce16c314d3f73aa6fe4de1ac43cd4d78583b009b3ac3dd5ccbd7f0bcce3caa"
+    },
+    {
+      "bytes": 943,
+      "path": "W18_7_MIGRATION_SOURCE.txt",
+      "sha256": "28567055813407cbeb5dcac1a16754e6c5756f691d1fb5eec81380d7fb83ab55"
+    },
+    {
+      "bytes": 70,
+      "path": "requirements.txt",
+      "sha256": "13dacfcf32389dcec983f2f34c7cd620969ca30f8608647918abd521f512394b"
+    },
+    {
+      "bytes": 29866,
+      "path": "tests/test_phase8_native_gate.py",
+      "sha256": "dde33bad45a6872bc4b5f56dac161d2d6220876a810bd025bd63f6fe880c32f6"
+    }
+  ],
+  "schema": 1,
+  "source_projection_sha256": "26c9b72f6a2a83ff90994e5fb0fc721e4b36a23df9cb14eb1d782bbd0946e9e1",
+  "source_release": "3.79.7"
+}
