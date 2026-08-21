@@ -1,0 +1,111 @@
+name: Yoru v3.79.7 W18.8N Phase 8 Native Closure Dispatcher
+run-name: W18.8N Phase 8 Native Closure — manual
+
+on:
+  workflow_dispatch:
+
+jobs:
+  phase8-native:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      mariadb:
+        image: mariadb:11.4
+        env:
+          MARIADB_DATABASE: yoru_phase8_ci_test
+          MARIADB_USER: yoru_ci
+          MARIADB_PASSWORD: yoru_ci_password
+          MARIADB_ROOT_PASSWORD: yoru_ci_root_password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
+    steps:
+      - name: Checkout frozen Phase 8 proof branch
+        uses: actions/checkout@v6
+        with:
+          ref: ci/v3797-phase8-native-closure
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+          cache: 'pip'
+          cache-dependency-path: .ci/v3797_phase8_native_gate/phase8_source/requirements.txt
+
+      - name: Verify frozen text source projection
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .ci/v3797_phase8_native_gate/proof_artifacts
+          python .ci/v3797_phase8_native_gate/verify_projection.py \
+            | tee .ci/v3797_phase8_native_gate/proof_artifacts/source_verify.log
+          grep -q 'PHASE8_SOURCE_VERIFY=PASS' .ci/v3797_phase8_native_gate/proof_artifacts/source_verify.log
+          grep -q 'W18.8N_PHASE8_NATIVE_STATIC=PASS' .ci/v3797_phase8_native_gate/proof_artifacts/source_verify.log
+
+      - name: Install native proof dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r .ci/v3797_phase8_native_gate/phase8_source/requirements.txt
+
+      - name: Run native MariaDB Phase 8 closure proof
+        shell: bash
+        env:
+          YORU_TEST_MYSQL_CONFIRM: DISPOSABLE_SCHEMA
+          YORU_TEST_MYSQL_HOST: 127.0.0.1
+          YORU_TEST_MYSQL_PORT: '3306'
+          YORU_TEST_MYSQL_USER: yoru_ci
+          YORU_TEST_MYSQL_PASSWORD: yoru_ci_password
+          YORU_TEST_MYSQL_DATABASE: yoru_phase8_ci_test
+        run: |
+          set -euo pipefail
+          cd .ci/v3797_phase8_native_gate/phase8_source
+          PYTHONPATH=. pytest -q tests/test_phase8_native_gate.py \
+            | tee ../proof_artifacts/native_pytest.log
+          grep -Eq '10 passed' ../proof_artifacts/native_pytest.log
+          if grep -Eq '[1-9][0-9]* skipped|[1-9][0-9]* failed|[1-9][0-9]* error' ../proof_artifacts/native_pytest.log; then
+            echo 'PHASE8_NATIVE_RESULT=FAIL_UNEXPECTED_SKIP_OR_FAILURE' >&2
+            exit 1
+          fi
+
+      - name: Compile proof projection
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m compileall -q .ci/v3797_phase8_native_gate/phase8_source
+          echo 'COMPILEALL=PASS' | tee .ci/v3797_phase8_native_gate/proof_artifacts/compileall.log
+
+      - name: Write Phase 8 closure result
+        shell: bash
+        run: |
+          cat > .ci/v3797_phase8_native_gate/proof_artifacts/W18_8N_CLOSURE_RESULT.txt <<'EOF'
+          SOURCE_PROJECTION=PASS
+          NATIVE_MARIADB=10/10 PASS
+          W18_1_RELATION_PAIR_DDL_NATIVE=PASS
+          W18_1_RELATION_WAR_CONCURRENCY_NATIVE=PASS
+          W18_2_GOVERNANCE_ACTIVE_SLOT_NATIVE=PASS
+          W18_2_VOTE_IDENTITY_MAJORITY_EXPIRY_NATIVE=PASS
+          W18_3_EXECUTION_RESTART_EXACTLY_ONCE_NATIVE=PASS
+          W18_4_PROJECT_TREASURY_ATOMIC_NATIVE=PASS
+          W18_4_PROJECT_PROGRESS_RESTART_NATIVE=PASS
+          W18_5_HQ_TREASURY_UNIQUENESS_FK_NATIVE=PASS
+          W18_6_CITY_PRESENCE_READ_ONLY_NATIVE=PASS
+          W18_7_JOINT_CONTEXT_READ_ONLY_NATIVE=PASS
+          W18_7_BUSINESS_CONTEXT_MIGRATION_NATIVE=PASS
+          COMPILEALL=PASS
+          PHASE8_NATIVE_BLOCKER=CLOSED
+          PHASE8_CLOSURE=PASS
+          EOF
+
+      - name: Upload Phase 8 native closure proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: yoru-v3797-w18-8n-phase8-native-closure-proof
+          path: .ci/v3797_phase8_native_gate/proof_artifacts/
+          if-no-files-found: warn
+          retention-days: 30
