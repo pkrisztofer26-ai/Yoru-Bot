@@ -38,7 +38,7 @@ jobs:
       - name: Checkout isolated Phase 6 proof branch
         uses: actions/checkout@v6
         with:
-          ref: ci/v3776-phase6-native-closure
+          ref: ci/v3776-phase6-native-closure-clean
 
       - name: Reconstruct frozen Phase 6 proof source
         shell: bash
