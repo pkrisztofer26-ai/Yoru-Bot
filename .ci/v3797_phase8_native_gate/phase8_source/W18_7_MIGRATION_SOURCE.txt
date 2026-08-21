@@ -1,0 +1,14 @@
+# W18.7 immutable Organization context for awarded tenders. Existing
+        # SQLite and MariaDB deployments may predate the additive column, so
+        # initialize upgrades it in place before BusinessService starts.
+        cur = await db.execute("PRAGMA table_info(business_tenders)")
+        tender_cols = {str(row[1]) for row in await cur.fetchall()}
+        if "organization_context_json" not in tender_cols:
+            # DB-1 intentionally blocks arbitrary legacy ALTER statements on
+            # MariaDB. W18.7 is an application-owned additive migration, so it
+            # must use the explicit backend-DDL escape hatch with native SQL.
+            await aiosqlite.execute_backend_ddl(
+                db,
+                sqlite_sql="ALTER TABLE business_tenders ADD COLUMN organization_context_json TEXT",
+                mysql_sql="ALTER TABLE business_tenders ADD COLUMN organization_context_json LONGTEXT NULL",
+            )
