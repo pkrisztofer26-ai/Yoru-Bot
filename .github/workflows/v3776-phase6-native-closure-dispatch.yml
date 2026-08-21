@@ -46,6 +46,34 @@ jobs:
           set -euo pipefail
           PART_DIR=.ci/v3776_phase6_native_gate
           test "$(find "$PART_DIR" -maxdepth 1 -name 'payload_xz.part*.b64' | wc -l)" -eq 18
+          python - <<'PY'
+          from pathlib import Path
+
+          root = Path('.ci/v3776_phase6_native_gate')
+
+          p10 = root / 'payload_xz.part10.b64'
+          s10 = p10.read_text(encoding='ascii')
+          if len(s10) != 7300:
+              raise SystemExit(f'unexpected part10 length: {len(s10)}')
+          if s10[505] == 'a':
+              s10 = s10[:505] + 'e' + s10[506:]
+              p10.write_text(s10, encoding='ascii')
+          elif s10[505] != 'e':
+              raise SystemExit('unexpected part10 transport byte')
+
+          p11 = root / 'payload_xz.part11.b64'
+          s11 = p11.read_text(encoding='ascii')
+          if len(s11) == 7299:
+              s11 = s11[:3070] + 'V' + s11[3070:]
+              p11.write_text(s11, encoding='ascii')
+          elif not (len(s11) == 7300 and s11[3070] == 'V'):
+              raise SystemExit(f'unexpected part11 transport state: len={len(s11)}')
+
+          total = sum((root / f'payload_xz.part{i:02}.b64').stat().st_size for i in range(1, 19))
+          if total != 130280:
+              raise SystemExit(f'unexpected repaired payload length: {total}')
+          print('PHASE6_TRANSPORT_REPAIR=PASS bytes=130280')
+          PY
           cat "$PART_DIR"/payload_xz.part*.b64 | base64 -d > /tmp/phase6_payload.tar.xz
           echo "57093ae683fc53fdc7f9232ecc8bc0bff70691fcb5d150102d4013df9e7ec1ba  /tmp/phase6_payload.tar.xz" | sha256sum -c -
           tar -xJf /tmp/phase6_payload.tar.xz -C .
