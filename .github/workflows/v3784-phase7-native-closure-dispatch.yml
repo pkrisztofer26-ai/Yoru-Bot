@@ -1,0 +1,104 @@
+name: Yoru v3.78.4 W17.6N Phase 7 Native Closure Dispatcher
+run-name: W17.6N Phase 7 Native Closure — manual
+
+on:
+  workflow_dispatch:
+
+jobs:
+  phase7-native:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      mariadb:
+        image: mariadb:11.4
+        env:
+          MARIADB_DATABASE: yoru_phase7_ci_test
+          MARIADB_USER: yoru_ci
+          MARIADB_PASSWORD: yoru_ci_password
+          MARIADB_ROOT_PASSWORD: yoru_ci_root_password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
+    steps:
+      - name: Checkout frozen Phase 7 proof branch
+        uses: actions/checkout@v6
+        with:
+          ref: ci/v3784-phase7-native-closure
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+          cache: 'pip'
+          cache-dependency-path: .ci/v3784_phase7_native_gate/projection_parts/requirements.txt.part01.txt
+
+      - name: Verify and assemble frozen text source projection
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .ci/v3784_phase7_native_gate/proof_artifacts
+          python .ci/v3784_phase7_native_gate/assemble_verify.py \
+            | tee .ci/v3784_phase7_native_gate/proof_artifacts/source_verify.log
+          grep -q 'PHASE7_SOURCE_VERIFY=PASS' .ci/v3784_phase7_native_gate/proof_artifacts/source_verify.log
+          grep -q 'W17.6N_PHASE7_NATIVE_STATIC=PASS' .ci/v3784_phase7_native_gate/proof_artifacts/source_verify.log
+
+      - name: Install native proof dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r .ci/v3784_phase7_native_gate/assembled/requirements.txt
+
+      - name: Run native MariaDB Phase 7 closure proof
+        shell: bash
+        env:
+          YORU_TEST_MYSQL_CONFIRM: DISPOSABLE_SCHEMA
+          YORU_TEST_MYSQL_HOST: 127.0.0.1
+          YORU_TEST_MYSQL_PORT: '3306'
+          YORU_TEST_MYSQL_USER: yoru_ci
+          YORU_TEST_MYSQL_PASSWORD: yoru_ci_password
+          YORU_TEST_MYSQL_DATABASE: yoru_phase7_ci_test
+        run: |
+          set -euo pipefail
+          cd .ci/v3784_phase7_native_gate/assembled
+          PYTHONPATH=. pytest -q tests/test_phase7_native_gate.py \
+            | tee ../proof_artifacts/native_pytest.log
+          grep -Eq '7 passed' ../proof_artifacts/native_pytest.log
+
+      - name: Compile proof projection
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m compileall -q .ci/v3784_phase7_native_gate/assembled
+          echo 'COMPILEALL=PASS' | tee .ci/v3784_phase7_native_gate/proof_artifacts/compileall.log
+
+      - name: Write Phase 7 closure result
+        shell: bash
+        run: |
+          cat > .ci/v3784_phase7_native_gate/proof_artifacts/W17_6N_CLOSURE_RESULT.txt <<'EOF'
+          SOURCE_PROJECTION=PASS
+          NATIVE_MARIADB=7/7 PASS
+          CAUSALITY_SIGNAL_NATIVE=PASS
+          CAUSALITY_DECISION_NATIVE=PASS
+          COMMUNITY_PROJECT_NATIVE=PASS
+          PROJECT_CONTRIBUTION_NATIVE=PASS
+          PROJECT_OUTCOME_NATIVE=PASS
+          PROJECT_EXPIRY_RECOVERY_NATIVE=PASS
+          PROJECT_ATOMIC_ROLLBACK_NATIVE=PASS
+          EXPECTED_FAULT_QUERY_ERROR_DELTA=1
+          COMPILEALL=PASS
+          PHASE7_NATIVE_BLOCKER=CLOSED
+          PHASE7_CLOSURE=PASS
+          EOF
+
+      - name: Upload Phase 7 native closure proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: yoru-v3784-w17-6n-phase7-native-closure-proof
+          path: .ci/v3784_phase7_native_gate/proof_artifacts/
+          if-no-files-found: warn
+          retention-days: 30
