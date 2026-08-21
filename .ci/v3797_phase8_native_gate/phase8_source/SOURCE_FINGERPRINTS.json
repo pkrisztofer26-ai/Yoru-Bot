@@ -1,0 +1,94 @@
+{
+  "db_backend_contract": {
+    "execute_backend_ddl_sha256": "5c24d8a183620262e0c097b6dad3637bec54366a18cd20280816ccc6e646e6a2",
+    "legacy_writer_lock_tokens": [
+      "GET_LOCK",
+      "RELEASE_LOCK",
+      "BEGIN IMMEDIATE"
+    ]
+  },
+  "migration_block_sha256": "28567055813407cbeb5dcac1a16754e6c5756f691d1fb5eec81380d7fb83ab55",
+  "migration_mysql_sql": "ALTER TABLE business_tenders ADD COLUMN organization_context_json LONGTEXT NULL",
+  "schema": 1,
+  "service_methods": {
+    "_finish_governance_execution": {
+      "lines": 15,
+      "sha256": "570abff675b7c158312ce8203f9f47436eb64fee1e7033b01fb7ec1c25f22505"
+    },
+    "_fund_hq_from_governance": {
+      "lines": 62,
+      "sha256": "0be87a1ff5d836a3bb5a45424d4817b4b4f93f6dd7a87bfa52994039f4de8993"
+    },
+    "_fund_internal_project_from_governance": {
+      "lines": 72,
+      "sha256": "1b6567bbccea2ca0ee9f8b7a04eae6a59103e41d4a2827cb58a0e63ae0392d83"
+    },
+    "_relation_pair": {
+      "lines": 5,
+      "sha256": "7309e30b6e3625a73a821ceb1b48dfba3e7e00646374b5dc3c3a266ba3ff1e3a"
+    },
+    "accept_relation": {
+      "lines": 35,
+      "sha256": "119e42517565076175d5e78aa90736fa6326b13d9704dc9a231cc78a00ea12e9"
+    },
+    "cast_governance_vote": {
+      "lines": 83,
+      "sha256": "a91b7fe75bb320e09dba303793d451571dbd70dbc68886c1a111c5af87a83bdc"
+    },
+    "city_presence_contributions": {
+      "lines": 309,
+      "sha256": "3a88f8e51a6255ac1b698c2c420b3652b70985aec52805895940f9c4798f21be"
+    },
+    "create_governance_proposal": {
+      "lines": 65,
+      "sha256": "3093ef9edb5d7b0cc24b17fcaf9fe703ca0dc81a6f58ee839df85bb36496d28c"
+    },
+    "create_war": {
+      "lines": 60,
+      "sha256": "aa54f4c61a4016d7f0a89ffcd9c08f49023ec272024634bdc91a222d9583fffe"
+    },
+    "execute_governance_proposal": {
+      "lines": 219,
+      "sha256": "8f4d40fd52911c6ed260dfa59e98252e54fbf972dfb73d5dfd389bae6b472812"
+    },
+    "joint_activity_history": {
+      "lines": 88,
+      "sha256": "3baa17f91962110b21735a159897cf5c4eeea13982f51406778ed4b197ff0d32"
+    },
+    "propose_relation": {
+      "lines": 53,
+      "sha256": "61e44891c983ecb25d93fc3f6cb119e8858832380a7e23e761283faee5b00d88"
+    },
+    "reconcile_governance": {
+      "lines": 33,
+      "sha256": "7b1a7ba5c5c4b9dd6ed4c1e77cf7b7c851112382135fc5592aacd7c5a760504e"
+    },
+    "reconcile_internal_project": {
+      "lines": 43,
+      "sha256": "536668fc81c54a586c724ac42f9a9d3bc25f3899e1c6854423b22b2d962a0295"
+    },
+    "relation_between": {
+      "lines": 19,
+      "sha256": "a95b6bd8e060e6851a52fd5dc071641a40f83918060a6339630dc54e14f80ebb"
+    },
+    "snapshot_joint_activity_context": {
+      "lines": 75,
+      "sha256": "28b074eb6cb438070683c59236b5cea91b235abb2a4101f142c9b512e1196489"
+    }
+  },
+  "source_files": {
+    "app/database.py": {
+      "bytes": 344290,
+      "sha256": "4bf918270b1e64eaf775cd55053c54b8110d5a1589c1322dae045043f6afb4a6"
+    },
+    "app/db_backend.py": {
+      "bytes": 42174,
+      "sha256": "2820a18cb05b355be3cc756b6871832fe1b3e1525aae791622933776b80ad7ca"
+    },
+    "app/services/faction.py": {
+      "bytes": 155461,
+      "sha256": "088ae67192574c232d651471fa6d26559d926b170418eb2db9c2e5d1c4f7c110"
+    }
+  },
+  "source_release": "3.79.7"
+}
