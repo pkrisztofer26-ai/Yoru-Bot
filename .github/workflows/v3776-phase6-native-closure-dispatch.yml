@@ -47,7 +47,7 @@ jobs:
           PART_DIR=.ci/v3776_phase6_native_gate
           test "$(find "$PART_DIR" -maxdepth 1 -name 'payload_xz.part*.b64' | wc -l)" -eq 18
           cat "$PART_DIR"/payload_xz.part*.b64 | base64 -d > /tmp/phase6_payload.tar.xz
-          echo "4cf96fa49aca8b83aff7313469df51774d0caf22eabf01120c94144ec846c2cb  /tmp/phase6_payload.tar.xz" | sha256sum -c -
+          echo "57093ae683fc53fdc7f9232ecc8bc0bff70691fcb5d150102d4013df9e7ec1ba  /tmp/phase6_payload.tar.xz" | sha256sum -c -
           tar -xJf /tmp/phase6_payload.tar.xz -C .
           test -f .ci/v3776_phase6_native_gate/phase6_source/phase6_verify.py
 
