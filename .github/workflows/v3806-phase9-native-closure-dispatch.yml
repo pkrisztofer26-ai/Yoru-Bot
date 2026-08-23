@@ -1,0 +1,112 @@
+name: Yoru v3.80.6 W19.8N Phase 9 Native Closure Dispatcher
+run-name: W19.8N Phase 9 Native Closure — manual
+
+on:
+  workflow_dispatch:
+
+jobs:
+  phase9-native:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      mariadb:
+        image: mariadb:11.4
+        env:
+          MARIADB_DATABASE: yoru_phase9_ci_test
+          MARIADB_USER: yoru_ci
+          MARIADB_PASSWORD: yoru_ci_password
+          MARIADB_ROOT_PASSWORD: yoru_ci_root_password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
+    steps:
+      - name: Checkout frozen Phase 9 proof branch
+        uses: actions/checkout@v6
+        with:
+          ref: ci/v3806-phase9-native-closure
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+          cache: 'pip'
+          cache-dependency-path: .ci/v3806_phase9_native_gate/phase9_source/requirements.txt
+
+      - name: Verify frozen text source projection
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .ci/v3806_phase9_native_gate/proof_artifacts
+          python .ci/v3806_phase9_native_gate/verify_projection.py \
+            | tee .ci/v3806_phase9_native_gate/proof_artifacts/source_verify.log
+          grep -q 'PHASE9_SOURCE_VERIFY=PASS' .ci/v3806_phase9_native_gate/proof_artifacts/source_verify.log
+          grep -q 'W19.8N_PHASE9_NATIVE_STATIC=PASS' .ci/v3806_phase9_native_gate/proof_artifacts/source_verify.log
+
+      - name: Install native proof dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r .ci/v3806_phase9_native_gate/phase9_source/requirements.txt
+
+      - name: Run native MariaDB Phase 9 closure proof
+        shell: bash
+        env:
+          YORU_TEST_MYSQL_CONFIRM: DISPOSABLE_SCHEMA
+          YORU_TEST_MYSQL_HOST: 127.0.0.1
+          YORU_TEST_MYSQL_PORT: '3306'
+          YORU_TEST_MYSQL_USER: yoru_ci
+          YORU_TEST_MYSQL_PASSWORD: yoru_ci_password
+          YORU_TEST_MYSQL_DATABASE: yoru_phase9_ci_test
+        run: |
+          set -euo pipefail
+          cd .ci/v3806_phase9_native_gate/phase9_source
+          PYTHONPATH=tests:. pytest -q tests \
+            | tee ../proof_artifacts/native_pytest.log
+          grep -Eq '13 passed' ../proof_artifacts/native_pytest.log
+          if grep -Eq '[1-9][0-9]* skipped|[1-9][0-9]* failed|[1-9][0-9]* error' ../proof_artifacts/native_pytest.log; then
+            echo 'PHASE9_NATIVE_RESULT=FAIL_UNEXPECTED_SKIP_OR_FAILURE' >&2
+            exit 1
+          fi
+
+      - name: Compile proof projection
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m compileall -q .ci/v3806_phase9_native_gate/phase9_source
+          echo 'COMPILEALL=PASS' | tee .ci/v3806_phase9_native_gate/proof_artifacts/compileall.log
+
+      - name: Write Phase 9 closure result
+        shell: bash
+        run: |
+          cat > .ci/v3806_phase9_native_gate/proof_artifacts/W19_8N_CLOSURE_RESULT.txt <<'EOF'
+          SOURCE_PROJECTION=PASS
+          NATIVE_MARIADB=13/13 PASS
+          W19_1_PROVENANCE_DDL_ACTIVE_OWNER_NATIVE=PASS
+          W19_2_TRAIT_PERSISTENCE_REPLAY_NATIVE=PASS
+          W19_3_COLLECTIBLE_IDEMPOTENCY_NATIVE=PASS
+          W19_4_ACTIVE_LISTING_UNIQUENESS_NATIVE=PASS
+          W19_4_BID_REQUEST_ESCROW_REFUND_NATIVE=PASS
+          W19_4_SETTLEMENT_EXACTLY_ONCE_RESTART_NATIVE=PASS
+          W19_5_VEHICLE_ATOMIC_TRANSFER_NATIVE=PASS
+          W19_5_PROPERTY_ATOMIC_TRANSFER_NATIVE=PASS
+          W19_5_LIFECYCLE_AUCTION_RACE_NATIVE=PASS
+          W19_7_TROPHY_FK_UNIQUENESS_NATIVE=PASS
+          W19_7_TROPHY_CONCURRENT_REPLACEMENT_NATIVE=PASS
+          W19_7_TROPHY_CLEANUP_ATOMIC_REPLAY_NATIVE=PASS
+          COMPILEALL=PASS
+          PHASE9_NATIVE_BLOCKER=CLOSED
+          PHASE9_CLOSURE=PASS
+          EOF
+
+      - name: Upload Phase 9 native closure proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: yoru-v3806-w19-8n-phase9-native-closure-proof
+          path: .ci/v3806_phase9_native_gate/proof_artifacts/
+          if-no-files-found: warn
+          retention-days: 30
