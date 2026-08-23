@@ -1,0 +1,49 @@
+{
+  "db_backend_contract": {
+    "required_tokens": [
+      "GET_LOCK",
+      "RELEASE_LOCK",
+      "BEGIN IMMEDIATE"
+    ],
+    "source_sha256": "2820a18cb05b355be3cc756b6871832fe1b3e1525aae791622933776b80ad7ca"
+  },
+  "phase9_schema_sha256": "3bffcf1a61df7348e24d442b4a3200538028ad80af2c9d76e8aff713f2079bea",
+  "release_artifact": {
+    "bytes": 27313442,
+    "name": "YoruBot_v3.80.6_DEV_FULL_BUILD_W19.7_TROPHY_ROOM_SHOWCASE_FOUNDATION_2026-08-23.zip",
+    "sha256": "d55469a3bf3adc2af250ea107be85a821c04f60d605645544d9f3e84b96eafb2"
+  },
+  "schema": 1,
+  "service_methods": {
+    "app/database.py:credit_wallet_tx": {"lines":45,"sha256":"35c71917e3d3440482e3f3815c9c1f8ef31a5d186246ab172b9b1bded1ae3561"},
+    "app/database.py:refund_wallet_and_bank_tx": {"lines":42,"sha256":"aa9c9070f9bb43e9a41a5a764dd00eb01e9d293f9737f7eb312cde67d47c41e2"},
+    "app/database.py:reserve_wallet_and_bank_tx": {"lines":52,"sha256":"ab17f259a83ea1a8c549b1c9871b1109eaf3fdd3b3e6e233ef2c0d2afb3f8ac0"},
+    "app/db_backend.py:execute_backend_ddl": {"lines":21,"sha256":"5c24d8a183620262e0c097b6dad3637bec54366a18cd20280816ccc6e646e6a2"},
+    "app/services/asset_auctions.py:_settle_tx": {"lines":67,"sha256":"65c88b9e4bb0dc8dff2b2d300ba68bc399047bd506fb098f4bd9e4557cc36cd8"},
+    "app/services/asset_auctions.py:_transfer_source_ownership_tx": {"lines":33,"sha256":"0a46b98398721ecb90cc4d46efe42048774f5e831c1661e327b4ca4d86efe7b0"},
+    "app/services/asset_auctions.py:create_listing": {"lines":58,"sha256":"fc6ee2dda54ab8512738580c6d27d6598d45de647a7b068888b0668c9fd6a3db"},
+    "app/services/asset_auctions.py:place_bid": {"lines":93,"sha256":"e991d624a556ac70a7392e22cbf7b2ea14044cacc82993ebcad2fc59156e5762"},
+    "app/services/asset_auctions.py:recover_expired": {"lines":22,"sha256":"981c9e7110963fc7418b51807baa3ae97fafba60b0579977d1831be41f920a51"},
+    "app/services/asset_auctions.py:settle_auction": {"lines":15,"sha256":"bc3c6296218c4e373d825bb0b7e4337d2e2ea2bd1934dd69011996c484d93d60"},
+    "app/services/assets.py:release_source_tx": {"lines":37,"sha256":"fd472044cc9c0e33c1a6a8443b598c8957b3d043bc06070066974a5c199cceab"},
+    "app/services/assets.py:set_trophy_showcase": {"lines":53,"sha256":"28bc570b1947478634f80d450aea2846c712d16d108d2334f14a6eeea995f2e0"},
+    "app/services/assets.py:transfer_user_ownership_tx": {"lines":92,"sha256":"7b5349328ed8fceb3e4761a57393e1b586eb5fc3a30ed45d44da014a59b3cf9a"},
+    "app/services/housing.py:_require_property_not_auctioned_tx": {"lines":6,"sha256":"b94f91c413ead0e8e9acbeed17e61b52b9d7c24584d81116a9dfbf9f438e03f6"},
+    "app/services/housing.py:sell_property": {"lines":92,"sha256":"d1e50958002c1abbdb8963a84fa27394fd9f18916b932dcc5e14583e492d56f3"},
+    "app/services/housing.py:transfer_auction_ownership_tx": {"lines":70,"sha256":"c2cd974cacedf33ce5cc931a1fb744a08ea00d3d02eca728754969337a73de29"},
+    "app/services/vehicles.py:_require_not_auctioned_tx": {"lines":6,"sha256":"4c4ce6d913a46c694f5ce51e768d3d836d8b9fa53ff603cd6432e6adf8df4c49"},
+    "app/services/vehicles.py:sell_vehicle": {"lines":89,"sha256":"db14eea833f80c251dc9cded9314d4ae35dadae0b22183044ffa7f4007e9a41d"},
+    "app/services/vehicles.py:transfer_auction_ownership_tx": {"lines":99,"sha256":"110a2b1fa7eca000e695338df594fc7c72bba42a6549dd29d84ed6b1762a74b9"}
+  },
+  "source_files": {
+    "app/asset_config.py": {"bytes":7682,"sha256":"49bb8da59c42810ab28b3a9eaaa0e8cab61c1caeaa07377e59042fd7a4e055ce"},
+    "app/auction_config.py": {"bytes":1458,"sha256":"4754df02d4bd0c61a556c520347964d6d63019620c43e46e3e19fd9ed8aa9ec5"},
+    "app/database.py": {"bytes":358106,"sha256":"e9ff10d3bac22128e00172a93c746780cda5c86781efdcf8b92174ec4ab596b3"},
+    "app/db_backend.py": {"bytes":42174,"sha256":"2820a18cb05b355be3cc756b6871832fe1b3e1525aae791622933776b80ad7ca"},
+    "app/services/asset_auctions.py": {"bytes":31732,"sha256":"9650332da622342408af6423e14531b6802faa9f1a87ab163bbc9f4e836a2473"},
+    "app/services/assets.py": {"bytes":41192,"sha256":"a44177d11b6d04c834dc0ac4f7ad68ab36616f2ccd2a0f5f46f1c00ea1597944"},
+    "app/services/housing.py": {"bytes":72042,"sha256":"0568dd690edddac489b3d6c21049f94e74d0d9896d61c8bf870bdbb6aac8a26a"},
+    "app/services/vehicles.py": {"bytes":54884,"sha256":"685dd4127c2459359c5c1a2ea3dcab7b983a272c9d373a0dc6e038ff579897f9"}
+  },
+  "source_release": "3.80.6"
+}
