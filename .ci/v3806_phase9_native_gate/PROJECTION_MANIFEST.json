@@ -41,13 +41,13 @@
       "sha256": "9196ebdcfa476e50c64cc2b54c3ce0959b4987c171afb3e4c23c4d3a4a5dfd8c"
     },
     {
-      "bytes": 4037,
+      "bytes": 4148,
       "path": "tests/test_phase9_native_trophy.py",
-      "sha256": "308a187675c0cac4eb939c5c3beee709885a9b98ad4fa263570c79811c24e830"
+      "sha256": "23b358de488ce55d6f57a1a8772be87f1cb418ccf38396b5469a6de773da3bdb"
     }
   ],
   "schema": 2,
-  "source_projection_sha256": "ae08fb37ecc37ec6ed70d1d7cdf3050b7ddaf45ae39a4c09fc8983971adcfd91",
+  "source_projection_sha256": "c5e913eb1aa0fd6d2d09fa4b6fa43264deb7381e27525c30553786b7f53cba46",
   "source_release": "3.80.6",
   "full_build_sha256": "d55469a3bf3adc2af250ea107be85a821c04f60d605645544d9f3e84b96eafb2"
 }
