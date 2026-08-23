@@ -46,7 +46,9 @@ async def test_12_trophy_cleanup_atomic_transfer_system_sale_and_no_resurrection
         await raw(conn,"INSERT INTO asset_trophy_showcase(guild_id,user_id,slot_index,asset_instance_id,created_at,updated_at) VALUES(1,20,1,%s,%s,%s)",(aid,now_s(),now_s())); await conn.commit()
         await conn.start_transaction()
         with pytest.raises(RuntimeError): await release_provenance(conn,aid,20,'sale-fail',fail_after_cleanup=True)
-        await conn.rollback(); assert int(await scalar(conn,"SELECT COUNT(*) FROM asset_trophy_showcase WHERE asset_instance_id=%s",(aid,)))==1
+        await conn.rollback()
+        assert int(await scalar(conn,"SELECT COUNT(*) FROM asset_trophy_showcase WHERE asset_instance_id=%s",(aid,)))==1
+        await conn.rollback()  # end the implicit read transaction before the next explicit transaction
         await conn.start_transaction(); assert await release_provenance(conn,aid,20,'sale-ok'); await conn.commit(); assert int(await scalar(conn,"SELECT COUNT(*) FROM asset_trophy_showcase WHERE asset_instance_id=%s",(aid,)))==0
         ts=now_s(); await raw(conn,"INSERT INTO asset_ownership_history(instance_id,guild_id,owner_type,owner_id,acquisition_type,acquired_at,active_slot,event_key,created_at,updated_at) VALUES(%s,1,'user',20,'reacquire',%s,1,'reacquire:1',%s,%s)",(aid,ts,ts,ts)); await conn.commit()
         assert int(await scalar(conn,"SELECT COUNT(*) FROM asset_trophy_showcase WHERE asset_instance_id=%s",(aid,)))==0
