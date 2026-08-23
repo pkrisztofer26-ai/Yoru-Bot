@@ -1,0 +1,53 @@
+{
+  "files": [
+    {
+      "bytes": 7,
+      "path": "VERSION",
+      "sha256": "f66fe4f0a67621d8bcf1d6f7bbf45f06eac3575e5caaf24297f978a1aeaf9f51"
+    },
+    {
+      "bytes": 6450,
+      "path": "PHASE9_SCHEMA.sql",
+      "sha256": "3bffcf1a61df7348e24d442b4a3200538028ad80af2c9d76e8aff713f2079bea"
+    },
+    {
+      "bytes": 4895,
+      "path": "SOURCE_FINGERPRINTS.json",
+      "sha256": "b376125aa44241dc07b2479c3f6a0d48369a0f39c2d3ca5d016355a07bf45c5e"
+    },
+    {
+      "bytes": 70,
+      "path": "requirements.txt",
+      "sha256": "13dacfcf32389dcec983f2f34c7cd620969ca30f8608647918abd521f512394b"
+    },
+    {
+      "bytes": 19500,
+      "path": "tests/native_support.py",
+      "sha256": "c6da442d6f57783341ee7bb83433fdb0be5ce0c2e6a6da5fa9ea85d02da3fe9d"
+    },
+    {
+      "bytes": 348,
+      "path": "tests/conftest.py",
+      "sha256": "86bd579a37abcc413ebb30439d99fa4ed26ef126f7d9409ab4026b1306ad3711"
+    },
+    {
+      "bytes": 6300,
+      "path": "tests/test_phase9_native_schema_identity.py",
+      "sha256": "cd0d1f37f26a64f5772e518a6b031f05e2cfcfd861e3d495bbe80770261a590b"
+    },
+    {
+      "bytes": 9208,
+      "path": "tests/test_phase9_native_auction.py",
+      "sha256": "4dad2b6c945e176f1a9f45a8259aa9cd8d2ff2c92813de098660a2855c4e8846"
+    },
+    {
+      "bytes": 4039,
+      "path": "tests/test_phase9_native_trophy.py",
+      "sha256": "bdcc89a3e31b3273c34758a3611d02953aa1dda5f0d9bbe221da40c1b35af38c"
+    }
+  ],
+  "schema": 1,
+  "source_projection_sha256": "0db93b4101df89b12d33efc206c002521b764e414938a4d2fca78812fed18dae",
+  "source_release": "3.80.6",
+  "full_build_sha256": "d55469a3bf3adc2af250ea107be85a821c04f60d605645544d9f3e84b96eafb2"
+}
