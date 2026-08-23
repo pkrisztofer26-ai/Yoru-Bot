@@ -36,18 +36,18 @@
       "sha256": "cd0d1f37f26a64f5772e518a6b031f05e2cfcfd861e3d495bbe80770261a590b"
     },
     {
-      "bytes": 9208,
+      "bytes": 9107,
       "path": "tests/test_phase9_native_auction.py",
-      "sha256": "4dad2b6c945e176f1a9f45a8259aa9cd8d2ff2c92813de098660a2855c4e8846"
+      "sha256": "9196ebdcfa476e50c64cc2b54c3ce0959b4987c171afb3e4c23c4d3a4a5dfd8c"
     },
     {
-      "bytes": 4039,
+      "bytes": 4037,
       "path": "tests/test_phase9_native_trophy.py",
-      "sha256": "bdcc89a3e31b3273c34758a3611d02953aa1dda5f0d9bbe221da40c1b35af38c"
+      "sha256": "308a187675c0cac4eb939c5c3beee709885a9b98ad4fa263570c79811c24e830"
     }
   ],
   "schema": 2,
-  "source_projection_sha256": "f5201ae5ab82f2fc3f87d21bd1e8baa5e3cb007e11eb0328cd3258fbafa55736",
+  "source_projection_sha256": "ae08fb37ecc37ec6ed70d1d7cdf3050b7ddaf45ae39a4c09fc8983971adcfd91",
   "source_release": "3.80.6",
   "full_build_sha256": "d55469a3bf3adc2af250ea107be85a821c04f60d605645544d9f3e84b96eafb2"
 }
