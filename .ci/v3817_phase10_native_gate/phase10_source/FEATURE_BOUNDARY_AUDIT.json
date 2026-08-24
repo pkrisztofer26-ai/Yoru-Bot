@@ -1,0 +1,108 @@
+{
+  "canonical_transaction_methods": [
+    "app/database.py::reserve_wallet_and_bank_tx",
+    "app/database.py::refund_wallet_and_bank_tx",
+    "app/database.py::credit_wallet_tx",
+    "app/database.py::buy_market_item",
+    "app/database.py::sell_market_item",
+    "app/services/asset_auctions.py::_settle_tx"
+  ],
+  "features": {
+    "W20.1": {
+      "authority": "read-only aggregation",
+      "method_refs": [
+        "app/services/holding.py::snapshot"
+      ],
+      "name": "Holding / Empire",
+      "parallel_persistence": false
+    },
+    "W20.2": {
+      "authority": "read-only opportunity + canonical Business/Auction execution",
+      "method_refs": [
+        "app/services/acquisition.py::candidates",
+        "app/services/acquisition.py::due_diligence"
+      ],
+      "name": "Acquisition / Due Diligence",
+      "parallel_persistence": false
+    },
+    "W20.3": {
+      "authority": "holding_mega_projects + canonical wallet/bank reserve",
+      "method_refs": [
+        "app/services/mega_projects.py::start_project",
+        "app/services/mega_projects.py::reconcile_project",
+        "app/database.py::reserve_wallet_and_bank_tx"
+      ],
+      "name": "Mega Project",
+      "parallel_persistence": false
+    },
+    "W20.4": {
+      "authority": "read-only eligibility + existing Opportunity Resolver",
+      "method_refs": [
+        "app/services/elite_opportunities.py::profile",
+        "app/services/elite_opportunities.py::candidates"
+      ],
+      "name": "Elite Opportunity",
+      "parallel_persistence": false
+    },
+    "W20.5": {
+      "authority": "existing Heist V2",
+      "method_refs": [
+        "app/services/legendary_heists.py::participant_eligible",
+        "app/services/legendary_heists.py::access",
+        "app/services/legendary_heists.py::create_from_invite"
+      ],
+      "name": "Legendary Heist Bridge",
+      "parallel_persistence": false
+    },
+    "W20.6": {
+      "authority": "durable-history projection + existing identity authority",
+      "method_refs": [
+        "app/services/veteran_identity.py::evaluate_history",
+        "app/services/veteran_identity.py::snapshot",
+        "app/services/veteran_identity.py::eligible"
+      ],
+      "name": "Veteran Identity",
+      "parallel_persistence": false
+    },
+    "W20.7": {
+      "authority": "existing Asset Auction + existing Market/Economy",
+      "method_refs": [
+        "app/services/asset_auctions.py::create_listing",
+        "app/services/asset_auctions.py::visible_listings",
+        "app/services/asset_auctions.py::place_bid",
+        "app/services/asset_auctions.py::_settle_tx",
+        "app/services/shop.py::_require_market_access",
+        "app/database.py::buy_market_item",
+        "app/database.py::sell_market_item"
+      ],
+      "name": "Private Auction / Investment",
+      "parallel_persistence": false
+    },
+    "W20.8": {
+      "authority": "read-only history projection",
+      "method_refs": [
+        "app/services/hall_of_fame.py::_guild_metrics",
+        "app/services/hall_of_fame.py::_build_snapshot",
+        "app/services/hall_of_fame.py::leaderboard"
+      ],
+      "name": "Hall of Fame",
+      "parallel_persistence": false
+    }
+  },
+  "forbidden_mechanics": [
+    "guaranteed_yield",
+    "passive_risk_free_profit",
+    "permanent_blanket_multiplier",
+    "prestige_reset"
+  ],
+  "forbidden_parallel_tables": [
+    "private_auction*",
+    "private_invest*",
+    "hall_of_fame*",
+    "veteran_state*"
+  ],
+  "result": "PASS",
+  "schema": 1,
+  "scope": "W20.1-W20.8",
+  "source_release": "3.81.7"
+}
