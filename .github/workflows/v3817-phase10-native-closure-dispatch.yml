@@ -1,4 +1,5 @@
 name: Yoru v3.81.7 W20.9N Phase 10 Native Closure Dispatcher
+run-name: W20.9N Phase 10 Native Closure — manual
 
 on:
   workflow_dispatch:
@@ -6,8 +7,115 @@ on:
 jobs:
   phase10-native:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      mariadb:
+        image: mariadb:11.4
+        env:
+          MARIADB_DATABASE: yoru_phase10_ci_test
+          MARIADB_USER: yoru_ci
+          MARIADB_PASSWORD: yoru_ci_password
+          MARIADB_ROOT_PASSWORD: yoru_ci_root_password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
     steps:
-      - uses: actions/checkout@v6
+      - name: Checkout frozen Phase 10 proof branch
+        uses: actions/checkout@v6
         with:
           ref: ci/v3817-phase10-native-closure
-      - run: echo "Phase 10 native closure dispatcher staged"
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+          cache: 'pip'
+          cache-dependency-path: .ci/v3817_phase10_native_gate/phase10_source/requirements.txt
+
+      - name: Restore connector transport payloads
+        shell: bash
+        run: |
+          set -euo pipefail
+          GATE=.ci/v3817_phase10_native_gate
+          SRC="$GATE/phase10_source/tests"
+          PAYLOAD="$GATE/payload"
+          mkdir -p "$SRC"
+          for name in native_support.py test_phase10_native_schema_mega.py test_phase10_native_private.py test_phase10_native_hall_source.py; do
+            base64 -d "$PAYLOAD/$name.gz.b64" | gzip -dc > "$SRC/$name"
+          done
+
+      - name: Verify frozen Phase 10 source projection
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .ci/v3817_phase10_native_gate/proof_artifacts
+          python .ci/v3817_phase10_native_gate/verify_projection.py | tee .ci/v3817_phase10_native_gate/proof_artifacts/source_verify.log
+          grep -q 'PHASE10_SOURCE_VERIFY=PASS' .ci/v3817_phase10_native_gate/proof_artifacts/source_verify.log
+          grep -q 'FEATURE_BOUNDARY_AUDIT=W20.1-W20.8 PASS' .ci/v3817_phase10_native_gate/proof_artifacts/source_verify.log
+          grep -q 'W20.9N_PHASE10_NATIVE_STATIC=PASS' .ci/v3817_phase10_native_gate/proof_artifacts/source_verify.log
+
+      - name: Install native proof dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r .ci/v3817_phase10_native_gate/phase10_source/requirements.txt
+
+      - name: Run native MariaDB Phase 10 closure proof
+        shell: bash
+        env:
+          YORU_TEST_MYSQL_CONFIRM: DISPOSABLE_SCHEMA
+          YORU_TEST_MYSQL_HOST: 127.0.0.1
+          YORU_TEST_MYSQL_PORT: '3306'
+          YORU_TEST_MYSQL_USER: yoru_ci
+          YORU_TEST_MYSQL_PASSWORD: yoru_ci_password
+          YORU_TEST_MYSQL_DATABASE: yoru_phase10_ci_test
+        run: |
+          set -euo pipefail
+          cd .ci/v3817_phase10_native_gate/phase10_source
+          PYTHONPATH=tests:. pytest -q tests | tee ../proof_artifacts/native_pytest.log
+          grep -Eq '13 passed' ../proof_artifacts/native_pytest.log
+          if grep -Eqi '[1-9][0-9]* skipped|[1-9][0-9]* failed|[1-9][0-9]* error' ../proof_artifacts/native_pytest.log; then
+            echo 'PHASE10_NATIVE_RESULT=FAIL_UNEXPECTED_SKIP_OR_FAILURE' >&2
+            exit 1
+          fi
+
+      - name: Compile proof projection
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m compileall -q .ci/v3817_phase10_native_gate/phase10_source
+          echo 'COMPILEALL=PASS' | tee .ci/v3817_phase10_native_gate/proof_artifacts/compileall.log
+
+      - name: Write Phase 10 closure result
+        shell: bash
+        run: |
+          cat > .ci/v3817_phase10_native_gate/proof_artifacts/W20_9N_CLOSURE_RESULT.txt <<'EOF'
+          SOURCE_PROJECTION=PASS
+          FEATURE_BOUNDARY_AUDIT=W20.1-W20.8 PASS
+          NATIVE_MARIADB=13/13 PASS
+          W20_3_MEGA_INNODB_UNIQUENESS_NATIVE=PASS
+          W20_3_MEGA_ATOMIC_COMMITMENT_ROLLBACK_NATIVE=PASS
+          W20_3_MEGA_REPLAY_COMPLETION_NATIVE=PASS
+          W20_7_PRIVATE_AUCTION_ACCESS_VISIBILITY_NATIVE=PASS
+          W20_7_PRIVATE_AUCTION_BID_ESCROW_REFUND_NATIVE=PASS
+          W20_7_PRIVATE_AUCTION_SETTLEMENT_PROVENANCE_NATIVE=PASS
+          W20_7_PRIVATE_MARKET_ACCESS_BUY_ROLLBACK_NATIVE=PASS
+          W20_7_PRIVATE_MARKET_SELL_CONCURRENCY_NATIVE=PASS
+          W20_8_HALL_READ_ONLY_NATIVE=PASS
+          COMPILEALL=PASS
+          PHASE10_NATIVE_BLOCKER=CLOSED
+          PHASE10_CLOSURE=PASS
+          EOF
+
+      - name: Upload Phase 10 native closure proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: yoru-v3817-w20-9n-phase10-native-closure-proof
+          path: .ci/v3817_phase10_native_gate/proof_artifacts/
+          if-no-files-found: warn
+          retention-days: 30
