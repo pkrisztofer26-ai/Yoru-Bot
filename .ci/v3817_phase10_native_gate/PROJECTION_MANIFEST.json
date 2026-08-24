@@ -18,7 +18,7 @@
     {
       "bytes": 9274,
       "path": "SOURCE_FINGERPRINTS.json",
-      "sha256": "9c3fbfbd7069f06f4fd3fe252f19d94c3f611134f9060918a48282d05f515630"
+      "sha256": "aa71ccc7b6f5482659ec989f1c09a8d48987d04816e8a97058a481c8357d55e8"
     },
     {
       "bytes": 3550,
@@ -31,9 +31,9 @@
       "sha256": "13dacfcf32389dcec983f2f34c7cd620969ca30f8608647918abd521f512394b"
     },
     {
-      "bytes": 32841,
+      "bytes": 32347,
       "path": "tests/native_support.py",
-      "sha256": "0aec73addeec2dfe6f12587612ceac99c51bf1ea8384c94eddce0319f68b1b6a"
+      "sha256": "4c1b222ec776dda37bb039e0c2308e2194e276da4f0606d2acf07f4933a80fd7"
     },
     {
       "bytes": 61,
@@ -41,24 +41,24 @@
       "sha256": "867cc0c988aca6b7df9951a39f82dd71baa6080fe15f48a1c90544d085509a39"
     },
     {
-      "bytes": 7245,
+      "bytes": 6714,
       "path": "tests/test_phase10_native_schema_mega.py",
-      "sha256": "c6d5c39ca77a90912c1b9948abf2c08362b66deb3706e9fe59e9ffaeeb6e091e"
+      "sha256": "a6d8271e06b9acd9a422df6dcad9ad70447fef91bd62c3fe383c0b1065ea2123"
     },
     {
-      "bytes": 9366,
+      "bytes": 6426,
       "path": "tests/test_phase10_native_private.py",
-      "sha256": "7a17b3ce095cb072fbaec173785865db6f296a67d53d377bb8770b0ccafa0c3a"
+      "sha256": "3b2f8b570d14b11e1d7cad15b224b5374ce21cde9f1a8a188e683dd22c3f3dac"
     },
     {
-      "bytes": 7657,
+      "bytes": 6290,
       "path": "tests/test_phase10_native_hall_source.py",
-      "sha256": "a4620a3069e451de3eabe83eb70de3c1759056ec316affade50083a314984c96"
+      "sha256": "a57f40fd5e352e33b2a6ad284be6fd143164fe67ff013c5486e8725799b284c1"
     }
   ],
   "full_build_sha256": "d349eaa9217259668847ce8929cc4c07b973fdb1245cbcdd3ce50c5a52deb598",
   "schema": 2,
-  "source_projection_sha256": "23029d28996a4534a775958c7c94241f2210d72e967cc8728df2358402c6f839",
+  "source_projection_sha256": "645ec4750a402d335415d66b5fbe6d9556cd931aef0637ccf4bbb03caec08491",
   "source_release": "3.81.7",
   "source_schema_sha256": "28880dbf647e9954458e538509786bde651849ad52594616943dbe74035f8a8e"
 }
