@@ -1,0 +1,159 @@
+{
+  "critical_methods": {
+    "app/database.py::buy_market_item": {
+      "bytes": 2321,
+      "sha256": "9161e209f931429adfb541040b6eaec5108ba5521223243f4ffd05ed93eb1a3a"
+    },
+    "app/database.py::credit_wallet_tx": {
+      "bytes": 1966,
+      "sha256": "35c71917e3d3440482e3f3815c9c1f8ef31a5d186246ab172b9b1bded1ae3561"
+    },
+    "app/database.py::refund_wallet_and_bank_tx": {
+      "bytes": 1761,
+      "sha256": "aa9c9070f9bb43e9a41a5a764dd00eb01e9d293f9737f7eb312cde67d47c41e2"
+    },
+    "app/database.py::reserve_wallet_and_bank_tx": {
+      "bytes": 2326,
+      "sha256": "ab17f259a83ea1a8c549b1c9871b1109eaf3fdd3b3e6e233ef2c0d2afb3f8ac0"
+    },
+    "app/database.py::sell_market_item": {
+      "bytes": 2315,
+      "sha256": "a56e637443ba8fbb21a6f95a1b20f716ba770ba449e82d38866783e7b2e83158"
+    },
+    "app/services/acquisition.py::candidates": {
+      "bytes": 4310,
+      "sha256": "36e69f45c6519c5df1876e8232cbf3510a3c32d7422153a48481fc08f2805e84"
+    },
+    "app/services/acquisition.py::due_diligence": {
+      "bytes": 4303,
+      "sha256": "e49f2b4e75f4dfe4ff816ad80c81bf69aab487810ae718705c1e7b660fba4d23"
+    },
+    "app/services/asset_auctions.py::_settle_tx": {
+      "bytes": 4134,
+      "sha256": "65c88b9e4bb0dc8dff2b2d300ba68bc399047bd506fb098f4bd9e4557cc36cd8"
+    },
+    "app/services/asset_auctions.py::create_listing": {
+      "bytes": 4126,
+      "sha256": "80bb1cd44d7df033794f2601353e154b2b32e1dba5ea44e93f619e62e00f8e89"
+    },
+    "app/services/asset_auctions.py::place_bid": {
+      "bytes": 6766,
+      "sha256": "71cd820c74bdf8807621d06716266c9a1e4c8a8d31ca9fd72796f271360014ee"
+    },
+    "app/services/asset_auctions.py::settle_auction": {
+      "bytes": 801,
+      "sha256": "bc3c6296218c4e373d825bb0b7e4337d2e2ea2bd1934dd69011996c484d93d60"
+    },
+    "app/services/asset_auctions.py::visible_listings": {
+      "bytes": 871,
+      "sha256": "0ecdd29ce8da495cce5e0081a37727b214f205c6ea949f8951426123ad4e7dbd"
+    },
+    "app/services/elite_opportunities.py::candidates": {
+      "bytes": 1373,
+      "sha256": "407fefe2b7f7587e70d756709e1263069c9018a9a41dfd76ff0ceb92350ff261"
+    },
+    "app/services/elite_opportunities.py::profile": {
+      "bytes": 2574,
+      "sha256": "f36c936fff3823142ad89cd5e2f38f4b4714a2a05bce7b8539202daacd72ba23"
+    },
+    "app/services/hall_of_fame.py::_build_snapshot": {
+      "bytes": 2720,
+      "sha256": "2718f234cfe4fc2758f0f7d67dd37e0851154c97cec39204a1d17257f7af9c61"
+    },
+    "app/services/hall_of_fame.py::_guild_metrics": {
+      "bytes": 4005,
+      "sha256": "f6bc8cf027e0bd26bceb99bba4f5923a9ea86bc4c645af583bf2df130ba550ce"
+    },
+    "app/services/hall_of_fame.py::leaderboard": {
+      "bytes": 240,
+      "sha256": "dfe8f8ce25d6b5f4ac7d5a427f529059ba65b28ced6ec0b73627cd24907f54cb"
+    },
+    "app/services/holding.py::snapshot": {
+      "bytes": 4538,
+      "sha256": "8c443023e13e2d597af04e0cad88d7540059c53999ce3e532b27aecf3203dbf9"
+    },
+    "app/services/legendary_heists.py::access": {
+      "bytes": 1154,
+      "sha256": "47949eb9b423d71fcfe878fcab1e79585164f7314586cb45eadfb0824a048c4f"
+    },
+    "app/services/legendary_heists.py::create_from_invite": {
+      "bytes": 359,
+      "sha256": "4ef664c6c9d7c0f2027610a42ce9834f024ec99493a671a104746dce4e40e9f1"
+    },
+    "app/services/legendary_heists.py::participant_eligible": {
+      "bytes": 525,
+      "sha256": "d0b1b60d59931d6b75999567e93d05694667e0a8b0d0d425ab04e6ea3c8a2e3a"
+    },
+    "app/services/mega_projects.py::reconcile_project": {
+      "bytes": 2752,
+      "sha256": "52f753ebdff8b522c7a956de986dac312abaef9f2ce23ce5fb9525fb831abcec"
+    },
+    "app/services/mega_projects.py::start_project": {
+      "bytes": 3538,
+      "sha256": "5b4e87825a828858a52814372867d0b8676753526d92bd228d86d6d727152eb8"
+    },
+    "app/services/shop.py::_require_market_access": {
+      "bytes": 416,
+      "sha256": "8b98e6877bcb65c8265364035c33994b0d6a5b5a4aa6f7673b690346eba64534"
+    },
+    "app/services/shop.py::buy": {
+      "bytes": 1401,
+      "sha256": "abebec4c872448da91f3b51d4096451136f4cbe29b97041addb915bb59c8d832"
+    },
+    "app/services/shop.py::list_investments": {
+      "bytes": 1368,
+      "sha256": "4356c3f5e85111ae592ab6452676306c3df1a4930ee7459f460537264def9e71"
+    },
+    "app/services/shop.py::sell": {
+      "bytes": 1376,
+      "sha256": "9e1a8d67c0dcb636a28b364a570213d6f6ca48ddeb7ac317cec038d7ba8db746"
+    },
+    "app/services/veteran_identity.py::eligible": {
+      "bytes": 132,
+      "sha256": "c62399fdd6a1ef537abe14ab981aa9824baa85c37d70c839cdb16bb6009cc239"
+    },
+    "app/services/veteran_identity.py::evaluate_history": {
+      "bytes": 1356,
+      "sha256": "cc27b964d3b76d83bee7e4e0069f1b3e069a6dc16011805118a0a4bb5a1f0788"
+    },
+    "app/services/veteran_identity.py::snapshot": {
+      "bytes": 3278,
+      "sha256": "264af7a468637146fc6b1336617e72bd12b38f56422785cdc4baf537a68be513"
+    }
+  },
+  "current_tree_sha256": "44311b92d43e998b8dab2d31a95538a4f0d6d35c1d64c40fb78f9cdb77b765b7",
+  "files": {
+    "app/auction_config.py": {"bytes": 1950,"sha256": "55da5154a548d5f629a82f7e5799961c83ed65b293a95459f0598cf45fc5847b"},
+    "app/database.py": {"bytes": 362568,"sha256": "d056c8e7bdb6fc83110b2da17ee3d5cdbaaa3a6f5c93e2a1b5c1b8be3ab3e122"},
+    "app/db_backend.py": {"bytes": 42174,"sha256": "2820a18cb05b355be3cc756b6871832fe1b3e1525aae791622933776b80ad7ca"},
+    "app/economy_config.py": {"bytes": 11827,"sha256": "710aaa374085a1fa65a6c67c493d86414d7fabe673960493e2e7195f6e119406"},
+    "app/elite_opportunity_config.py": {"bytes": 2472,"sha256": "8df253ec03105e15cc403028d0813bb6f797030db37e88d25d611866cb236f17"},
+    "app/hall_of_fame_config.py": {"bytes": 1739,"sha256": "f9b301f0bf67a3447836f18453c8765764c47c83f96fa0ef460b326a23061014"},
+    "app/legendary_heist_config.py": {"bytes": 1375,"sha256": "321eabe78c3db3d1f5b77204674d0444e0576de30576914a2f986d14c8004447"},
+    "app/main.py": {"bytes": 33759,"sha256": "246f9af744b276a3b4c24a94d4d9a9c0fc5c2589a0c1699cd963890ae05cc834"},
+    "app/mega_project_config.py": {"bytes": 1837,"sha256": "a01cda06db26fe4062af7ad7cc391fcf62957d0515829883ef76934a8f791d5b"},
+    "app/private_market_config.py": {"bytes": 934,"sha256": "db877ac01df66823288aa86c53babfb030c9316644c70cbd4cf1fdf3f92e6b06"},
+    "app/services/acquisition.py": {"bytes": 11390,"sha256": "665996debc1dbbf361f86c3def78f894b2387c21dc9f2f029defe14f8cf1f188"},
+    "app/services/asset_auctions.py": {"bytes": 34359,"sha256": "e76cf4552af2b3ae2dd9e3e0c86063daacb12ba003f633c34913a715e30af891"},
+    "app/services/assets.py": {"bytes": 41192,"sha256": "a44177d11b6d04c834dc0ac4f7ad68ab36616f2ccd2a0f5f46f1c00ea1597944"},
+    "app/services/elite_opportunities.py": {"bytes": 6607,"sha256": "ed8f5eaa554819efe8c042b66d25a867e816f84f2de5b5d12460e0cd614d0db0"},
+    "app/services/hall_of_fame.py": {"bytes": 10976,"sha256": "c0a96dd0c44c2298cdafa8e3fdcc33361bc0c22e09aa33816f6b6b280b4f433d"},
+    "app/services/holding.py": {"bytes": 7586,"sha256": "c7123226e832bb6409f68aa342c0ecc08e511c026af06ab56891e3dab9f47991"},
+    "app/services/legendary_heists.py": {"bytes": 4725,"sha256": "105dd918d886416b0205fe52cfd79b77543b37376a4f85f89429b90b70dd9e00"},
+    "app/services/mega_projects.py": {"bytes": 14283,"sha256": "1ac913e0745ff9baa24d895c0e58815e7cd4a75eed10dddaa1a5d58d3a0acb16"},
+    "app/services/shop.py": {"bytes": 11820,"sha256": "8b0718153ab677874accc2e5e109d3bb79fe59e81778cbf206f5062ec3f47d90"},
+    "app/services/veteran_identity.py": {"bytes": 6651,"sha256": "63550120f33c85844a2f1e33398d96692232a93f2ad2a4fe6823f8b11e085dd7"},
+    "app/shop_config.py": {"bytes": 11292,"sha256": "cfb57d17472c27ec308e89b7f2794b0ce7c86ac07326e06f39104931f65db6ec"},
+    "app/veteran_identity_config.py": {"bytes": 1379,"sha256": "0ac8d553190a35cd9e4e184c300dcaf9ddb5b0a7065588f56becbf5fbda9b859"}
+  },
+  "full_build_sha256": "d349eaa9217259668847ce8929cc4c07b973fdb1245cbcdd3ce50c5a52deb598",
+  "policy_files": {
+    "app/elite_opportunity_config.py": {"bytes": 2472,"sha256": "8df253ec03105e15cc403028d0813bb6f797030db37e88d25d611866cb236f17"},
+    "app/hall_of_fame_config.py": {"bytes": 1739,"sha256": "f9b301f0bf67a3447836f18453c8765764c47c83f96fa0ef460b326a23061014"},
+    "app/legendary_heist_config.py": {"bytes": 1375,"sha256": "321eabe78c3db3d1f5b77204674d0444e0576de30576914a2f986d14c8004447"},
+    "app/mega_project_config.py": {"bytes": 1837,"sha256": "a01cda06db26fe4062af7ad7cc391fcf62957d0515829883ef76934a8f791d5b"},
+    "app/private_market_config.py": {"bytes": 934,"sha256": "db877ac01df66823288aa86c53babfb030c9316644c70cbd4cf1fdf3f92e6b06"},
+    "app/veteran_identity_config.py": {"bytes": 1379,"sha256": "0ac8d553190a35cd9e4e184c300dcaf9ddb5b0a7065588f56becbf5fbda9b859"}
+  },
+  "source_release": "3.81.7"
+}
