@@ -1,0 +1,13 @@
+name: Yoru v3.81.7 W20.9N Phase 10 Native Closure Dispatcher
+
+on:
+  workflow_dispatch:
+
+jobs:
+  phase10-native:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ci/v3817-phase10-native-closure
+      - run: echo "Phase 10 native closure dispatcher staged"
