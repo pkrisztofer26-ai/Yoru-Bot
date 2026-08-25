@@ -1,0 +1,4 @@
+aiosqlite==0.21.0
+mysql-connector-python>=9.5,<10
+pytest>=8,<9
+pytest-asyncio>=0.24,<1
