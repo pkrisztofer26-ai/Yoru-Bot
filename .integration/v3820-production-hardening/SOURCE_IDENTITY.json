@@ -1,0 +1,25 @@
+{
+  "live_baseline": {
+    "version": "3.72.0",
+    "production_archive_name": "YoruBot_v3.72.0_PRODUCTION_RC3.zip",
+    "production_archive_sha256": "9da2405220fc108a42e09ad3193f4935e899c56868779c51761f8525ed84deb5",
+    "production_tree_sha256": "592b48c3d517daeff711f8e50b18474bf6f706dc824ce6f7c9031d608b1d85de",
+    "production_file_count": 286
+  },
+  "modern_source": {
+    "version": "3.82.0",
+    "checkpoint": "W21.1 Yoru Chapters Foundation",
+    "full_build_sha256": "0f4cbf091fa518ee0c921e44152dd366ab5e55d8c78296030fdb1f3dbe77539a",
+    "full_tree_sha256": "673f7e9b2faba24a6366efc810cde6649feecfba9bc861a5ad912fb2db39f80c"
+  },
+  "production_candidate_pre_error_fix": {
+    "archive_sha256": "97487bf2fc8f91170943b422651ed37dc1bfe2c116ea1e411636444e4306e9a1",
+    "tree_sha256": "0034b4a767a5f060d7251528fe61aa095b29fb2d9f30ec9d64753942fda34014",
+    "file_count": 325,
+    "unchanged_vs_v372": 230,
+    "modified_vs_v372": 56,
+    "added_vs_v372": 39,
+    "removed_vs_v372": 0
+  },
+  "status": "PRE_ERROR_INTAKE_NOT_DEPLOYED"
+}
