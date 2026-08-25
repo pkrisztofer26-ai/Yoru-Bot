@@ -1,0 +1,122 @@
+name: Yoru v3.82.0 Production Cutover Native Gate
+run-name: v3.82.0 Production Cutover Native Gate — manual
+
+on:
+  workflow_dispatch:
+
+jobs:
+  production-cutover-native:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      mariadb:
+        image: mariadb:11.4
+        env:
+          MARIADB_DATABASE: yoru_v3820_cutover
+          MARIADB_USER: yoru_ci
+          MARIADB_PASSWORD: yoru_ci_password
+          MARIADB_ROOT_PASSWORD: yoru_ci_root_password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
+    steps:
+      - name: Checkout frozen v3.82.0 cutover proof branch
+        uses: actions/checkout@v6
+        with:
+          ref: ci/v3820-production-cutover-native
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+          cache: 'pip'
+          cache-dependency-path: .ci/v3820_production_cutover_native/source/requirements.txt
+
+      - name: Restore frozen hardened RC1 source projection
+        shell: bash
+        run: |
+          set -euo pipefail
+          GATE=.ci/v3820_production_cutover_native
+          mkdir -p "$GATE/source"
+          base64 -d "$GATE/payload/source_bundle.tar.gz.b64" | gzip -dc | tar -xf - -C "$GATE/source"
+
+      - name: Verify frozen v3.82.0 production source projection
+        shell: bash
+        run: |
+          set -euo pipefail
+          GATE=.ci/v3820_production_cutover_native
+          mkdir -p "$GATE/proof_artifacts"
+          python "$GATE/verify_projection.py" | tee "$GATE/proof_artifacts/source_verify.log"
+          grep -q 'V3820_CUTOVER_SOURCE_VERIFY=PASS' "$GATE/proof_artifacts/source_verify.log"
+          grep -q 'W21_1_CHAPTER_DDL_FROZEN=PASS' "$GATE/proof_artifacts/source_verify.log"
+          grep -q 'PRODUCTION_RC1_IDENTITY=PASS' "$GATE/proof_artifacts/source_verify.log"
+
+      - name: Install native proof dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r .ci/v3820_production_cutover_native/source/requirements.txt
+
+      - name: Run native MariaDB W21.1 production cutover proof
+        shell: bash
+        env:
+          YORU_DB_BACKEND: mysql
+          MYSQL_HOST: 127.0.0.1
+          MYSQL_PORT: '3306'
+          MYSQL_DATABASE: yoru_v3820_cutover
+          MYSQL_USER: yoru_ci
+          MYSQL_PASSWORD: yoru_ci_password
+          MYSQL_SSL_DISABLED: 'true'
+          MYSQL_POOL_NAME: yoru_v3820_cutover
+          MYSQL_POOL_SIZE: '8'
+          MYSQL_CONNECT_TIMEOUT_SECONDS: '10'
+        run: |
+          set -euo pipefail
+          GATE=.ci/v3820_production_cutover_native
+          cd "$GATE/source"
+          PYTHONPATH=. pytest -q --asyncio-mode=auto tests | tee ../proof_artifacts/native_pytest.log
+          grep -Eq '8 passed' ../proof_artifacts/native_pytest.log
+          if grep -Eqi '[1-9][0-9]* skipped|[1-9][0-9]* failed|[1-9][0-9]* error' ../proof_artifacts/native_pytest.log; then
+            echo 'V3820_CUTOVER_NATIVE_RESULT=FAIL_UNEXPECTED_SKIP_OR_FAILURE' >&2
+            exit 1
+          fi
+
+      - name: Compile frozen production projection
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m compileall -q .ci/v3820_production_cutover_native/source/app
+          echo 'COMPILEALL=PASS' | tee .ci/v3820_production_cutover_native/proof_artifacts/compileall.log
+
+      - name: Write production cutover native result
+        shell: bash
+        run: |
+          cat > .ci/v3820_production_cutover_native/proof_artifacts/V3820_PRODUCTION_CUTOVER_NATIVE_RESULT.txt <<'EOF'
+          SOURCE_PROJECTION=PASS
+          PRODUCTION_RC1_IDENTITY=PASS
+          NATIVE_MARIADB=8/8 PASS
+          W21_1_CHAPTER_INNODB_INDEXES_NATIVE=PASS
+          W21_1_ACTIVE_UNIQUENESS_NATIVE=PASS
+          W21_1_REPLAY_START_NATIVE=PASS
+          W21_1_CONCURRENT_START_NATIVE=PASS
+          W21_1_STAGE_PACING_NATIVE=PASS
+          W21_1_DEADLINE_AWAITING_RESOLUTION_NATIVE=PASS
+          W21_1_REPLAY_STABLE_AWAITING_RESOLUTION_NATIVE=PASS
+          W21_1_NO_RNG_REWARD_AUTHORITY=PASS
+          COMPILEALL=PASS
+          PRODUCTION_CUTOVER_NATIVE_GATE=PASS
+          EOF
+
+      - name: Upload v3.82.0 production cutover native proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: yoru-v3820-production-cutover-native-proof
+          path: .ci/v3820_production_cutover_native/proof_artifacts/
+          if-no-files-found: warn
+          retention-days: 30
