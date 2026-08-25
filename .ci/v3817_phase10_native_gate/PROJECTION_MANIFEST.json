@@ -16,9 +16,9 @@
       "sha256": "28880dbf647e9954458e538509786bde651849ad52594616943dbe74035f8a8e"
     },
     {
-      "bytes": 9274,
+      "bytes": 9368,
       "path": "SOURCE_FINGERPRINTS.json",
-      "sha256": "aa71ccc7b6f5482659ec989f1c09a8d48987d04816e8a97058a481c8357d55e8"
+      "sha256": "2eb062c2491674d089b79ba7e21b0e64b8b26dc41210968167eee928f5f78498"
     },
     {
       "bytes": 3550,
@@ -58,7 +58,7 @@
   ],
   "full_build_sha256": "d349eaa9217259668847ce8929cc4c07b973fdb1245cbcdd3ce50c5a52deb598",
   "schema": 2,
-  "source_projection_sha256": "645ec4750a402d335415d66b5fbe6d9556cd931aef0637ccf4bbb03caec08491",
+  "source_projection_sha256": "8413f15850b377dd15f75361fd991bf178c470a83e1044b70727fd18fc7c88b5",
   "source_release": "3.81.7",
   "source_schema_sha256": "28880dbf647e9954458e538509786bde651849ad52594616943dbe74035f8a8e"
 }
