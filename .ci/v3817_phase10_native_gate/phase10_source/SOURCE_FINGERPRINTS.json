@@ -155,5 +155,6 @@
     "app/private_market_config.py": {"bytes": 934, "sha256": "db877ac01df66823288aa86c53babfb030c9316644c70cbd4cf1fdf3f92e6b06"},
     "app/veteran_identity_config.py": {"bytes": 1379, "sha256": "0ac8d553190a35cd9e4e184c300dcaf9ddb5b0a7065588f56becbf5fbda9b859"}
   },
-  "source_release": "3.81.7"
+  "source_release": "3.81.7",
+  "source_schema_sha256": "28880dbf647e9954458e538509786bde651849ad52594616943dbe74035f8a8e"
 }
