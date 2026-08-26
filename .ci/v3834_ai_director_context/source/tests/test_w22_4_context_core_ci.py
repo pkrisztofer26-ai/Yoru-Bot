@@ -53,6 +53,30 @@ def test_mechanical_surface_rejected(desc):
     with pytest.raises(AIDirectorContextValidationError): validate_context_surface(p(), {"title":"Raktáros", "description":desc})
 
 
+@pytest.mark.parametrize("desc", [
+    "A Modine raktáros munkája Miskolc mellett canonical helyzetként látszik.",
+    "A Modine raktáros munkája Miskolc mellett mechanikai állapotként látszik.",
+])
+def test_internal_jargon_surface_rejected(desc):
+    with pytest.raises(AIDirectorContextValidationError): validate_context_surface(p(), {"title":"Raktáros", "description":desc})
+
+
+def test_fallbacks_are_free_of_internal_jargon():
+    packets=[
+        p(),
+        business_context_packet(business_name="Duna Logisztika", category="Logisztika", city="Budapest", operating_model="Kiegyensúlyozott működés"),
+        travel_context_packet(current_city="Eger", destination_city="Miskolc", travel_mode="Vonat"),
+        housing_context_packet(home_city="Debrecen", housing_tier="Saját lakás", location_state="otthonvárosban"),
+        npc_context_packet(npc_name="Kata", npc_role="Munkaközvetítő", relationship_state="beváltásra váró szívesség"),
+        tips_context_packet(topic="Alvilági nyom", source_label="korábbi alvilági ügy", certainty="bizonytalan jelzés"),
+        case_context_packet(case_type="bűnügyi", case_status="nyitott", subject="Alvilági nyom"),
+    ]
+    forbidden=("canonical","authority","mechanikai","validator","fallback","provider","contract")
+    for packet in packets:
+        text=f"{packet.fallback_title} {packet.fallback_description}".casefold()
+        assert not any(word in text for word in forbidden)
+
+
 def test_missing_anchor_rejected():
     with pytest.raises(AIDirectorContextValidationError): validate_context_surface(p(), {"title":"Munka", "description":"Egy csapatnál nyugodt a helyzet."})
 
