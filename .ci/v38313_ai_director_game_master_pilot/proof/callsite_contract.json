@@ -1,0 +1,63 @@
+{
+  "version": "3.83.13",
+  "work_item": "W22.6",
+  "base_version": "3.83.12",
+  "base_build_sha256": "6c20c94eedbe2fa872f8dd1d5f320c19a3a9c166b8258c64b21704aadcce3e95",
+  "files": {
+    "app/config.py": {
+      "sha256": "0cda5996c749f39a560e1df14d7ee03743895076aba5b189bb00bb3b704abaa8",
+      "size": 8470,
+      "markers": {
+        "YORU_AI_DIRECTOR_GAME_MASTER_PILOT_ENABLED": true,
+        "ai_director_game_master_pilot_enabled": true
+      }
+    },
+    "app/main.py": {
+      "sha256": "76d20c7f4eee7956b6b1b2dbac8f1f30aa1e4674c91ba3780e9f049316747a7c",
+      "size": 36660,
+      "markers": {
+        "GroqAIDirectorGameMasterProvider": true,
+        "self.ai_director_game_master = AIDirectorGameMaster": true
+      }
+    },
+    "app/cogs/heist.py": {
+      "sha256": "2792b658f9a4cbae0d4b77794db1e3284e7efd9b10eeeaae4e40b84481b68fa5",
+      "size": 65002,
+      "markers": {
+        "big_job_packet": true,
+        "legendary_event_packet": true,
+        "await add_game_master_field": true
+      }
+    },
+    "app/cogs/character.py": {
+      "sha256": "db55defb18b07a9526ae4374f3fcfb933acf0a888d06e133b06e2f9d3e3a393f",
+      "size": 62402,
+      "markers": {
+        "world_story_packet": true,
+        "chapter_packet": true,
+        "npc_story_packet": true,
+        "await add_game_master_field": true
+      }
+    },
+    "app/cogs/character_views/profile.py": {
+      "sha256": "d2e9cadb425d71f9aa61d2191f8eca0811edec23687ca05b72c1f30d63637777",
+      "size": 21865,
+      "markers": {
+        "consequence_recall_packet": true,
+        "await add_game_master_field": true
+      }
+    },
+    "app/services/ai_director_game_master.py": {
+      "sha256": "fe0d6de6005b0a46e6141f30c9b57e9f44b8356ed23723f51b8a0c8f8296ef71",
+      "size": 4297
+    },
+    "app/ai_director_game_master_integration.py": {
+      "sha256": "a1c85a157c7e7f6d0581a56f3795b6b94114ed15671e4f2c7ad28a55b0aa2f5a",
+      "size": 1079
+    },
+    "app/ai_director_game_master.py": {
+      "sha256": "ca65a33f98b5f4c5c63e12e036c0a193b9581acaf40f9bba6fa70a1d7111e8fe",
+      "size": 18303
+    }
+  }
+}
