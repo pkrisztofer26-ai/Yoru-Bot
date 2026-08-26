@@ -1,5 +1,5 @@
-name: Yoru v3.83.5 W22.4.1 Exact Source Transfer
-run-name: W22.4.1 exact source transfer
+name: Yoru v3.83.6 W22.4.2 Tier 2 Proof
+run-name: W22.4.2 exact source and live review proof
 
 on:
   push:
@@ -14,23 +14,27 @@ permissions:
 jobs:
   source-transfer:
     runs-on: ubuntu-24.04
+    timeout-minutes: 25
     steps:
-      - name: Checkout W22.4.1 proof branch
+      - name: Checkout W22.4.2 proof branch
         uses: actions/checkout@v6
         with:
           ref: ci/v3834-ai-director-tier2-context
-      - name: Verify exact hardened source
-        run: |
-          set -euo pipefail
-          python .ci/v3834_ai_director_context/verify_projection.py | tee .ci/v3834_ai_director_context/source_transfer_verify.log
-          grep -q 'W22_4_1_SOURCE_VERIFY=PASS' .ci/v3834_ai_director_context/source_transfer_verify.log
-          grep -q 'NEW_SOURCE_SHA256=5/5 PASS' .ci/v3834_ai_director_context/source_transfer_verify.log
-      - name: Upload exact W22.4.1 source
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+      - name: Install proof dependency
+        run: python -m pip install 'pytest>=8,<10'
+      - name: Run exact W22.4.2 proof
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: bash .ci/v3836_ai_director_context_hardening/run_review.sh
+      - name: Upload W22.4.2 proof
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: yoru-v3835-w22-4-1-exact-source
-          path: |
-            .ci/v3834_ai_director_context/source/
-            .ci/v3834_ai_director_context/MANIFEST.json
-            .ci/v3834_ai_director_context/source_transfer_verify.log
+          name: yoru-v3836-w22-4-2-tier2-context-human-qa-hardening
+          path: .ci/v3836_ai_director_context_hardening/
+          if-no-files-found: warn
           retention-days: 30
