@@ -1,0 +1,27 @@
+{
+  "version": "3.83.6",
+  "work_item": "W22.4.2",
+  "contract": "tier2-context-surface-v3",
+  "base_version": "3.83.5",
+  "base_source_sha256": {
+    "app/ai_director_context.py": "681ba6f8a56b1eebcdd59e5c770bd3d49121725c24ab984daa01b32247ba1a60",
+    "app/services/ai_director_context.py": "49f6210ceca7e351c26405495fcca39f299fd3a5825f3f7a4e685702155bec12",
+    "app/providers/ai_director_context_groq.py": "09cc8900ae5a670565e2a25d5045d584d1678cf8a74188fc0abae33f620f3b4e",
+    "scripts/ai_director_tier2_context_review.py": "584d2d216615b3772a0db55b3c1e2b395ac41abd2d738f7c6d5fe2f0a3eb53e7",
+    "tests/test_w22_4_context_core_ci.py": "bf9b2be25f878a7ed8b2612001186cb11752d3bcf2e065aa8e207879442c86b6"
+  },
+  "patch_sha256": "d6500c0ef04efc3dbbf68d08f269e14773d73c90c5d0d82cd85d9d8ba10e87f5",
+  "post_patch_source_sha256": {
+    "app/ai_director_context.py": "bb0467990316d04c769ef6c7fdaaea0d86d6d9e70033d1adfd39560c777d610b",
+    "app/services/ai_director_context.py": "49f6210ceca7e351c26405495fcca39f299fd3a5825f3f7a4e685702155bec12",
+    "app/providers/ai_director_context_groq.py": "16ecd246c2e9e695a334b79688699e3e682374c70a65a0c6998b8edf1fd9aec8",
+    "scripts/ai_director_tier2_context_review.py": "bc00ab5c522e296b0539fc3286397bee29c09dab5b50a629983b2ea5936793de",
+    "tests/test_w22_4_context_core_ci.py": "73eeadf2e7e2fd6e6065a82679bd303629664f17fc8d4d54ccc789cd86104875"
+  },
+  "expected_ci_core": "30 passed",
+  "expected_review_packets": 14,
+  "human_qa_regressions_encoded": 3,
+  "player_facing_scope": "TEST_GUILD_ONLY_DEFAULT_OFF",
+  "gameplay_authority": "NONE",
+  "live_deploy": false
+}
