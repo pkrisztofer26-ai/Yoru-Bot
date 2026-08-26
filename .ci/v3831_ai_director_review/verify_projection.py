@@ -3,10 +3,12 @@ import hashlib, json
 from pathlib import Path
 
 GATE=Path(__file__).resolve().parent
-SRC=GATE/'source'
+SRC=GATE/'frozen'
 manifest=json.loads((GATE/'MANIFEST.json').read_text(encoding='utf-8'))
 assert manifest['version']=='3.83.2'
 assert manifest['contract']=='tier1-cached-surface-v3'
+assert manifest['source_mode']=='direct_utf8_frozen'
+assert manifest['frozen_root']=='.ci/v3831_ai_director_review/frozen'
 assert manifest['player_facing_ai'] is False
 assert manifest['production_runtime_enabled'] is False
 assert manifest['live_deploy'] is False
@@ -32,6 +34,7 @@ assert 'PENDING_HUMAN' in review and 'AUTOMATED_HOLD' in review
 assert 'PLAYER_FACING_AI=OFF' in script
 assert 'PRODUCTION_RUNTIME_ENABLED=FALSE' in script
 print('W22_2_1_SOURCE_VERIFY=PASS')
+print('SOURCE_MODE=DIRECT_UTF8_FROZEN')
 print('SOURCE_SHA256=10/10 PASS')
 print('HUMAN_DERIVED_SURFACE_GUARD=PASS')
 print('AUTHORITY_BOUNDARY=PASS')
