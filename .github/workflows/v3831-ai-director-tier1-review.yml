@@ -26,21 +26,12 @@ jobs:
         with:
           python-version: '3.14'
 
-      - name: Restore exact W22.2.1 projection
-        run: |
-          set -euo pipefail
-          GATE=.ci/v3831_ai_director_review
-          rm -rf "$GATE/source"
-          mkdir -p "$GATE/source"
-          cat "$GATE"/payload/source.part*.b64 | base64 -d > "$GATE/source.tar.gz"
-          echo "13e0241131bc8c5db039b2c9ee06741ac2801384d991719dee638539fd651504  $GATE/source.tar.gz" | sha256sum -c -
-          tar -xzf "$GATE/source.tar.gz" -C "$GATE/source"
-
-      - name: Verify frozen W22.2.1 projection
+      - name: Verify direct frozen W22.2.1 projection
         run: |
           set -euo pipefail
           python .ci/v3831_ai_director_review/verify_projection.py | tee /tmp/source_verify.log
           grep -q 'W22_2_1_SOURCE_VERIFY=PASS' /tmp/source_verify.log
+          grep -q 'SOURCE_MODE=DIRECT_UTF8_FROZEN' /tmp/source_verify.log
           grep -q 'SOURCE_SHA256=10/10 PASS' /tmp/source_verify.log
           grep -q 'HUMAN_DERIVED_SURFACE_GUARD=PASS' /tmp/source_verify.log
 
@@ -48,7 +39,7 @@ jobs:
         run: python -m pip install 'pytest>=8,<10'
 
       - name: Run W22.2.1 isolated review contracts
-        working-directory: .ci/v3831_ai_director_review/source
+        working-directory: .ci/v3831_ai_director_review/frozen
         run: |
           set -euo pipefail
           PYTHONPATH=. pytest -q tests/test_w22_2_ai_director_batch_provider_review.py \
@@ -58,11 +49,12 @@ jobs:
           if grep -Eqi '[1-9][0-9]* skipped|[1-9][0-9]* failed|[1-9][0-9]* error' ../targeted_pytest.log; then exit 1; fi
 
       - name: Generate hardened live non-player Tier 1 review candidates
-        working-directory: .ci/v3831_ai_director_review/source
+        working-directory: .ci/v3831_ai_director_review/frozen
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: |
           set -euo pipefail
+          rm -rf ../review_artifact
           PYTHONPATH=. python scripts/ai_director_tier1_review.py \
             --mode live \
             --model openai/gpt-oss-120b \
@@ -77,20 +69,21 @@ jobs:
           grep -q 'PLAYER_FACING_AI=OFF' ../review_artifact/YORU_AI_DIRECTOR_TIER1_REVIEW_RESULT.txt
           grep -q 'PRODUCTION_RUNTIME_ENABLED=FALSE' ../review_artifact/YORU_AI_DIRECTOR_TIER1_REVIEW_RESULT.txt
 
-      - name: Compile exact review projection
+      - name: Compile exact frozen review projection
         run: |
-          python -m compileall -q .ci/v3831_ai_director_review/source .ci/v3831_ai_director_review/verify_projection.py
+          python -m compileall -q .ci/v3831_ai_director_review/frozen .ci/v3831_ai_director_review/verify_projection.py
           echo 'COMPILEALL=PASS' > .ci/v3831_ai_director_review/compileall.log
 
       - name: Write automated review gate result
         run: |
           cat > .ci/v3831_ai_director_review/W22_2_1_AUTOMATED_RESULT.txt <<'EOF'
           SOURCE_PROJECTION=PASS
+          SOURCE_MODE=DIRECT_UTF8_FROZEN
           SOURCE_SHA256=10/10 PASS
           HUMAN_DERIVED_SURFACE_GUARD=PASS
           W22_2_1_ISOLATED_CONTRACTS=22/22 PASS
-          W22_2_1_FULL_TREE_CONTRACTS=23/23 PASS (local full-tree checkpoint)
-          FULL_BUILD_W22_1_TO_W22_2_1=46/46 PASS (local full-tree checkpoint)
+          W22_2_1_FULL_TREE_CONTRACTS=23/23 PASS (fresh local full-tree checkpoint)
+          FULL_BUILD_W22_1_TO_W22_2_1=46/46 PASS (fresh local full-tree checkpoint)
           LIVE_PROVIDER_CANDIDATES=15/15 VALIDATED
           EXACT_DUPLICATES=0
           AUTOMATED_GATE=PENDING_HUMAN
