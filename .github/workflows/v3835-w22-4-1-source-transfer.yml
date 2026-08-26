@@ -1,0 +1,36 @@
+name: Yoru v3.83.5 W22.4.1 Exact Source Transfer
+run-name: W22.4.1 exact source transfer
+
+on:
+  push:
+    branches:
+      - ci/v3834-ai-director-tier2-context
+    paths:
+      - .ci/v3834_ai_director_context/SOURCE_TRANSFER_TRIGGER
+
+permissions:
+  contents: read
+
+jobs:
+  source-transfer:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout W22.4.1 proof branch
+        uses: actions/checkout@v6
+        with:
+          ref: ci/v3834-ai-director-tier2-context
+      - name: Verify exact hardened source
+        run: |
+          set -euo pipefail
+          python .ci/v3834_ai_director_context/verify_projection.py | tee .ci/v3834_ai_director_context/source_transfer_verify.log
+          grep -q 'W22_4_1_SOURCE_VERIFY=PASS' .ci/v3834_ai_director_context/source_transfer_verify.log
+          grep -q 'NEW_SOURCE_SHA256=5/5 PASS' .ci/v3834_ai_director_context/source_transfer_verify.log
+      - name: Upload exact W22.4.1 source
+        uses: actions/upload-artifact@v4
+        with:
+          name: yoru-v3835-w22-4-1-exact-source
+          path: |
+            .ci/v3834_ai_director_context/source/
+            .ci/v3834_ai_director_context/MANIFEST.json
+            .ci/v3834_ai_director_context/source_transfer_verify.log
+          retention-days: 30
