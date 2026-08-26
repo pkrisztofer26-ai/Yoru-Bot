@@ -1,0 +1,21 @@
+{
+  "version": "3.83.7",
+  "work_item": "W22.5",
+  "contract": "tier3-game-master-surface-v1",
+  "source_sha256": {
+    "app/ai_director_game_master.py": "c595ec783e112b1f7a78895f9b86b726fef468ae25c2a3495007cd403240f6fa",
+    "app/services/ai_director_game_master.py": "ff8232e5bc527328283b4d9a1e7bc402fd5be3e7e80fd0ae62e94cb8257a4b43",
+    "app/providers/ai_director_game_master_groq.py": "6bba292d3bd0bc30e4b1a9e01b70ceed0d352c94974fe9c2ca1fedbc69272c91",
+    "scripts/ai_director_tier3_game_master_review.py": "21b5586f48bb03bdabed2678aae560744f0a6229c737c5f49e0d7bc68cb0aaf0",
+    "tests/test_w22_5_game_master_ci.py": "65fd8ec55a9207b7eddf850a2b92ea570ae49d8b7275bcd4e79e19623f436e36"
+  },
+  "inherited_groq_transport_sha256": "adf76780ab271ad9beec3d6b1a5603c3ffd52d8d4988108b471e0371ca86de24",
+  "expected_ci_core": "29 passed",
+  "expected_review_packets": 12,
+  "fresh_local_w22_5": "50/50 PASS",
+  "fresh_local_phase12_focus": "186/186 PASS",
+  "player_facing_ai": false,
+  "gameplay_authority": "NONE",
+  "runtime_wiring": "NONE",
+  "live_deploy": false
+}
