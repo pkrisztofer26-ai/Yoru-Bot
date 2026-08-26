@@ -25,6 +25,7 @@ for rel, expected in manifest["source_sha256"].items():
 base_provider = BASE / "app/providers/ai_director_groq.py"
 assert base_provider.is_file()
 assert hashlib.sha256(base_provider.read_bytes()).hexdigest() == manifest["inherited_w22_2_provider_sha256"]
+base_provider_text = base_provider.read_text(encoding="utf-8")
 
 core = (SRC / "app/ai_director_context.py").read_text(encoding="utf-8")
 service = (SRC / "app/services/ai_director_context.py").read_text(encoding="utf-8")
@@ -44,9 +45,9 @@ for required in (
 ):
     assert required in layer, required
 
-assert "additionalProperties" in base_provider
+assert "additionalProperties" in base_provider_text
 assert "json_schema" in provider
-assert "temperature\": 0.15" in provider or "\"temperature\": 0.15" in provider
+assert '"temperature": 0.15' in provider
 assert "max_completion_tokens" in provider
 assert "GROQ_API_KEY" in review
 
