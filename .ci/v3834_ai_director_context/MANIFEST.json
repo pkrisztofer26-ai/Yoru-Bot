@@ -3,11 +3,11 @@
   "work_item": "W22.4.1",
   "contract": "tier2-context-surface-v2",
   "source_sha256": {
-    "app/ai_director_context.py": "50fd9c6bad8861e372e3d6236aa330159a9902c51e190c06b023f84cb1fba3da",
+    "app/ai_director_context.py": "681ba6f8a56b1eebcdd59e5c770bd3d49121725c24ab984daa01b32247ba1a60",
     "app/services/ai_director_context.py": "49f6210ceca7e351c26405495fcca39f299fd3a5825f3f7a4e685702155bec12",
     "app/providers/ai_director_context_groq.py": "09cc8900ae5a670565e2a25d5045d584d1678cf8a74188fc0abae33f620f3b4e",
     "scripts/ai_director_tier2_context_review.py": "584d2d216615b3772a0db55b3c1e2b395ac41abd2d738f7c6d5fe2f0a3eb53e7",
-    "tests/test_w22_4_context_core_ci.py": "01e377ac52db68ee016af8ed9873d659f9ea3440b470f616ce2ff0b5776bba1e"
+    "tests/test_w22_4_context_core_ci.py": "bf9b2be25f878a7ed8b2612001186cb11752d3bcf2e065aa8e207879442c86b6"
   },
   "inherited_w22_2_provider_sha256": "adf76780ab271ad9beec3d6b1a5603c3ffd52d8d4988108b471e0371ca86de24",
   "expected_ci_core": "26 passed",
