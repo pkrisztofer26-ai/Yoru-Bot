@@ -1,0 +1,101 @@
+name: Yoru v3.83.13 W22.6 Tier 3 Test-Guild Pilot
+run-name: W22.6 Tier 3 test-guild pilot proof
+
+on:
+  push:
+    branches:
+      - ci/v38313-ai-director-tier3-test-guild-pilot
+    paths:
+      - .ci/v38313_ai_director_game_master_pilot/TRIGGER
+
+permissions:
+  contents: read
+
+jobs:
+  tier3-test-guild-pilot:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout W22.6 proof branch
+        uses: actions/checkout@v6
+        with:
+          ref: ci/v38313-ai-director-tier3-test-guild-pilot
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+
+      - name: Build isolated W22.6 runtime
+        run: |
+          set -euo pipefail
+          P=.ci/v38313_ai_director_game_master_pilot
+          R="$P/runtime"
+          rm -rf "$R"
+          mkdir -p "$R/app/services" "$R/tests" "$R/proof"
+          touch "$R/app/__init__.py" "$R/app/services/__init__.py"
+          cp "$P/frozen/app/ai_director_game_master.py" "$R/app/ai_director_game_master.py"
+          cp "$P/frozen/app/services/ai_director_game_master.py" "$R/app/services/ai_director_game_master.py"
+          cp "$P/frozen/app/ai_director_game_master_integration.py" "$R/app/ai_director_game_master_integration.py"
+          cp "$P/tests/test_w22_6_pilot_ci.py" "$R/tests/test_w22_6_pilot_ci.py"
+          cp "$P/proof/callsite_contract.json" "$R/proof/callsite_contract.json"
+          cat "$P/proof/w226_part1.patch" "$P/proof/w226_part2.patch" "$P/proof/w226_part3.patch" "$P/proof/w226_part4.patch" > "$R/proof/w226.patch"
+
+      - name: Verify exact W22.6 evidence
+        run: |
+          set -euo pipefail
+          R=.ci/v38313_ai_director_game_master_pilot/runtime
+          echo 'c91b050eade554954633dd5013fde9b5bbb1833001871bf47c841b87226c8be4  '"$R/proof/w226.patch" | sha256sum -c -
+          echo 'fc8dc89636a85a621fdad80c023ba971b734075b225754f17eb8b4640f922051  '"$R/proof/callsite_contract.json" | sha256sum -c -
+          echo 'ca65a33f98b5f4c5c63e12e036c0a193b9581acaf40f9bba6fa70a1d7111e8fe  '"$R/app/ai_director_game_master.py" | sha256sum -c -
+          echo 'fe0d6de6005b0a46e6141f30c9b57e9f44b8356ed23723f51b8a0c8f8296ef71  '"$R/app/services/ai_director_game_master.py" | sha256sum -c -
+          echo 'a1c85a157c7e7f6d0581a56f3795b6b94114ed15671e4f2c7ad28a55b0aa2f5a  '"$R/app/ai_director_game_master_integration.py" | sha256sum -c -
+          echo '08a464a4a86190dd6f8458cbd3756453adce8100a6e6e2b57594eabd61a311c3  '"$R/tests/test_w22_6_pilot_ci.py" | sha256sum -c -
+          echo 'W22_6_EXACT_EVIDENCE=6/6 PASS' | tee .ci/v38313_ai_director_game_master_pilot/source_verify.log
+
+      - name: Install proof dependency
+        run: python -m pip install 'pytest>=8,<10'
+
+      - name: Run W22.6 isolated pilot contracts
+        working-directory: .ci/v38313_ai_director_game_master_pilot/runtime
+        run: |
+          set -euo pipefail
+          PYTHONPATH=. pytest -q tests/test_w22_6_pilot_ci.py | tee ../pilot_pytest.log
+          grep -Eq '13 passed' ../pilot_pytest.log
+          if grep -Eqi '[1-9][0-9]* skipped|[1-9][0-9]* failed|[1-9][0-9]* error' ../pilot_pytest.log; then exit 1; fi
+
+      - name: Compile isolated runtime and write result
+        run: |
+          set -euo pipefail
+          python -m compileall -q .ci/v38313_ai_director_game_master_pilot/runtime
+          cat > .ci/v38313_ai_director_game_master_pilot/W22_6_AUTOMATED_RESULT.txt <<'EOF'
+          VERSION=3.83.13
+          WORK_ITEM=W22.6
+          W22_6_EXACT_EVIDENCE=6/6 PASS
+          W22_6_ISOLATED_CI=13/13 PASS
+          FULL_RELEASE_W22_LOCAL=254/254 PASS
+          TIER3_FAMILIES=6/6 WIRED
+          PROVIDER_CONTRACT=tier3-game-master-surface-v6
+          PROVIDER_HUMAN_GATE=INHERITED_V38312_12/12_GO
+          DEFAULT_OFF=PASS
+          TEST_GUILD_ONLY=PASS
+          DETERMINISTIC_FALLBACK=PASS
+          GENERIC_AI_RUNTIME=OFF
+          STORYTELLER_PACING=LOCKED
+          GAMEPLAY_AUTHORITY=NONE
+          LIVE_DEPLOY=UNCHANGED
+          NATIVE_MARIADB=NOT_REQUIRED_PRESENTATION_ONLY
+          EOF
+
+      - name: Upload W22.6 proof artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: yoru-v38313-w22-6-tier3-test-guild-pilot-proof
+          path: |
+            .ci/v38313_ai_director_game_master_pilot/runtime/
+            .ci/v38313_ai_director_game_master_pilot/source_verify.log
+            .ci/v38313_ai_director_game_master_pilot/pilot_pytest.log
+            .ci/v38313_ai_director_game_master_pilot/W22_6_AUTOMATED_RESULT.txt
+          if-no-files-found: warn
+          retention-days: 30
