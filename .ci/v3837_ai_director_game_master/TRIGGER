@@ -1,0 +1,11 @@
+W22.5 Tier 3 Game Master foundation review
+version=3.83.7
+contract=tier3-game-master-surface-v1
+expected_source_sha=5/5
+expected_ci_core=29/29
+fixture_review=12/12
+live_review=12/12
+player_facing_ai=OFF
+runtime_wiring=NONE
+gameplay_authority=NONE
+live_deploy=UNCHANGED
