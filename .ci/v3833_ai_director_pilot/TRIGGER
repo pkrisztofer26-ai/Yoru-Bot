@@ -1,0 +1,7 @@
+W22.3 Tier 1 test-guild pilot proof
+version=3.83.3
+core_source_sha256=2/2
+expected_ci_core=15/15
+fresh_local_w22_3=33/33
+fresh_local_w22_1_to_w22_3=79/79
+live_deploy=false
