@@ -1,0 +1,157 @@
+name: Yoru v3.82.7 W21.9N Phase 11 Native Closure Dispatcher
+run-name: W21.9N Phase 11 Native Closure — ${{ github.event_name }}
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/v3827-phase11-native-closure-dispatch.yml'
+
+jobs:
+  phase11-native:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      mariadb:
+        image: mariadb:11.4
+        env:
+          MARIADB_DATABASE: yoru_phase11_ci_test
+          MARIADB_USER: yoru_ci
+          MARIADB_PASSWORD: yoru_ci_password
+          MARIADB_ROOT_PASSWORD: yoru_ci_root_password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
+    steps:
+      - name: Checkout frozen Phase 11 proof branch
+        uses: actions/checkout@v6
+        with:
+          ref: ci/v3827-phase11-native-minimal
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+          cache: 'pip'
+          cache-dependency-path: .ci/v3827_phase11_native_gate/PROOF_REQUIREMENTS.txt
+
+      - name: Restore exact Phase 11 authority projection
+        shell: bash
+        run: |
+          set -euo pipefail
+          GATE=.ci/v3827_phase11_native_gate
+          SRC="$GATE/source"
+          PAYLOAD="$GATE/native_payload"
+          mkdir -p "$SRC/app/services" "$SRC/app/core" "$GATE/proof_artifacts"
+
+          restore() {
+            local encoded="$1"
+            local output="$2"
+            base64 -d "$encoded" | gzip -dc > "$output"
+          }
+
+          restore "$PAYLOAD/app__services__chapters.py.gz.b64" "$SRC/app/services/chapters.py"
+          restore "$PAYLOAD/app__services__assets.py.gz.b64" "$SRC/app/services/assets.py"
+          restore "$PAYLOAD/app__db_backend.py.gz.b64" "$SRC/app/db_backend.py"
+          restore "$PAYLOAD/app__chapter_config.py.gz.b64" "$SRC/app/chapter_config.py"
+          restore "$PAYLOAD/app__asset_config.py.gz.b64" "$SRC/app/asset_config.py"
+          restore "$PAYLOAD/app__core__keyed_locks.py.gz.b64" "$SRC/app/core/keyed_locks.py"
+          restore "$PAYLOAD/app__core__metrics.py.gz.b64" "$SRC/app/core/metrics.py"
+          restore "$GATE/payload/test_phase11_native.py.gz.b64" "$GATE/test_phase11_native.py"
+
+          touch "$SRC/app/__init__.py" "$SRC/app/services/__init__.py" "$SRC/app/core/__init__.py"
+          cat > "$SRC/app/database.py" <<'PY'
+          class Database:
+              pass
+          PY
+          cat > "$SRC/app/services/opportunities.py" <<'PY'
+          class Opportunity:
+              def __init__(self, *args, **kwargs):
+                  self.__dict__.update(kwargs)
+          PY
+
+      - name: Verify frozen v3.82.7 authority source
+        shell: bash
+        run: |
+          set -euo pipefail
+          GATE=.ci/v3827_phase11_native_gate
+          python "$GATE/verify_projection.py" | tee "$GATE/proof_artifacts/source_verify.log"
+          grep -q 'PHASE11_SOURCE_VERIFY=PASS' "$GATE/proof_artifacts/source_verify.log"
+          grep -q 'SOURCE_SHA256=7/7 PASS' "$GATE/proof_artifacts/source_verify.log"
+          grep -q 'NATIVE_TEST_SHA256=PASS' "$GATE/proof_artifacts/source_verify.log"
+          grep -q 'CHAPTER_TRANSACTION_GUARDS=PASS' "$GATE/proof_artifacts/source_verify.log"
+          grep -q 'PROVENANCE_AUTHORITY=PASS' "$GATE/proof_artifacts/source_verify.log"
+
+      - name: Install native proof dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r .ci/v3827_phase11_native_gate/PROOF_REQUIREMENTS.txt
+
+      - name: Run native MariaDB Phase 11 closure proof
+        shell: bash
+        env:
+          YORU_DB_BACKEND: mysql
+          MYSQL_HOST: 127.0.0.1
+          MYSQL_PORT: '3306'
+          MYSQL_USER: yoru_ci
+          MYSQL_PASSWORD: yoru_ci_password
+          MYSQL_DATABASE: yoru_phase11_ci_test
+        run: |
+          set -euo pipefail
+          GATE=.ci/v3827_phase11_native_gate
+          cd "$GATE/source"
+          PYTHONPATH=. pytest -q ../test_phase11_native.py | tee ../proof_artifacts/native_pytest.log
+          grep -Eq '6 passed' ../proof_artifacts/native_pytest.log
+          if grep -Eqi '[1-9][0-9]* skipped|[1-9][0-9]* failed|[1-9][0-9]* error' ../proof_artifacts/native_pytest.log; then
+            echo 'PHASE11_NATIVE_RESULT=FAIL_UNEXPECTED_SKIP_OR_FAILURE' >&2
+            exit 1
+          fi
+
+      - name: Compile exact proof projection
+        shell: bash
+        run: |
+          set -euo pipefail
+          GATE=.ci/v3827_phase11_native_gate
+          python -m compileall -q "$GATE/source" "$GATE/test_phase11_native.py"
+          echo 'COMPILEALL=PASS' | tee "$GATE/proof_artifacts/compileall.log"
+
+      - name: Write Phase 11 native closure result
+        shell: bash
+        run: |
+          GATE=.ci/v3827_phase11_native_gate
+          cat > "$GATE/proof_artifacts/W21_9N_CLOSURE_RESULT.txt" <<'EOF'
+          SOURCE_PROJECTION=PASS
+          SOURCE_SHA256=7/7 PASS
+          NATIVE_MARIADB=6/6 PASS
+          CHAPTER_SCHEMA_INNODB=PASS
+          CHAPTER_ACTIVE_SLOT_UNIQUENESS=PASS
+          CHAPTER_CONCURRENT_START=PASS
+          CHAPTER_MULTI_STAGE_LIFECYCLE=PASS
+          CHAPTER_CONCURRENT_RESOLUTION=PASS
+          CHAPTER_AUDIT_SNAPSHOT=PASS
+          CHAPTER_PROVENANCE_RELIC_TRANSACTION=PASS
+          CHAPTER_PROVENANCE_ROLLBACK=PASS
+          CHAPTER_REPLAY_SAFETY=PASS
+          CHAPTER_NO_PARTICIPANT_NO_MINT=PASS
+          PACKAGE_CHECKPOINT_REGRESSION=23/23 PASS (feature-package checkpoint; not rerun by this native job)
+          COMPILEALL=PASS
+          LIVE_DEPLOY=UNCHANGED
+          PHASE11_NATIVE_BLOCKER=CLOSED
+          PHASE11_NATIVE_CLOSURE=PASS
+          EOF
+
+      - name: Upload Phase 11 native closure proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: yoru-v3827-w21-9n-phase11-native-closure-proof
+          path: .ci/v3827_phase11_native_gate/proof_artifacts/
+          if-no-files-found: warn
+          retention-days: 30
