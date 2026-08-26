@@ -1,0 +1,42 @@
+{
+  "projection": "v3.83.3 W22.3 player-facing integration authority projection",
+  "local_full_tree_checkpoint": "79/79 PASS",
+  "call_sites": [
+    {
+      "file": "app/cogs/economy.py",
+      "families": ["work", "crime"],
+      "ordering": "canonical EconomyService settlement before pilot field",
+      "pilot_inputs": ["guild_id", "user_id", "family"]
+    },
+    {
+      "file": "app/cogs/prefix.py",
+      "families": ["work", "crime"],
+      "ordering": "canonical EconomyService settlement before pilot field",
+      "pilot_inputs": ["guild_id", "user_id", "family"]
+    },
+    {
+      "file": "app/cogs/character_views/world.py",
+      "families": ["beg", "search"],
+      "ordering": "canonical economy beg/search settlement before pilot field",
+      "pilot_inputs": ["guild_id", "user_id", "family"]
+    },
+    {
+      "file": "app/cogs/jobs.py",
+      "families": ["career"],
+      "ordering": "canonical career catalog/employment reads before pilot field",
+      "pilot_inputs": ["guild_id", "user_id", "family"]
+    }
+  ],
+  "forbidden_pilot_inputs": [
+    "reward", "amount", "success", "scenario", "outcome", "place", "ready_at",
+    "jail", "dropped", "wallet", "inventory", "cooldown", "chance", "rng"
+  ],
+  "runtime_boundary": {
+    "generic_ai_provider": null,
+    "generic_ai_runtime_enabled": false,
+    "pilot_source": "human_reviewed_cache",
+    "pilot_default_enabled": false,
+    "pilot_scope": "explicit TEST_GUILD_ID only",
+    "live_provider_in_gameplay": false
+  }
+}
