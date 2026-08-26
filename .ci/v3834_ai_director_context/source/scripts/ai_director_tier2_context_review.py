@@ -117,8 +117,8 @@ async def main() -> int:
     validated = len(rows) - fallbacks
     status = "PENDING_HUMAN" if validated == len(rows) and dupes == 0 else "AUTOMATED_HOLD"
     payload = {
-        "version": "3.83.5",
-        "work_item": "W22.4.1",
+        "version": "3.83.6",
+        "work_item": "W22.4.2",
         "contract": REVIEW_PACKETS[0].contract_version,
         "mode": args.mode,
         "status": status,
@@ -136,7 +136,7 @@ async def main() -> int:
         json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     result = "\n".join((
-        "Yoru v3.83.5 W22.4.1 Tier 2 Context Review",
+        "Yoru v3.83.6 W22.4.2 Tier 2 Context Review",
         f"MODE={args.mode}",
         f"STATUS={status}",
         f"TOTAL={len(rows)}",
