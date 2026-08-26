@@ -1,0 +1,21 @@
+diff -ruN v5/app/providers/ai_director_game_master_groq.py v6/app/providers/ai_director_game_master_groq.py
+--- v5/app/providers/ai_director_game_master_groq.py	2026-08-26 20:53:11.795260387 +0000
++++ v6/app/providers/ai_director_game_master_groq.py	2026-08-26 20:53:11.797773681 +0000
+@@ -8,7 +8,7 @@
+ 
+ 
+ class GroqAIDirectorGameMasterProvider(GroqAIDirectorProvider):
+-    """Non-player review provider for the W22.5.1.3 Tier 3 hardening gate."""
++    """Non-player review provider for the W22.5.1.4 Tier 3 hardening gate."""
+ 
+     @staticmethod
+     def system_prompt() -> str:
+@@ -20,7 +20,7 @@
+             "world truth-ról, relationship state-ről, chapter endingről vagy hozzáférésről. Ne írj számot, összeget, "
+             "százalékot, parancsot vagy belső rendszerzsargont. Ne erősítsd fel a HOST_FACTS jelentését olyan szavakkal, mint örökre, legendává vagy emlékezetes, ha ez nincs benne a tényekben. "
+             "Ne írj olyan magyartalan fordulatot, mint 'siker lezárást kapott' vagy 'részsiker lezárást kapott'; inkább természetesen írd körül a már megadott lezárást. "
+-            "Ne találj ki időbeli haladást ('felé közeledik'), ha a host már lezárt állapotot adott. NPC- és consequence-recall szövegnél ne állíts oksági kapcsolatot a recalled/remembered event és a relationship/current relevance között, ha a HOST_FACTS ezt nem mondja ki; kerüld a hiszen, mivel, ezért és emiatt kötőszavakat, és helyezd a tényeket egymás mellé semlegesen. Ne találj ki új környék-, sajtó-, pletyka-, tanú- vagy hatósági reakciót. World Story esetén kerüld a merev „történetszál X pontja” és „X pontja” fordulatokat; írd címkeszerűen, hogy mi az aktuális történeti pont. Legendary Eventnél ne cseréld a történet/legacy tényt emlékre vagy mesére, ha a HOST_FACTS nem ezt mondja. NPC kapcsolatnál ne írj olyan magyartalan fordulatot, mint „óvatos hangulatban áll veled”; a relationship állapotot egyszerűen, természetesen fogalmazd meg. Chapter esetén kerüld az „X szakaszban” és „állapota húzódik” merev szerkezeteket; használj címkeszerű megfogalmazást. World Story helyszínt ragozás nélkül, címkeszerűen írj (például „Helyszín: Budapest”), és ne adj hozzá olyan módhatározót vagy intenzitást — például „csendben” — amely nincs a HOST_FACTS-ban. Big Job esetén a target_name-et névként kezeld, ne ragozd automatikusan helyszínné (például ne írj „Kikötői raktárban”, ha csak a „Kikötői raktár” célpontnév adott). Kerüld a tautologikus „lezárása ... zárult” szerkezetet. Minden új mondat nagybetűvel kezdődjön. "
++            "Ne találj ki időbeli haladást ('felé közeledik'), ha a host már lezárt állapotot adott. NPC- és consequence-recall szövegnél ne állíts oksági kapcsolatot a recalled/remembered event és a relationship/current relevance között, ha a HOST_FACTS ezt nem mondja ki; kerüld a hiszen, mivel, ezért és emiatt kötőszavakat, és helyezd a tényeket egymás mellé semlegesen. Ne találj ki új környék-, sajtó-, pletyka-, tanú- vagy hatósági reakciót. World Story esetén kerüld a merev „történetszál X pontja” és „X pontja” fordulatokat; írd címkeszerűen, hogy mi az aktuális történeti pont. Legendary Eventnél ne cseréld a történet/legacy tényt emlékre vagy mesére, ha a HOST_FACTS nem ezt mondja. NPC kapcsolatnál ne írj olyan magyartalan fordulatot, mint „óvatos hangulatban áll veled” vagy „óvatos hangulatban van veled”; a relationship állapotot egyszerűen, természetesen fogalmazd meg. Ne indíts név+szerep mondattöredékkel (például „Mira, informátor.”); írj teljes magyar mondatot. Chapter esetén kerüld az „X szakaszban” és „állapota húzódik” merev szerkezeteket; használj címkeszerű megfogalmazást. World Story helyszínt ragozás nélkül, címkeszerűen írj (például „Helyszín: Budapest”), és ne adj hozzá olyan módhatározót vagy intenzitást — például „csendben” — amely nincs a HOST_FACTS-ban. Big Job esetén a target_name-et névként kezeld, ne ragozd automatikusan helyszínné (például ne írj „Kikötői raktárban”, ha csak a „Kikötői raktár” célpontnév adott). Kerüld a tautologikus „lezárása ... zárult” szerkezetet. Minden új mondat nagybetűvel kezdődjön. "
+             "Kizárólag title és description mezőt adj vissza."
+         )
+ 
