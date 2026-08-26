@@ -16,15 +16,20 @@ assert manifest["player_facing_scope"] == "TEST_GUILD_ONLY_DEFAULT_OFF"
 assert manifest["gameplay_authority"] == "NONE"
 assert manifest["live_deploy"] is False
 
+mismatches = []
 for rel, expected in manifest["source_sha256"].items():
     path = SRC / rel
     assert path.is_file(), rel
     actual = hashlib.sha256(path.read_bytes()).hexdigest()
-    assert actual == expected, (rel, actual, expected)
+    print(f"SOURCE_SHA256_ACTUAL {rel} {actual}")
+    if actual != expected:
+        mismatches.append((rel, actual, expected))
 
 base_provider = BASE / "app/providers/ai_director_groq.py"
 assert base_provider.is_file()
-assert hashlib.sha256(base_provider.read_bytes()).hexdigest() == manifest["inherited_w22_2_provider_sha256"]
+base_actual = hashlib.sha256(base_provider.read_bytes()).hexdigest()
+print(f"INHERITED_W22_2_PROVIDER_SHA256_ACTUAL {base_actual}")
+assert base_actual == manifest["inherited_w22_2_provider_sha256"]
 base_provider_text = base_provider.read_text(encoding="utf-8")
 
 core = (SRC / "app/ai_director_context.py").read_text(encoding="utf-8")
@@ -38,13 +43,11 @@ for forbidden_import in (
     "services.cases", "services.vehicles", "services.police", "services.contracts", "services.assets",
 ):
     assert forbidden_import not in layer, forbidden_import
-
 for required in (
     "career", "business", "travel", "housing", "npc", "tips", "case",
     "deterministic_context_fallback", "asyncio.wait_for", "TEST_GUILD_ONLY_DEFAULT_OFF",
 ):
     assert required in layer, required
-
 assert "additionalProperties" in base_provider_text
 assert "json_schema" in provider
 assert '"temperature": 0.15' in provider
@@ -55,6 +58,8 @@ assert "canonical" in provider and "authority" in provider and "mechanikai" in p
 assert "http_retries=1" in review and "await asyncio.sleep(2.0)" in review
 assert '"version": "3.83.5"' in review and '"work_item": "W22.4.1"' in review
 
+if mismatches:
+    raise AssertionError(f"SOURCE_SHA_MISMATCHES={mismatches}")
 print("W22_4_1_SOURCE_VERIFY=PASS")
 print("NEW_SOURCE_SHA256=5/5 PASS")
 print("INHERITED_W22_2_PROVIDER_SHA256=PASS")
