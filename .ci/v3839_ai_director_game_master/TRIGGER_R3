@@ -1,0 +1,14 @@
+W22.5.1.1 Tier 3 surface v3 review R3
+version=3.83.9
+contract=tier3-game-master-surface-v3
+projection=plain-text-patch
+post_patch_sha=8/8
+ci_core=69/69
+local_dedicated=70/70
+phase12_w22=206/206
+fixture_effective=12/12
+live_effective=12/12
+player_facing_ai=OFF
+runtime_wiring=NONE
+gameplay_authority=NONE
+live_deploy=UNCHANGED
