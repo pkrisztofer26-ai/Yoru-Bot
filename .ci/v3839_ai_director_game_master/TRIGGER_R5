@@ -1,11 +1,6 @@
-W22.5.1.1 Tier 3 canonical direct-frozen review R5
+W22.5.1.1 Tier 3 canonical direct-frozen review R5 retry
 version=3.83.9
-contract=tier3-game-master-surface-v3
-source_sha=record_actual_8_of_8
+core_reconstructed_sha256=deab2d966e2cfb42a0675df0e257c8bbd626d614deed696182bf545356e2bc08
 ci_targeted=34_of_34
 fixture_effective=12_of_12
 live_effective=12_of_12
-player_facing_ai=OFF
-runtime_wiring=NONE
-gameplay_authority=NONE
-live_deploy=UNCHANGED
