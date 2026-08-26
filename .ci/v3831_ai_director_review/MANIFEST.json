@@ -1,6 +1,8 @@
 {
   "version": "3.83.2",
   "contract": "tier1-cached-surface-v3",
+  "source_mode": "direct_utf8_frozen",
+  "frozen_root": ".ci/v3831_ai_director_review/frozen",
   "files": {
     "app/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "app/ai_director.py": "2947c5b004b9d331507b82d54c9970e90439ee353858c3c55a8942db34683f8e",
@@ -18,6 +20,5 @@
   "expected_candidates": 15,
   "player_facing_ai": false,
   "production_runtime_enabled": false,
-  "live_deploy": false,
-  "source_archive_sha256": "13e0241131bc8c5db039b2c9ee06741ac2801384d991719dee638539fd651504"
+  "live_deploy": false
 }
