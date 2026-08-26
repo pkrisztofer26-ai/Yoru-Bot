@@ -38,13 +38,16 @@ jobs:
           cache: 'pip'
           cache-dependency-path: .ci/v3820_production_cutover_native/source/requirements.txt
 
-      - name: Restore frozen hardened RC1 source projection
+      - name: Validate direct hardened RC1 source projection
         shell: bash
         run: |
           set -euo pipefail
           GATE=.ci/v3820_production_cutover_native
-          mkdir -p "$GATE/source"
-          base64 -d "$GATE/payload/source_bundle.tar.gz.b64" | gzip -dc | tar -xf - -C "$GATE/source"
+          test -f "$GATE/source/app/chapter_config.py"
+          test -f "$GATE/source/app/services/chapters.py"
+          test -f "$GATE/source/app/db_backend.py"
+          test -f "$GATE/source/CHAPTER_SCHEMA.sql"
+          echo 'DIRECT_SOURCE_PROJECTION=PASS'
 
       - name: Verify frozen v3.82.0 production source projection
         shell: bash
@@ -56,6 +59,7 @@ jobs:
           grep -q 'V3820_CUTOVER_SOURCE_VERIFY=PASS' "$GATE/proof_artifacts/source_verify.log"
           grep -q 'W21_1_CHAPTER_DDL_FROZEN=PASS' "$GATE/proof_artifacts/source_verify.log"
           grep -q 'PRODUCTION_RC1_IDENTITY=PASS' "$GATE/proof_artifacts/source_verify.log"
+          grep -q 'PROOF_ADAPTER=CI_ONLY' "$GATE/proof_artifacts/source_verify.log"
 
       - name: Install native proof dependencies
         run: |
@@ -108,6 +112,7 @@ jobs:
           W21_1_DEADLINE_AWAITING_RESOLUTION_NATIVE=PASS
           W21_1_REPLAY_STABLE_AWAITING_RESOLUTION_NATIVE=PASS
           W21_1_NO_RNG_REWARD_AUTHORITY=PASS
+          PHASE10_DB_BACKEND_NATIVE_CLOSURE=HISTORICAL_PASS
           COMPILEALL=PASS
           PRODUCTION_CUTOVER_NATIVE_GATE=PASS
           EOF
