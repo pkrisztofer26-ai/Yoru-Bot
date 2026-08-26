@@ -1,0 +1,164 @@
++GameMasterPacketSource = AIDirectorGameMasterPacket | Callable[[], AIDirectorGameMasterPacket]
++
++
++async def add_game_master_field(bot, embed, guild_id: int | None, packet_source: GameMasterPacketSource) -> bool:
++    """Append one bounded Tier-3 field; packet/provider failures never break the host panel."""
++    pilot = getattr(bot, "ai_director_game_master", None)
++    if pilot is None:
++        return False
++    try:
++        packet = packet_source() if callable(packet_source) else packet_source
++        value = await pilot.field_value(guild_id, packet)
++    except Exception:
++        logger.exception("Tier3 Game Master presentation failed closed")
++        return False
++    if not value:
++        return False
++    embed.add_field(name=GAME_MASTER_FIELD_NAME, value=value, inline=False)
++    return True
+--- a/app/cogs/heist.py
++++ b/app/cogs/heist.py
+@@ -16,6 +16,8 @@
+ from app.cogs.access_utils import handle_wrong_economy_channel
+ from app.ui import BRAND, DANGER, GOLD, SUCCESS, base_embed, error_embed, money, money_inline
+ from app.core.keyed_locks import KeyedLockPool
++from app.ai_director_game_master import big_job_packet, legendary_event_packet
++from app.ai_director_game_master_integration import add_game_master_field
+ 
+ 
+ def _ts(value: datetime | str | None, style: str = "R") -> str:
+@@ -1093,6 +1095,35 @@
+             )
+         elif not success and not payouts:
+             embed.add_field(name="📌 Eredmény", value="A csapat nem tudott értéket kimenteni ebből az ügyből.", inline=False)
++
++        # W22.6: presentation only, strictly after authoritative settlement.
++        if target is not None:
++            consequence = dict(result.get("consequence") or {})
++            approach_key = str(consequence.get("approach_key") or cfg.DEFAULT_HEIST_APPROACH_KEY)
++            approach = cfg.APPROACH_BY_KEY.get(approach_key, cfg.APPROACH_BY_KEY[cfg.DEFAULT_HEIST_APPROACH_KEY])
++            route_key = str(consequence.get("route_key") or cfg.RUNTIME_BASE_ROUTE_KEY)
++            route = cfg.RUNTIME_BRANCH_BY_KEY.get(route_key)
++            route_label = route.name if route is not None else "Eredeti útvonal"
++            resolution_label = self.service.resolution_label(resolution_key)
++            route_note = "A csapat menet közben B tervre váltott." if bool(consequence.get("switch_used")) else "A csapat az eredeti útvonalon maradt."
++            if cfg.is_legendary_target(target.key):
++                packet_factory = lambda: legendary_event_packet(
++                    event_name=target.name,
++                    access_context="Legendary meghívásból megnyílt ügy",
++                    phase_label="Lezárt művelet",
++                    host_resolution=resolution_label,
++                    legacy_note="A Legendary művelet lezárt ügyként került az élettörténetbe.",
++                )
++            else:
++                packet_factory = lambda: big_job_packet(
++                    target_name=target.name,
++                    phase_label="Lezárt ügy",
++                    approach_label=approach.name,
++                    route_label=route_label,
++                    host_resolution=resolution_label,
++                    consequence_note=route_note,
++                )
++            await add_game_master_field(self.bot, embed, guild.id, packet_factory)
+         return embed
+ 
+     async def show_settings(self, interaction: discord.Interaction, owner_id: int) -> None:
+--- a/app/cogs/character.py
++++ b/app/cogs/character.py
+@@ -11,10 +11,13 @@
+ 
+ from app.core.keyed_locks import KeyedLockPool
+ from app import character_config as cfg
++from app import world_config as world_cfg
+ from app.db_backend import is_transient_mysql_connection_error
+ from app import housing_config as housing_cfg
+ from app.ai_director_context import housing_context_packet, travel_context_packet, npc_context_packet, tips_context_packet
+ from app.ai_director_context_integration import add_context_field
++from app.ai_director_game_master import world_story_packet, chapter_packet, npc_story_packet
++from app.ai_director_game_master_integration import add_game_master_field
+ from app import jobs_config as jobs_cfg
+ from app import training_config as training_cfg
+ from app import vehicle_config as vehicle_cfg
+@@ -423,14 +426,43 @@
+     async def world_payload(self, guild_id: int, user: discord.abc.User) -> tuple[discord.Embed, WorldView]:
+         character = await self.characters.require(guild_id, user.id)
+         snapshot = await self.world.ensure_current(guild_id)
+-        return world_embed(snapshot, character, user), WorldView(self, user.id)
++        embed = world_embed(snapshot, character, user)
++        story = snapshot.story
++        beat = snapshot.story_beat
++        if story is not None and beat is not None:
++            beat_situation = world_cfg.NATIONAL_BY_KEY.get(beat.situation_key)
++            beat_title = beat_situation.title if beat_situation is not None else "Aktuális fejlemény"
++            await add_game_master_field(
++                self.bot, embed, guild_id,
++                lambda: world_story_packet(
++                    national_title=snapshot.national.title,
++                    story_title=story.title,
++                    beat_title=beat_title,
++                    city_label=cfg.city_name(character.current_city_key),
++                    world_note=beat.update,
++                ),
++            )
++        return embed, WorldView(self, user.id)
+ 
+     async def chapter_payload(self, guild_id: int, user: discord.abc.User) -> tuple[discord.Embed, ChapterView]:
+         await self.characters.require(guild_id, user.id)
+         context = await self.chapters.context(guild_id, ensure=True)
+         if context is None:
+             raise ValueError("Nincs aktív Yoru Chapter.")
+-        return chapter_embed(context, user), ChapterView(self, user.id)
++        embed = chapter_embed(context, user)
++        run = context.run
++        community_note = context.community_project_chapter_note or context.community_project_title or "Nincs külön közösségi fejlemény."
++        await add_game_master_field(
++            self.bot, embed, guild_id,
++            lambda: chapter_packet(
++                chapter_title=run.definition.title,
++                stage_title=run.stage.title,
++                world_story_title=context.world_story_title or "Nincs aktív World Story",
++                community_note=community_note,
++                host_ending=context.ending_title if run.resolved else None,
++            ),
++        )
++        return embed, ChapterView(self, user.id)
+ 
+     async def _settle_housing(self, guild_id: int, user_id: int) -> None:
+         await self.housing.process_due_user(guild_id, user_id)
+@@ -685,6 +717,16 @@
+                 relationships = await followups.relationship_summaries(guild_id, user.id)
+                 if relationships:
+                     rel = relationships[0]
++                    await add_game_master_field(
++                        self.bot, embed, guild_id,
++                        lambda: npc_story_packet(
++                            npc_name=rel.npc_name,
++                            npc_role=rel.role_label,
++                            relationship_band=rel.status_label,
++                            recalled_event=rel.note,
++                            current_story_state=rel.status_label,
++                        ),
++                    )
+                     npc_context_added = await add_context_field(
+                         self.bot, embed, guild_id, user.id,
+                         npc_context_packet(
+--- a/app/cogs/character_views/profile.py
++++ b/app/cogs/character_views/profile.py
+@@ -26,6 +26,8 @@
+ from app.ui_text import choice_lines, numbered_button_label, stable_shuffled
+ from app.cogs.settings import PagedGuildChannelSelect
+ from app.cogs.character_views.common import CharacterOwnedView, _footer, _format_date
++from app.ai_director_game_master import consequence_recall_packet
++from app.ai_director_game_master_integration import add_game_master_field
+ 
+ __all__ = ['character_embed', 'HistoryView', 'CharacterProfileView']
+ 
+@@ -343,6 +345,17 @@
+         else:
+             description = "Még nincs feljegyzett mérföldköved."
+         embed = base_embed("📖 Élettörténet", description, BRAND)
++        if events:
++            latest = events[0]
++            await add_game_master_field(
++                self.cog.bot, embed, interaction.guild_id,
++                lambda: consequence_recall_packet(
