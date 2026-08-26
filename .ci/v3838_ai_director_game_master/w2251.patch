@@ -1,0 +1,252 @@
+diff --git a/app/ai_director_game_master.py b/app/ai_director_game_master.py
+index 155b598..c4a4a26 100644
+--- a/app/ai_director_game_master.py
++++ b/app/ai_director_game_master.py
+@@ -5,7 +5,7 @@ from __future__ import annotations
+ The Game Master layer may narrate only host-owned facts that were already
+ resolved by canonical deterministic services.  It never chooses gameplay truth,
+ branches, rewards, success/failure, permissions, inventory or state mutation.
+-W22.5 deliberately ships no player-facing call sites.
++W22.5/W22.5.1 deliberately ship no player-facing call sites.
+ """
+ 
+ import hashlib
+@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
+ from typing import Any, Mapping
+ 
+ 
+-GAME_MASTER_CONTRACT_VERSION = "tier3-game-master-surface-v1"
++GAME_MASTER_CONTRACT_VERSION = "tier3-game-master-surface-v2"
+ GAME_MASTER_RUNTIME_ENABLED_DEFAULT = False
+ GAME_MASTER_FAMILIES = frozenset({
+     "big_job",
+@@ -61,6 +61,19 @@ _FORBIDDEN_AUTHORITY_CLAIM_RE = re.compile(
+     r"kimenetel|ág|branch|állapot|hozzáférés)\b",
+     re.IGNORECASE | re.DOTALL,
+ )
++
++# Human-review-derived Tier 3 presentation quality regressions. These rules are
++# presentation-only and never change gameplay truth; they only force the
++# deterministic fallback when generated Hungarian is awkward or overstates the
++# host-owned facts.
++_HUMAN_DERIVED_SURFACE_REJECTIONS: tuple[tuple[re.Pattern[str], str], ...] = (
++    (re.compile(r"\b(?:részsiker|siker)\s+lezárást\s+kapott\b", re.IGNORECASE), "unnatural_resolution_phrase"),
++    (re.compile(r"\bfelé\s+(?:közeledik|ért)\b", re.IGNORECASE), "unsupported_temporal_progression"),
++    (re.compile(r"\.\s+[a-záéíóöőúüű]", re.UNICODE), "lowercase_sentence_start"),
++    (re.compile(r"\b(?:örökre|legendákban|legendává|emlékezetes(?:\s+kaland)?)\b", re.IGNORECASE), "unsupported_embellishment"),
++    (re.compile(r"\b([a-záéíóöőúüű]{3,})\s+\1\b", re.IGNORECASE), "repeated_word"),
++    (re.compile(r"\ba\s+[aáeéiíoóöőuúüű]", re.IGNORECASE), "wrong_hungarian_article"),
++)
+ _KEY_RE = re.compile(r"^[a-z0-9][a-z0-9_.:-]{0,95}$")
+ 
+ 
+@@ -73,6 +86,26 @@ def _fold(value: str) -> str:
+     return "".join(ch for ch in decomposed if not unicodedata.combining(ch))
+ 
+ 
++def _sentence_lead(value: str) -> str:
++    text = str(value).strip()
++    if not text:
++        return text
++    return text[:1].upper() + text[1:]
++
++
++def game_master_surface_quality_errors(packet: AIDirectorGameMasterPacket, title: str, description: str) -> tuple[str, ...]:
++    merged = f"{str(title).strip()}\n{str(description).strip()}"
++    errors: list[str] = []
++    for pattern, label in _HUMAN_DERIVED_SURFACE_REJECTIONS:
++        if pattern.search(merged):
++            errors.append(label)
++    if packet.family == "npc_story" and re.search(
++        r"\b(?:hiszen|ezért|emiatt|ennek\s+köszönhetően|következtében)\b", merged, re.IGNORECASE
++    ):
++        errors.append("unsupported_npc_causality")
++    return tuple(errors)
++
++
+ @dataclass(frozen=True, slots=True)
+ class AIDirectorGameMasterPacket:
+     story_key: str
+@@ -163,6 +196,11 @@ def validate_game_master_surface(packet: AIDirectorGameMasterPacket, raw: Mappin
+         raise AIDirectorGameMasterValidationError("A Tier 3 AI belső rendszerzsargont próbált player-facing szövegbe tenni.")
+     if _FORBIDDEN_AUTHORITY_CLAIM_RE.search(merged):
+         raise AIDirectorGameMasterValidationError("A Tier 3 AI authority-jellegű állítást próbált tenni.")
++    quality_errors = game_master_surface_quality_errors(packet, title, description)
++    if quality_errors:
++        raise AIDirectorGameMasterValidationError(
++            "A Tier 3 AI human-review quality guardon bukott: " + ",".join(quality_errors)
++        )
+     folded = _fold(merged)
+     for term in packet.required_terms:
+         anchor = _fold(str(term).strip())
+@@ -212,7 +250,7 @@ def big_job_packet(*, target_name: str, phase_label: str, approach_label: str, r
+         {"target_name": target_name, "phase_label": phase_label, "approach_label": approach_label, "route_label": route_label,
+          "host_resolution": host_resolution, "consequence_note": consequence_note},
+         "A Nagy Meló visszhangja",
+-        f"A {target_name} akció {host_resolution} lezárást kapott. A {approach_label} megközelítés és a {route_label} útvonal után ez maradt meg a történetből: {consequence_note}",
++        f"„{target_name}” — az akció lezárása: {host_resolution}. Megközelítés: {approach_label}. Útvonal: {route_label}. {_sentence_lead(consequence_note)}.",
+         required=(target_name, host_resolution),
+     )
+ 
+@@ -234,7 +272,7 @@ def consequence_recall_packet(*, subject_label: str, memory_category: str, remem
+         {"subject_label": subject_label, "memory_category": memory_category, "remembered_event": remembered_event,
+          "current_relevance": current_relevance},
+         "Egy régi döntés visszhangja",
+-        f"{subject_label} kapcsán újra előkerül, hogy {remembered_event}. Ez most azért releváns, mert {current_relevance}.",
++        f"{_sentence_lead(subject_label)} kapcsán újra előkerül, hogy {remembered_event}. Ez most azért releváns, mert {current_relevance}.",
+         required=(subject_label, remembered_event),
+     )
+ 
+@@ -243,10 +281,10 @@ def chapter_packet(*, chapter_title: str, stage_title: str, world_story_title: s
+     facts = {"chapter_title": chapter_title, "stage_title": stage_title, "world_story_title": world_story_title, "community_note": community_note}
+     if host_ending:
+         facts["host_ending"] = host_ending
+-        desc = f"A {chapter_title} fejezete a {stage_title} szakasz után a {host_ending} lezárás felé ért. A háttérben {world_story_title}; {community_note}."
++        desc = f"A „{chapter_title}” fejezet lezárása: {host_ending}. Utolsó szakasz: {stage_title}. Háttértörténet: {world_story_title}. {_sentence_lead(community_note)}."
+         required = (chapter_title, host_ending)
+     else:
+-        desc = f"A {chapter_title} jelenleg a {stage_title} szakaszban jár. A háttérben {world_story_title}; {community_note}."
++        desc = f"A „{chapter_title}” fejezet jelenlegi szakasza: {stage_title}. Háttértörténet: {world_story_title}. {_sentence_lead(community_note)}."
+         required = (chapter_title, stage_title)
+     return _packet("chapter", "chapter_scene", facts, "A fejezet helyzete", desc, required=required)
+ 
+@@ -257,7 +295,7 @@ def world_story_packet(*, national_title: str, story_title: str, beat_title: str
+         {"national_title": national_title, "story_title": story_title, "beat_title": beat_title,
+          "city_label": city_label, "world_note": world_note},
+         story_title,
+-        f"{national_title} hátterében a {story_title} történetszál {beat_title} pontja került előtérbe {city_label} körül. {world_note}",
++        f"„{national_title}” hátterében „{story_title}” történetszál „{beat_title}” pontja került előtérbe {city_label} körül. {_sentence_lead(world_note)}.",
+         required=(story_title, beat_title),
+     )
+ 
+@@ -268,6 +306,6 @@ def legendary_event_packet(*, event_name: str, access_context: str, phase_label:
+         {"event_name": event_name, "access_context": access_context, "phase_label": phase_label,
+          "host_resolution": host_resolution, "legacy_note": legacy_note},
+         "Legendás ügy",
+-        f"A {event_name} története a {phase_label} pont után {host_resolution} lezárást kapott. Ami megmaradt belőle: {legacy_note}",
++        f"„{event_name}” történetének lezárása: {host_resolution}. Szakasz: {phase_label}. {_sentence_lead(legacy_note)}.",
+         required=(event_name, host_resolution),
+     )
+diff --git a/app/providers/ai_director_game_master_groq.py b/app/providers/ai_director_game_master_groq.py
+index 092e925..4fdd2ff 100644
+--- a/app/providers/ai_director_game_master_groq.py
++++ b/app/providers/ai_director_game_master_groq.py
+@@ -15,10 +15,13 @@ class GroqAIDirectorGameMasterProvider(GroqAIDirectorProvider):
+         return (
+             "Te a Yoru Tier 3 AI Game Master presentation-only magyar narrátorrétege vagy. "
+             "A HOST_FACTS már eldöntött, host-owned történeti tények. Ezeket kizárólag hangulatos, rövid magyar "
+-            "narrációvá formálhatod. Nem találhatsz ki új szereplőt, helyet, múltbeli eseményt, branch-et, választást, "
++            "narrációvá formálhatod természetes, idiomatikus magyar nyelven. Nem találhatsz ki új szereplőt, helyet, múltbeli eseményt, branch-et, választást, "
+             "jutalomról szóló új tényt, mechanikai következményt vagy jövőbeli ígéretet. Nem dönthetsz success/failről, state-ről, "
+             "world truth-ról, relationship state-ről, chapter endingről vagy hozzáférésről. Ne írj számot, összeget, "
+-            "százalékot, parancsot vagy belső rendszerzsargont. Kizárólag title és description mezőt adj vissza."
++            "százalékot, parancsot vagy belső rendszerzsargont. Ne erősítsd fel a HOST_FACTS jelentését olyan szavakkal, mint örökre, legendává vagy emlékezetes, ha ez nincs benne a tényekben. "
++            "Ne írj olyan magyartalan fordulatot, mint 'siker lezárást kapott' vagy 'részsiker lezárást kapott'; inkább természetesen írd körül a már megadott lezárást. "
++            "Ne találj ki időbeli haladást ('felé közeledik'), ha a host már lezárt állapotot adott. NPC-knél ne állíts oksági kapcsolatot a recalled event és a relationship/current state között, ha a HOST_FACTS ezt nem mondja ki; csak helyezd őket egymás mellé semlegesen. Minden új mondat nagybetűvel kezdődjön. "
++            "Kizárólag title és description mezőt adj vissza."
+         )
+ 
+     @staticmethod
+diff --git a/scripts/ai_director_tier3_game_master_review.py b/scripts/ai_director_tier3_game_master_review.py
+index b12fe7e..ee531fb 100644
+--- a/scripts/ai_director_tier3_game_master_review.py
++++ b/scripts/ai_director_tier3_game_master_review.py
+@@ -44,15 +44,23 @@ async def run(args) -> int:
+         fallback = fallback_game_master_surface(packet)
+         source = "fixture"
+         raw = {"title": fallback.title, "description": fallback.description}
++        raw_title = raw["title"]
++        raw_description = raw["description"]
+         error = ""
++        error_detail = ""
+         if provider is not None:
+             try:
+                 raw = dict(await provider.generate_game_master(packet))
++                raw_title = str(raw.get("title") or "")
++                raw_description = str(raw.get("description") or "")
+                 source = "ai"
+             except Exception as exc:
+                 raw = {"title": fallback.title, "description": fallback.description}
++                raw_title = ""
++                raw_description = ""
+                 source = "fallback"
+                 error = type(exc).__name__
++                error_detail = str(exc)[:240]
+         try:
+             title, description = validate_game_master_surface(packet, raw)
+             validated = True
+@@ -61,9 +69,11 @@ async def run(args) -> int:
+             source = "fallback"
+             validated = False
+             error = error or type(exc).__name__
++            error_detail = error_detail or str(exc)[:240]
+         rows.append({
+             "story_key": packet.story_key, "family": packet.family, "source": source,
+             "validated": validated, "title": title, "description": description, "error": error,
++            "raw_title": raw_title, "raw_description": raw_description, "error_detail": error_detail,
+             "groundedness": "", "hungarian": "", "yoru_tone": "", "new_fact": "", "decision": "", "notes": "",
+         })
+         if provider is not None:
+@@ -74,7 +84,7 @@ async def run(args) -> int:
+     fallbacks = sum(1 for row in rows if row["source"] == "fallback")
+     status = "PENDING_HUMAN" if fallbacks == 0 else "AUTOMATED_HOLD"
+     result = {
+-        "version": "3.83.7", "work_item": "W22.5", "contract": "tier3-game-master-surface-v1",
++        "version": "3.83.8", "work_item": "W22.5.1", "contract": "tier3-game-master-surface-v2",
+         "total": len(rows), "ai_validated": ai_validated, "fallbacks": fallbacks,
+         "status": status, "player_facing_ai": False, "gameplay_authority": "NONE", "live_deploy": False,
+         "rows": rows,
+@@ -82,7 +92,7 @@ async def run(args) -> int:
+     (output / "YORU_AI_DIRECTOR_TIER3_GAME_MASTER_REVIEW_RESULT.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+     (output / "YORU_AI_DIRECTOR_TIER3_GAME_MASTER_REVIEW_RESULT.txt").write_text(
+         "\n".join([
+-            "Yoru v3.83.7 W22.5 Tier 3 Game Master Foundation Review",
++            "Yoru v3.83.8 W22.5.1 Tier 3 Game Master Provider Review",
+             f"STATUS={status}", f"TOTAL={len(rows)}", f"AI_VALIDATED={ai_validated}", f"FALLBACKS={fallbacks}",
+             "PLAYER_FACING_AI=OFF", "GAMEPLAY_AUTHORITY=NONE", "LIVE_DEPLOY=UNCHANGED",
+         ]) + "\n", encoding="utf-8")
+diff --git a/tests/test_w22_5_game_master_ci.py b/tests/test_w22_5_game_master_ci.py
+index 9be13c7..c5ea350 100644
+--- a/tests/test_w22_5_game_master_ci.py
++++ b/tests/test_w22_5_game_master_ci.py
+@@ -15,7 +15,7 @@ class Fake:
+         if self.error: raise self.error
+         return self.raw
+ 
+-def test_identity(): assert GAME_MASTER_CONTRACT_VERSION=='tier3-game-master-surface-v1' and GAME_MASTER_RUNTIME_ENABLED_DEFAULT is False
++def test_identity(): assert GAME_MASTER_CONTRACT_VERSION=='tier3-game-master-surface-v2' and GAME_MASTER_RUNTIME_ENABLED_DEFAULT is False
+ def test_families(): assert GAME_MASTER_FAMILIES=={'big_job','npc_story','consequence_recall','chapter','world_story','legendary_event'}
+ @pytest.mark.parametrize('packet',[
+  p(),
+@@ -31,6 +31,31 @@ def test_authority_facts_rejected(key):
+     q=p(); bad=AIDirectorGameMasterPacket(q.story_key,q.family,q.semantic_slot,q.fallback_title,q.fallback_description,{key:'x'})
+     with pytest.raises(AIDirectorGameMasterValidationError): validate_game_master_packet(bad)
+ def test_valid_surface(): assert validate_game_master_surface(p(),{'title':'A Belvárosi trezor','description':'A Belvárosi trezor akció részsikerrel zárult.'})[0]
++@pytest.mark.parametrize('description',[
++ 'A Belvárosi trezor akció részsiker lezárást kapott.',
++ 'A Belvárosi trezor részsiker után a lezárás felé közeledik.',
++ 'A Belvárosi trezor részsikerrel zárult. a történet folytatódik',
++ 'A Belvárosi trezor részsikerét örökre őrzik a legendákban.',
++ 'A Belvárosi trezor emlékezetes kalandként maradt meg, részsikerrel.',
++ 'A Belvárosi trezor hátsó útvonal útvonal mellett zárult részsikerrel.',
++ 'A Belvárosi trezor a ipari útvonal mellett zárult részsikerrel.',
++])
++def test_human_quality_regressions(description):
++    with pytest.raises(AIDirectorGameMasterValidationError): validate_game_master_surface(p(),{'title':'A Belvárosi trezor','description':description})
++
++@pytest.mark.parametrize('description',[
++ 'Mira bizalmatlan, hiszen emlékszik: egy régi ügyben cserben hagytad.',
++ 'Mira ezért távolságot tart; egy régi ügyben cserben hagytad.',
++])
++def test_npc_causality_rejected(description):
++    q=npc_story_packet(npc_name='Mira',npc_role='informátor',relationship_band='bizalmatlan',recalled_event='egy régi ügyben cserben hagytad',current_story_state='távolságot tart')
++    with pytest.raises(AIDirectorGameMasterValidationError): validate_game_master_surface(q,{'title':'Mira emlékszik','description':description})
++
++def test_natural_fallbacks():
++    b=fallback_game_master_surface(p()); assert 'lezárást kapott' not in b.description.casefold() and 'útvonal útvonal' not in b.description.casefold()
++    c=consequence_recall_packet(subject_label='a riválisod',memory_category='rival',remembered_event='a konfliktus lezáratlan maradt',current_relevance='ugyanabban a körben mozogtok'); assert c.fallback_description.startswith('A riválisod')
++    w=world_story_packet(national_title='Országos bizonytalanság',story_title='Új kapcsolatok',beat_title='Új törésvonal',city_label='Budapest',world_note='a helyi szereplők kivárnak'); assert '. A helyi szereplők' in w.fallback_description
++
+ def test_extra_field_rejected():
+     with pytest.raises(AIDirectorGameMasterValidationError): validate_game_master_surface(p(),{'title':'A Belvárosi trezor','description':'A Belvárosi trezor akció részsikerrel zárult.','branch':'x'})
+ def test_mechanical_output_rejected():
