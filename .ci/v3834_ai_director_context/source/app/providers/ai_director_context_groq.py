@@ -19,7 +19,7 @@ class GroqAIDirectorContextProvider(GroqAIDirectorProvider):
             "jutalomról, esélyről, siker/bukásról, cooldownról, inventoryról, XP-ről, police/heatről, "
             "settlementről, choice-ról vagy branchről. Ne írj számokat, összegeket, százalékot vagy ígéretet. "
             "Player-facing szövegben ne használj belső technikai szavakat, például canonical, authority, mechanikai, "
-            "validator, fallback, provider vagy contract. Kizárólag természetes magyar title és rövid description mezőt adj vissza."
+            "validator, fallback, provider vagy contract. Kerüld a szóismétlést és a magyartalan szerkezeteket; ugyanazt az igét ne ismételd rövid távolságon belül. Kizárólag természetes magyar title és rövid description mezőt adj vissza."
         )
 
     @staticmethod
@@ -33,7 +33,7 @@ class GroqAIDirectorContextProvider(GroqAIDirectorProvider):
             f"TITLE: {packet.fallback_title}\nDESCRIPTION: {packet.fallback_description}\n\n"
             "Fogalmazd át tömör, természetes magyar context-szöveggé. A fallback jelentési határán kívül ne adj "
             "hozzá új tényt. Ne adj tanácsot, mechanikai következtetést, jutalmat vagy garantált kimenetelt. "
-            "A válaszban ne jelenjen meg belső rendszerzsargon (canonical, authority, mechanikai, validator, fallback, provider, contract)."
+            "A válaszban ne jelenjen meg belső rendszerzsargon (canonical, authority, mechanikai, validator, fallback, provider, contract). Kerüld az olyan merev formákat is, mint „ügyben áll”, „otthonvárosban helyezkedik el”, illetve az ismétlődő „érkezett … érkezett”."
         )
 
     def request_body(self, packet: AIDirectorContextPacket) -> dict[str, Any]:
