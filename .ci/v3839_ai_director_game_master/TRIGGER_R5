@@ -1,0 +1,11 @@
+W22.5.1.1 Tier 3 canonical direct-frozen review R5
+version=3.83.9
+contract=tier3-game-master-surface-v3
+source_sha=record_actual_8_of_8
+ci_targeted=34_of_34
+fixture_effective=12_of_12
+live_effective=12_of_12
+player_facing_ai=OFF
+runtime_wiring=NONE
+gameplay_authority=NONE
+live_deploy=UNCHANGED
