@@ -1,6 +1,6 @@
-W22.2.1 Hungarian surface hardening live review attempt 5
-source_archive_sha256=13e0241131bc8c5db039b2c9ee06741ac2801384d991719dee638539fd651504
-transport=chunked-4
+W22.2.1 Hungarian surface hardening live review attempt 6
+source_mode=direct_utf8_frozen
+source_sha256=10/10
 isolated_contracts=22/22
 full_tree_contracts=23/23
 full_checkpoint=46/46
