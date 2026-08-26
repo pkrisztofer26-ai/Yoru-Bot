@@ -1,0 +1,228 @@
++                    subject_label=latest.title,
++                    memory_category="Élettörténet",
++                    remembered_event=latest.description,
++                    current_relevance="Ez a feljegyzett mérföldkő továbbra is az élettörténeted része.",
++                ),
++            )
+         hall = getattr(self.cog.bot, "hall_of_fame", None)
+         if hall is not None:
+             legacy, rank = await hall.profile(interaction.guild_id, interaction.user.id)
+--- a/tests/test_w22_5_ai_director_game_master_foundation.py
++++ b/tests/test_w22_5_ai_director_game_master_foundation.py
+@@ -199,10 +199,12 @@
+     assert set(schema["properties"]) == {"title", "description"}
+ 
+ 
+-def test_w22_5_has_no_player_facing_runtime_wiring_yet():
+-    main = Path("app/main.py").read_text(encoding="utf-8")
+-    assert "ai_director_game_master" not in main
+-    assert "AIDirectorGameMaster" not in main
++def test_w22_5_foundation_runtime_default_remains_off_after_later_pilot_wiring():
++    core = Path("app/ai_director_game_master.py").read_text(encoding="utf-8")
++    service = Path("app/services/ai_director_game_master.py").read_text(encoding="utf-8")
++    assert "GAME_MASTER_RUNTIME_ENABLED_DEFAULT = False" in core
++    assert "enabled: bool = False" in service
++    assert "test_guild_id: int | None = None" in service
+ 
+ 
+ def test_w22_5_does_not_modify_authoritative_domain_services():
+--- a/tests/test_w22_6_ai_director_tier3_test_guild_pilot.py
++++ b/tests/test_w22_6_ai_director_tier3_test_guild_pilot.py
+@@ -0,0 +1,308 @@
++from __future__ import annotations
++
++import asyncio
++from pathlib import Path
++from types import SimpleNamespace
++
++import pytest
++
++from app.ai_director_game_master import (
++    GAME_MASTER_CONTRACT_VERSION,
++    GAME_MASTER_RUNTIME_ENABLED_DEFAULT,
++    big_job_packet,
++    chapter_packet,
++    consequence_recall_packet,
++    legendary_event_packet,
++    npc_story_packet,
++    world_story_packet,
++)
++from app.ai_director_game_master_integration import GAME_MASTER_FIELD_NAME, add_game_master_field
++from app.config import load_settings
++from app.services.ai_director_game_master import AIDirectorGameMaster
++
++
++def run(coro):
++    return asyncio.run(coro)
++
++
++class FakeProvider:
++    def __init__(self, payload=None, *, error: Exception | None = None):
++        self.payload = payload or {"title": "A Belvárosi trezor", "description": "A Belvárosi trezor ügy lezárása: Siker."}
++        self.error = error
++        self.calls = 0
++
++    async def generate_game_master(self, packet):
++        self.calls += 1
++        if self.error is not None:
++            raise self.error
++        return dict(self.payload)
++
++
++class FakeEmbed:
++    def __init__(self):
++        self.fields = []
++
++    def add_field(self, *, name, value, inline):
++        self.fields.append((name, value, inline))
++
++
++def big():
++    return big_job_packet(
++        target_name="Belvárosi trezor",
++        phase_label="Lezárt ügy",
++        approach_label="Csendes út",
++        route_label="Eredeti útvonal",
++        host_resolution="Siker",
++        consequence_note="A csapat az eredeti útvonalon maradt.",
++    )
++
++
++def _clean_ai_env(monkeypatch):
++    for name in (
++        "TEST_GUILD_ID",
++        "YORU_AI_DIRECTOR_PILOT_ENABLED",
++        "YORU_AI_DIRECTOR_CONTEXT_PILOT_ENABLED",
++        "YORU_AI_DIRECTOR_GAME_MASTER_PILOT_ENABLED",
++        "GROQ_API_KEY",
++    ):
++        monkeypatch.delenv(name, raising=False)
++    monkeypatch.setenv("DISCORD_TOKEN", "test-token")
++
++
++def test_version_is_v38313():
++    assert Path("VERSION").read_text(encoding="utf-8").strip() == "3.83.13"
++
++
++def test_contract_stays_reviewed_surface_v6():
++    assert GAME_MASTER_CONTRACT_VERSION == "tier3-game-master-surface-v6"
++
++
++def test_runtime_default_stays_off():
++    assert GAME_MASTER_RUNTIME_ENABLED_DEFAULT is False
++
++
++def test_config_default_game_master_pilot_off(monkeypatch):
++    _clean_ai_env(monkeypatch)
++    settings = load_settings()
++    assert settings.ai_director_game_master_pilot_enabled is False
++
++
++def test_config_game_master_requires_master_pilot(monkeypatch):
++    _clean_ai_env(monkeypatch)
++    monkeypatch.setenv("TEST_GUILD_ID", "123456789")
++    monkeypatch.setenv("YORU_AI_DIRECTOR_GAME_MASTER_PILOT_ENABLED", "true")
++    monkeypatch.setenv("GROQ_API_KEY", "secret")
++    with pytest.raises(RuntimeError, match="Tier 3 Game Master Pilot"):
++        load_settings()
++
++
++def test_config_game_master_requires_test_guild(monkeypatch):
++    _clean_ai_env(monkeypatch)
++    monkeypatch.setenv("YORU_AI_DIRECTOR_PILOT_ENABLED", "true")
++    monkeypatch.setenv("YORU_AI_DIRECTOR_GAME_MASTER_PILOT_ENABLED", "true")
++    monkeypatch.setenv("GROQ_API_KEY", "secret")
++    with pytest.raises(RuntimeError, match="TEST_GUILD_ID"):
++        load_settings()
++
++
++def test_config_game_master_requires_groq_key(monkeypatch):
++    _clean_ai_env(monkeypatch)
++    monkeypatch.setenv("TEST_GUILD_ID", "123456789")
++    monkeypatch.setenv("YORU_AI_DIRECTOR_PILOT_ENABLED", "true")
++    monkeypatch.setenv("YORU_AI_DIRECTOR_GAME_MASTER_PILOT_ENABLED", "true")
++    with pytest.raises(RuntimeError, match="GROQ_API_KEY"):
++        load_settings()
++
++
++def test_config_game_master_valid_test_guild_opt_in(monkeypatch):
++    _clean_ai_env(monkeypatch)
++    monkeypatch.setenv("TEST_GUILD_ID", "123456789")
++    monkeypatch.setenv("YORU_AI_DIRECTOR_PILOT_ENABLED", "true")
++    monkeypatch.setenv("YORU_AI_DIRECTOR_GAME_MASTER_PILOT_ENABLED", "true")
++    monkeypatch.setenv("GROQ_API_KEY", "secret")
++    settings = load_settings()
++    assert settings.ai_director_game_master_pilot_enabled is True
++    assert settings.test_guild_id == 123456789
++    assert "secret" not in repr(settings)
++
++
++def test_service_disabled_outside_pilot():
++    gm = AIDirectorGameMaster(provider=FakeProvider(), enabled=False, test_guild_id=10)
++    assert run(gm.surface(10, big())) is None
++
++
++def test_service_wrong_guild_is_none():
++    provider = FakeProvider()
++    gm = AIDirectorGameMaster(provider=provider, enabled=True, test_guild_id=10)
++    assert run(gm.surface(11, big())) is None
++    assert provider.calls == 0
++
++
++def test_service_missing_provider_falls_back():
++    gm = AIDirectorGameMaster(provider=None, enabled=True, test_guild_id=10)
++    result = run(gm.surface(10, big()))
++    assert result is not None
++    assert result.source == "deterministic_scenario_v2_fallback"
++
++
++def test_service_provider_error_falls_back():
++    gm = AIDirectorGameMaster(provider=FakeProvider(error=RuntimeError("offline")), enabled=True, test_guild_id=10)
++    result = run(gm.surface(10, big()))
++    assert result is not None
++    assert result.source == "deterministic_scenario_v2_fallback"
++
++
++def test_service_valid_ai_surface_is_cached():
++    provider = FakeProvider()
++    gm = AIDirectorGameMaster(provider=provider, enabled=True, test_guild_id=10, cache_ttl_seconds=300)
++    first = run(gm.surface(10, big()))
++    second = run(gm.surface(10, big()))
++    assert first is not None and first.source == "ai_game_master"
++    assert second is not None and second.source == "ai_game_master_cache"
++    assert provider.calls == 1
++
++
++def test_field_value_is_bounded():
++    gm = AIDirectorGameMaster(provider=None, enabled=True, test_guild_id=10)
++    value = run(gm.field_value(10, big()))
++    assert value is not None
++    assert len(value) <= 1024
++
++
++def test_integration_adds_one_named_field():
++    gm = AIDirectorGameMaster(provider=None, enabled=True, test_guild_id=10)
++    bot = SimpleNamespace(ai_director_game_master=gm)
++    embed = FakeEmbed()
++    assert run(add_game_master_field(bot, embed, 10, big)) is True
++    assert len(embed.fields) == 1
++    assert embed.fields[0][0] == GAME_MASTER_FIELD_NAME
++    assert embed.fields[0][2] is False
++
++
++def test_integration_wrong_guild_adds_nothing():
++    gm = AIDirectorGameMaster(provider=None, enabled=True, test_guild_id=10)
++    bot = SimpleNamespace(ai_director_game_master=gm)
++    embed = FakeEmbed()
++    assert run(add_game_master_field(bot, embed, 11, big)) is False
++    assert embed.fields == []
++
++
++def test_integration_packet_factory_failure_is_fail_closed():
++    gm = AIDirectorGameMaster(provider=None, enabled=True, test_guild_id=10)
++    bot = SimpleNamespace(ai_director_game_master=gm)
++    embed = FakeEmbed()
++
++    def bad_packet():
++        return big_job_packet(
++            target_name="Trezor 2",  # numbers are deliberately rejected by the Tier-3 contract
