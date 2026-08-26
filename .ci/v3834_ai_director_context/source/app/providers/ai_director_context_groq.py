@@ -18,7 +18,8 @@ class GroqAIDirectorContextProvider(GroqAIDirectorProvider):
             "szereplőt, helyet, eseményt, ajánlatot, tippet vagy következményt. Nem dönthetsz pénzről, "
             "jutalomról, esélyről, siker/bukásról, cooldownról, inventoryról, XP-ről, police/heatről, "
             "settlementről, choice-ról vagy branchről. Ne írj számokat, összegeket, százalékot vagy ígéretet. "
-            "Kizárólag természetes magyar title és rövid description mezőt adj vissza."
+            "Player-facing szövegben ne használj belső technikai szavakat, például canonical, authority, mechanikai, "
+            "validator, fallback, provider vagy contract. Kizárólag természetes magyar title és rövid description mezőt adj vissza."
         )
 
     @staticmethod
@@ -31,7 +32,8 @@ class GroqAIDirectorContextProvider(GroqAIDirectorProvider):
             "DETERMINISZTIKUS FALLBACK / jelentési határ:\n"
             f"TITLE: {packet.fallback_title}\nDESCRIPTION: {packet.fallback_description}\n\n"
             "Fogalmazd át tömör, természetes magyar context-szöveggé. A fallback jelentési határán kívül ne adj "
-            "hozzá új tényt. Ne adj tanácsot, mechanikai következtetést, jutalmat vagy garantált kimenetelt."
+            "hozzá új tényt. Ne adj tanácsot, mechanikai következtetést, jutalmat vagy garantált kimenetelt. "
+            "A válaszban ne jelenjen meg belső rendszerzsargon (canonical, authority, mechanikai, validator, fallback, provider, contract)."
         )
 
     def request_body(self, packet: AIDirectorContextPacket) -> dict[str, Any]:
