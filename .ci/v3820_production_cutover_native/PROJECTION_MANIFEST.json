@@ -1,18 +1,10 @@
 {
-  "schema": 1,
+  "schema": 2,
   "release": "3.82.0",
   "checkpoint": "W21.1 Production Cutover Native Gate",
   "production_archive_sha256": "b9fcd4c64f22ae3f8fb89012fbe685487aaf16e7475b5462f6276507ac0bfbd7",
   "production_tree_sha256": "62590692392857599e103fb66f18e31864ddb5e876a7b3a92985726b5d810ca6",
-  "source_files": {
-    "app/database.py": {
-      "bytes": 365567,
-      "sha256": "48b702acd8bb3934bdb05d30a11e6d94a0312da68bc6a10d4be0b5783086c091"
-    },
-    "app/db_backend.py": {
-      "bytes": 42174,
-      "sha256": "2820a18cb05b355be3cc756b6871832fe1b3e1525aae791622933776b80ad7ca"
-    },
+  "production_source_files": {
     "app/chapter_config.py": {
       "bytes": 2864,
       "sha256": "09852b204e0f263eeb450178e5f887378f4d4a652e3ccf5255a5d33d761684f4"
@@ -20,12 +12,15 @@
     "app/services/chapters.py": {
       "bytes": 10834,
       "sha256": "d9f296b1042c67ca10c6d984d9d76dec6a66a862a1ebb3ee0ff626a26a855a6b"
-    },
-    "app/core/metrics.py": {
-      "bytes": 2443,
-      "sha256": "fc7b9a463d8219186960098f0684972c95aaa673c1b2692f72637991440dd75c"
     }
   },
+  "proof_adapter": {
+    "path": "app/db_backend.py",
+    "bytes": 2529,
+    "sha256": "54a9d7d9e0ab9398342de620993352620187d558195e52de9501f605be98fba7",
+    "scope": "CI_ONLY_NOT_PRODUCTION_SOURCE"
+  },
   "chapter_mysql_ddl_sha256": "b31ab24686448eb1a1bc28d7c7bda430144d397e0d64b44690576cf3f821db9e",
+  "phase10_db_backend_native_closure": "HISTORICAL_PASS",
   "expected_native_tests": 8
 }
