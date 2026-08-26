@@ -6,7 +6,7 @@ on:
     branches:
       - ci/v38312-ai-director-tier3-surface-v6-review
     paths:
-      - .ci/v38312_ai_director_game_master/TRIGGER_R2
+      - .ci/v38312_ai_director_game_master/TRIGGER_R3
 
 permissions:
   contents: read
@@ -54,7 +54,8 @@ jobs:
           (cd "$RUN" && patch -p1 < "$GITHUB_WORKSPACE/$V6/surface_v4.patch")
           cat "$V5/v5_delta_part1.patch" "$V5/v5_delta_part2.patch" > "$V6/surface_v5.patch"
           (cd "$RUN" && patch -p1 < "$GITHUB_WORKSPACE/$V6/surface_v5.patch")
-          (cd "$RUN" && patch -p1 < "$GITHUB_WORKSPACE/$V6/v6_prod.patch")
+          cat "$V6/v6_prod_part1.patch" "$V6/v6_prod_part2a.patch" "$V6/v6_prod_part2b.patch" > "$V6/surface_v6.patch"
+          (cd "$RUN" && patch --batch -p1 < "$GITHUB_WORKSPACE/$V6/surface_v6.patch")
           cp "$V6/test_w22_5_1_4_surface_v6_ci.py" "$RUN/tests/test_w22_5_game_master_ci.py"
           echo 'V3_TO_V6_PATCH_APPLICATION=PASS'
 
@@ -132,7 +133,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: yoru-v38312-w22-5-1-4-tier3-surface-v6-review-r2
+          name: yoru-v38312-w22-5-1-4-tier3-surface-v6-review-r3
           path: |
             .ci/v38312_ai_director_game_master/runtime/
             .ci/v38312_ai_director_game_master/live_review/
