@@ -38,7 +38,7 @@ diff -ruN v5diff_old/app/ai_director_game_master.py v5diff_new/app/ai_director_g
      if packet.family == "chapter":
          stage = _fold(packet.facts.get("stage_title", "")).strip()
          if stage and re.search(r"\b" + re.escape(stage) + r"\s+szakaszban\b", merged_folded):
- diff -ruN v5diff_old/app/providers/ai_director_game_master_groq.py v5diff_new/app/providers/ai_director_game_master_groq.py
+diff -ruN v5diff_old/app/providers/ai_director_game_master_groq.py v5diff_new/app/providers/ai_director_game_master_groq.py
 --- v5diff_old/app/providers/ai_director_game_master_groq.py
 +++ v5diff_new/app/providers/ai_director_game_master_groq.py
 @@ -8,7 +8,7 @@
