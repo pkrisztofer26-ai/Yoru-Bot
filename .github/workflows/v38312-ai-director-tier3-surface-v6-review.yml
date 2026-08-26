@@ -6,7 +6,7 @@ on:
     branches:
       - ci/v38312-ai-director-tier3-surface-v6-review
     paths:
-      - .ci/v38312_ai_director_game_master/TRIGGER
+      - .ci/v38312_ai_director_game_master/TRIGGER_R2
 
 permissions:
   contents: read
@@ -47,6 +47,7 @@ jobs:
           cp "$SRC/app/services/ai_director_game_master.py" "$RUN/app/services/ai_director_game_master.py"
           cp "$SRC/app/providers/ai_director_game_master_groq.py" "$RUN/app/providers/ai_director_game_master_groq.py"
           cp "$SRC/scripts/ai_director_tier3_game_master_review.py" "$RUN/scripts/ai_director_tier3_game_master_review.py"
+          cp "$SRC/tests/test_w22_5_game_master_ci.py" "$RUN/tests/test_w22_5_game_master_ci.py"
           cat "$V3/core_patch_part1.patch" "$V3/core_patch_part2.patch" > "$V6/core_v3.patch"
           (cd "$RUN" && patch -p1 < "$GITHUB_WORKSPACE/$V6/core_v3.patch")
           cat "$V4/v4_delta_part1.patch" "$V4/v4_delta_part2.patch" > "$V6/surface_v4.patch"
@@ -131,7 +132,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: yoru-v38312-w22-5-1-4-tier3-surface-v6-review
+          name: yoru-v38312-w22-5-1-4-tier3-surface-v6-review-r2
           path: |
             .ci/v38312_ai_director_game_master/runtime/
             .ci/v38312_ai_director_game_master/live_review/
