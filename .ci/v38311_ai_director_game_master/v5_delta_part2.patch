@@ -1,0 +1,55 @@
+             "százalékot, parancsot vagy belső rendszerzsargont. Ne erősítsd fel a HOST_FACTS jelentését olyan szavakkal, mint örökre, legendává vagy emlékezetes, ha ez nincs benne a tényekben. "
+             "Ne írj olyan magyartalan fordulatot, mint 'siker lezárást kapott' vagy 'részsiker lezárást kapott'; inkább természetesen írd körül a már megadott lezárást. "
+-            "Ne találj ki időbeli haladást ('felé közeledik'), ha a host már lezárt állapotot adott. NPC- és consequence-recall szövegnél ne állíts oksági kapcsolatot a recalled/remembered event és a relationship/current relevance között, ha a HOST_FACTS ezt nem mondja ki; kerüld a hiszen, mivel, ezért és emiatt kötőszavakat, és helyezd a tényeket egymás mellé semlegesen. Ne találj ki új környék-, sajtó-, pletyka-, tanú- vagy hatósági reakciót. World Story esetén kerüld a merev „történetszál X pontja” és „X pontja” fordulatokat; írd címkeszerűen, hogy mi az aktuális történeti pont. Legendary Eventnél ne cseréld a történet/legacy tényt emlékre vagy mesére, ha a HOST_FACTS nem ezt mondja. NPC kapcsolatnál ne írj olyan magyartalan fordulatot, mint „óvatos hangulatban áll veled”; a relationship állapotot egyszerűen, természetesen fogalmazd meg. Chapter esetén kerüld az „X szakaszban” és „állapota húzódik” merev szerkezeteket; használj címkeszerű megfogalmazást. World Story helyszínt ragozás nélkül, címkeszerűen írj (például „Helyszín: Budapest”), és ne adj hozzá olyan módhatározót vagy intenzitást — például „csendben” — amely nincs a HOST_FACTS-ban. Minden új mondat nagybetűvel kezdődjön. "
++            "Ne találj ki időbeli haladást ('felé közeledik'), ha a host már lezárt állapotot adott. NPC- és consequence-recall szövegnél ne állíts oksági kapcsolatot a recalled/remembered event és a relationship/current relevance között, ha a HOST_FACTS ezt nem mondja ki; kerüld a hiszen, mivel, ezért és emiatt kötőszavakat, és helyezd a tényeket egymás mellé semlegesen. Ne találj ki új környék-, sajtó-, pletyka-, tanú- vagy hatósági reakciót. World Story esetén kerüld a merev „történetszál X pontja” és „X pontja” fordulatokat; írd címkeszerűen, hogy mi az aktuális történeti pont. Legendary Eventnél ne cseréld a történet/legacy tényt emlékre vagy mesére, ha a HOST_FACTS nem ezt mondja. NPC kapcsolatnál ne írj olyan magyartalan fordulatot, mint „óvatos hangulatban áll veled”; a relationship állapotot egyszerűen, természetesen fogalmazd meg. Chapter esetén kerüld az „X szakaszban” és „állapota húzódik” merev szerkezeteket; használj címkeszerű megfogalmazást. World Story helyszínt ragozás nélkül, címkeszerűen írj (például „Helyszín: Budapest”), és ne adj hozzá olyan módhatározót vagy intenzitást — például „csendben” — amely nincs a HOST_FACTS-ban. Big Job esetén a target_name-et névként kezeld, ne ragozd automatikusan helyszínné (például ne írj „Kikötői raktárban”, ha csak a „Kikötői raktár” célpontnév adott). Kerüld a tautologikus „lezárása ... zárult” szerkezetet. Minden új mondat nagybetűvel kezdődjön. "
+             "Kizárólag title és description mezőt adj vissza."
+         )
+ 
+diff -ruN v5diff_old/scripts/ai_director_tier3_game_master_review.py v5diff_new/scripts/ai_director_tier3_game_master_review.py
+--- v5diff_old/scripts/ai_director_tier3_game_master_review.py
++++ v5diff_new/scripts/ai_director_tier3_game_master_review.py
+@@ -89,7 +89,7 @@
+     effective_validated = sum(1 for row in rows if row["effective_validated"])
+     status = "PENDING_HUMAN" if effective_validated == len(rows) else "AUTOMATED_HOLD"
+     result = {
+-        "version": "3.83.10", "work_item": "W22.5.1.2", "contract": "tier3-game-master-surface-v4",
++        "version": "3.83.11", "work_item": "W22.5.1.3", "contract": "tier3-game-master-surface-v5",
+         "total": len(rows), "ai_validated": ai_validated, "fallbacks": fallbacks, "effective_validated": effective_validated,
+         "status": status, "player_facing_ai": False, "gameplay_authority": "NONE", "live_deploy": False,
+         "rows": rows,
+@@ -97,7 +97,7 @@
+     (output / "YORU_AI_DIRECTOR_TIER3_GAME_MASTER_REVIEW_RESULT.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+     (output / "YORU_AI_DIRECTOR_TIER3_GAME_MASTER_REVIEW_RESULT.txt").write_text(
+         "\n".join([
+-            "Yoru v3.83.10 W22.5.1.2 Tier 3 Game Master Provider Review",
++            "Yoru v3.83.11 W22.5.1.3 Tier 3 Game Master Provider Review",
+             f"STATUS={status}", f"TOTAL={len(rows)}", f"AI_VALIDATED={ai_validated}", f"FALLBACKS={fallbacks}",
+             f"EFFECTIVE_VALIDATED={effective_validated}",
+             "PLAYER_FACING_AI=OFF", "GAMEPLAY_AUTHORITY=NONE", "LIVE_DEPLOY=UNCHANGED",
+diff -ruN v5diff_old/tests/test_w22_5_game_master_ci.py v5diff_new/tests/test_w22_5_game_master_ci.py
+--- v5diff_old/tests/test_w22_5_game_master_ci.py
++++ v5diff_new/tests/test_w22_5_game_master_ci.py
+@@ -26,7 +26,7 @@
+     ]
+ 
+ def test_identity():
+-    assert GAME_MASTER_CONTRACT_VERSION == 'tier3-game-master-surface-v4'
++    assert GAME_MASTER_CONTRACT_VERSION == 'tier3-game-master-surface-v5'
+     assert GAME_MASTER_RUNTIME_ENABLED_DEFAULT is False
+     assert GAME_MASTER_FAMILIES == {'big_job','npc_story','consequence_recall','chapter','world_story','legendary_event'}
+ 
+@@ -105,3 +105,14 @@
+     p = world_story_packet(national_title='Országos bizonytalanság',story_title='Feszült egyensúly',beat_title='Új törésvonal',city_label='Budapest',world_note='a helyi szereplők kivárnak')
+     with pytest.raises(AIDirectorGameMasterValidationError):
+         validate_game_master_surface(p, {'title':'Feszült egyensúly','description':'Országos háttér: Országos bizonytalanság. Történetszál: Feszült egyensúly. Aktuális pont: Új törésvonal. Helyszín: Budapest. A helyi szereplők csendben kivárnak.'})
++
++
++def test_big_job_inflected_target_label_rejected():
++    p = big_job_packet(target_name='Kikötői raktár',phase_label='lezárás',approach_label='gyors',route_label='ipari útvonal',host_resolution='siker',consequence_note='az akció híre gyorsan terjedt')
++    with pytest.raises(AIDirectorGameMasterValidationError):
++        validate_game_master_surface(p, {'title':'A Nagy Meló visszhangja','description':'A Kikötői raktárban végrehajtott akció gyors megközelítéssel, ipari útvonalon, sikerrel zárult. Az akció híre gyorsan terjedt.'})
++
++def test_redundant_closure_phrase_rejected():
++    p = legendary_event_packet(event_name='Éjféli Konvoj',access_context='különleges opportunity nyitotta meg',phase_label='lezárás',host_resolution='siker',legacy_note='a résztvevők története később is előkerül')
++    with pytest.raises(AIDirectorGameMasterValidationError):
++        validate_game_master_surface(p, {'title':'Legendás ügy','description':'Az Éjféli Konvoj lezárása sikerrel zárult, a résztvevők története később is előkerül.'})
