@@ -1,5 +1,8 @@
-W22.4.1 exact source transfer
-version=3.83.5
-source_sha=5/5
-provider_calls=NONE
+W22.4.2 exact source and live review proof
+version=3.83.6
+contract=tier2-context-surface-v3
+ci_core=30/30
+fixture=14/14
+live=14/14
+human_regressions=3/3
 live_deploy=UNCHANGED
