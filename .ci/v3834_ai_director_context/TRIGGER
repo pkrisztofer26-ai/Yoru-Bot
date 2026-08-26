@@ -1,5 +1,5 @@
 W22.4.2 Tier 2 context human-QA hardening
-mode=proven-workflow-slot
+mode=proven-workflow-slot-attempt-2
 version=3.83.6
 contract=tier2-context-surface-v3
 expected_ci_core=30/30
