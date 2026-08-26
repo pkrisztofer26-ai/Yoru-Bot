@@ -1,0 +1,20 @@
+{
+  "version": "3.83.4",
+  "work_item": "W22.4",
+  "contract": "tier2-context-surface-v1",
+  "source_sha256": {
+    "app/ai_director_context.py": "640de33b6d0bd3064f05568a106b26a3fa25e7b1e50f6a69a424522201214fe8",
+    "app/services/ai_director_context.py": "49f6210ceca7e351c26405495fcca39f299fd3a5825f3f7a4e685702155bec12",
+    "app/providers/ai_director_context_groq.py": "b8395cb3f3d1818efd46d6ed600af32f9cc4bf20a470328eca543afcc9911299",
+    "scripts/ai_director_tier2_context_review.py": "bd38262f3e675942e0200a7eac12a1ba8445ebb6c3bde0c73be55c410ef95439",
+    "tests/test_w22_4_context_core_ci.py": "46c41069b5b34f54ae77abad3e1e06f0406b913457ce1e43f99cf5e6612abb64"
+  },
+  "inherited_w22_2_provider_sha256": "adf76780ab271ad9beec3d6b1a5603c3ffd52d8d4988108b471e0371ca86de24",
+  "expected_ci_core": "23 passed",
+  "expected_review_packets": 14,
+  "fresh_local_w22_4": "42/42 PASS",
+  "fresh_local_w22_1_to_w22_4": "121/121 PASS",
+  "player_facing_scope": "TEST_GUILD_ONLY_DEFAULT_OFF",
+  "gameplay_authority": "NONE",
+  "live_deploy": false
+}
