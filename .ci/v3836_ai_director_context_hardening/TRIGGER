@@ -1,7 +1,7 @@
 W22.4.2 Tier 2 context human-QA hardening
 version=3.83.6
 contract=tier2-context-surface-v3
-runner=minimal-proof-script
+trigger=git-ref-push
 expected_ci_core=30/30
 fixture_review=14/14
 live_review=14/14
@@ -9,4 +9,4 @@ human_qa_regressions=3/3
 player_facing_scope=TEST_GUILD_ONLY_DEFAULT_OFF
 gameplay_authority=NONE
 live_deploy=UNCHANGED
-trigger=final-live-review-2026-08-26T15:22Z
+nonce=2026-08-26T15:36Z
