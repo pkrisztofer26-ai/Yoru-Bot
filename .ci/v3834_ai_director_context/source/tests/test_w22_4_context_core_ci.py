@@ -52,6 +52,7 @@ def test_sensitive_key_rejected(key):
 def test_mechanical_surface_rejected(desc):
     with pytest.raises(AIDirectorContextValidationError): validate_context_surface(p(), {"title":"Raktáros", "description":desc})
 
+
 @pytest.mark.parametrize("desc", [
     "A Modine raktáros munkája Miskolc mellett canonical helyzetként látszik.",
     "A Modine raktáros munkája Miskolc mellett mechanikai állapotként látszik.",
@@ -75,6 +76,8 @@ def test_fallbacks_are_free_of_internal_jargon():
         text=f"{packet.fallback_title} {packet.fallback_description}".casefold()
         assert not any(word in text for word in forbidden)
 
+
+
 @pytest.mark.parametrize("desc", [
     "Debrecenben saját lakásod található, amely otthonvárosban helyezkedik el.",
     "Réka ingatlanos, jelenleg tisztázatlan kapcsolati ügyben áll.",
@@ -97,9 +100,8 @@ def test_hardened_fallbacks_are_natural_and_article_safe():
     assert "ügyben áll" not in merged
     assert "a üzleti kapcsolat" not in merged
     assert "az üzleti kapcsolat" in merged
-    business = business_context_packet(business_name="Borsod Műhely", category="Szolgáltatás", city="Miskolc", operating_model="Stabil működés")
-    assert "szolgáltatás profilú" not in business.fallback_description.casefold()
-    assert "szolgáltató vállalkozás" in business.fallback_description.casefold()
+    assert "szolgáltatás profilú" not in business_context_packet(business_name="Borsod Műhely", category="Szolgáltatás", city="Miskolc", operating_model="Stabil működés").fallback_description.casefold()
+    assert "szolgáltató vállalkozás" in business_context_packet(business_name="Borsod Műhely", category="Szolgáltatás", city="Miskolc", operating_model="Stabil működés").fallback_description.casefold()
 
 def test_missing_anchor_rejected():
     with pytest.raises(AIDirectorContextValidationError): validate_context_surface(p(), {"title":"Munka", "description":"Egy csapatnál nyugodt a helyzet."})
