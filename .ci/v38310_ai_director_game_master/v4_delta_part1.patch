@@ -1,0 +1,64 @@
+diff -ruN v4diff_old/app/ai_director_game_master.py v4diff_new/app/ai_director_game_master.py
+--- v4diff_old/app/ai_director_game_master.py
++++ v4diff_new/app/ai_director_game_master.py
+@@ -5,7 +5,7 @@
+ The Game Master layer may narrate only host-owned facts that were already
+ resolved by canonical deterministic services.  It never chooses gameplay truth,
+ branches, rewards, success/failure, permissions, inventory or state mutation.
+-W22.5/W22.5.1/W22.5.1.1 deliberately ship no player-facing call sites.
++W22.5/W22.5.1/W22.5.1.1/W22.5.1.2 deliberately ship no player-facing call sites.
+ """
+ 
+ import hashlib
+@@ -16,7 +16,7 @@
+ from typing import Any, Mapping
+ 
+ 
+-GAME_MASTER_CONTRACT_VERSION = "tier3-game-master-surface-v3"
++GAME_MASTER_CONTRACT_VERSION = "tier3-game-master-surface-v4"
+ GAME_MASTER_RUNTIME_ENABLED_DEFAULT = False
+ GAME_MASTER_FAMILIES = frozenset({
+     "big_job",
+@@ -74,6 +74,8 @@
+     (re.compile(r"\b([a-záéíóöőúüű]{3,})\s+\1\b", re.IGNORECASE), "repeated_word"),
+     (re.compile(r"\ba\s+[aáeéiíoóöőuúüű]", re.IGNORECASE), "wrong_hungarian_article"),
+     (re.compile(r"\btörténetszál\s+[^.!?]{1,80}\s+pontja\b", re.IGNORECASE), "awkward_story_beat_phrase"),
++    (re.compile(r"\bhangulatban\s+áll\s+veled\b", re.IGNORECASE), "awkward_npc_relation_phrase"),
++    (re.compile(r"\bállapota\s+húzódik\b", re.IGNORECASE), "awkward_chapter_background_phrase"),
+ )
+ _KEY_RE = re.compile(r"^[a-z0-9][a-z0-9_.:-]{0,95}$")
+ 
+@@ -115,10 +117,19 @@
+         if token in merged_folded and token not in facts_folded:
+             errors.append("unsupported_ambient_expansion")
+             break
++    if packet.family == "chapter":
++        stage = _fold(packet.facts.get("stage_title", "")).strip()
++        if stage and re.search(r"\b" + re.escape(stage) + r"\s+szakaszban\b", merged_folded):
++            errors.append("awkward_chapter_stage_case")
+     if packet.family == "world_story":
+         beat = _fold(packet.facts.get("beat_title", "")).strip()
+         if beat and re.search(re.escape(beat) + r"[^a-z0-9]{0,4}pontja\b", merged_folded):
+             errors.append("awkward_story_beat_phrase")
++        city = str(packet.facts.get("city_label", "")).strip()
++        if city and _fold(city) in merged_folded and not re.search(r"(?<!\w)" + re.escape(city) + r"(?!\w)", merged, re.IGNORECASE):
++            errors.append("inflected_city_label")
++        if "csendben" in merged_folded and "csendben" not in facts_folded:
++            errors.append("unsupported_narrative_modifier")
+     if packet.family == "legendary_event":
+         for token in ("emlek", "mese"):
+             if token in merged_folded and token not in facts_folded:
+diff -ruN v4diff_old/app/providers/ai_director_game_master_groq.py v4diff_new/app/providers/ai_director_game_master_groq.py
+--- v4diff_old/app/providers/ai_director_game_master_groq.py
++++ v4diff_new/app/providers/ai_director_game_master_groq.py
+@@ -8,7 +8,7 @@
+ 
+ 
+ class GroqAIDirectorGameMasterProvider(GroqAIDirectorProvider):
+-    """Non-player review provider for the W22.5.1.1 Tier 3 hardening gate."""
++    """Non-player review provider for the W22.5.1.2 Tier 3 hardening gate."""
+ 
+     @staticmethod
+     def system_prompt() -> str:
+@@ -20,7 +20,7 @@
+             "world truth-ról, relationship state-ről, chapter endingről vagy hozzáférésről. Ne írj számot, összeget, "
