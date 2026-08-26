@@ -1,0 +1,24 @@
+{
+  "version": "3.83.3",
+  "gate": "W22.3 opt-in/test-guild Tier 1 pilot",
+  "core_source_sha256": {
+    "app/ai_director_pilot.py": "81ebe6bf8d1f3e800052cf8c50bd0d98170effa9b5797e17576d594c973f6732",
+    "app/config.py": "d5c0cfaec47c897a548ad3d33c88afd27cbae3215a09dcdb2aa4aa4bbfba0a07"
+  },
+  "full_tree_local_sha256": {
+    "app/main.py": "8fe6b3b34aa3e880827cd9fea78d49cf82cd9d4431afa0856a098f0d28c36161",
+    "app/cogs/economy.py": "d5e780028bdcbafe422970417d96ce9330e19ba0f3a6f6c1c55f3c1c3e3adfc3",
+    "app/cogs/prefix.py": "b2cb4590c45b62ce9cdcf530e3b3acf0c9a643207829a3584650beeb3570195d",
+    "app/cogs/character_views/world.py": "721f5a59a2dfeccc230cfc0bdca418bee563438ddf17aaef33b3e770b22be563",
+    "app/cogs/jobs.py": "f428156cd2b29c21599a8fd10a0343d74c15fb1241fb6109771d7b9ced8a4294",
+    "tests/test_w22_3_ai_director_test_guild_pilot.py": "8ce19dcee16990b88ae9dd5cb06200b8ba2e1c3d7bb34a9e2f934f7f739b5188"
+  },
+  "fresh_local_w22_3": "33/33 PASS",
+  "fresh_local_w22_1_to_w22_3": "79/79 PASS",
+  "expected_ci_core": "18 passed",
+  "pilot_default": false,
+  "test_guild_only": true,
+  "live_provider_in_gameplay": false,
+  "generic_ai_runtime_enabled": false,
+  "live_deploy": false
+}
