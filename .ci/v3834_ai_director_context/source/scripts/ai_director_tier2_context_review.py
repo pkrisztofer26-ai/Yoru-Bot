@@ -51,7 +51,7 @@ async def generate(mode: str, *, model: str, reasoning_effort: str) -> tuple[lis
     if mode == "live":
         provider = GroqAIDirectorContextProvider(
             os.environ.get("GROQ_API_KEY", ""), model=model, reasoning_effort=reasoning_effort,
-            timeout=20.0, http_retries=0, max_completion_tokens=260,
+            timeout=20.0, http_retries=1, max_completion_tokens=220,
         )
     rows: list[dict] = []
     fallbacks = 0
@@ -65,10 +65,12 @@ async def generate(mode: str, *, model: str, reasoning_effort: str) -> tuple[lis
                 packet_digest=packet.digest(), contract_version=packet.contract_version,
             )
             status = "PASS"
+            error_detail = ""
         except Exception as exc:
             surface = fallback_context_surface(packet)
             fallbacks += 1
             status = f"FALLBACK:{type(exc).__name__}"
+            error_detail = str(exc).replace(os.environ.get("GROQ_API_KEY", ""), "[redacted]")[:600]
         rows.append({
             "context_key": packet.context_key,
             "domain": packet.domain,
@@ -79,6 +81,7 @@ async def generate(mode: str, *, model: str, reasoning_effort: str) -> tuple[lis
             "candidate_description": surface.description,
             "candidate_source": surface.source,
             "automated_status": status,
+            "error_detail": error_detail,
             "packet_digest": packet.digest(),
             "human_groundedness": "",
             "human_hungarian": "",
@@ -86,6 +89,8 @@ async def generate(mode: str, *, model: str, reasoning_effort: str) -> tuple[lis
             "human_decision": "",
             "human_notes": "",
         })
+        if provider is not None:
+            await asyncio.sleep(2.0)
     return rows, fallbacks
 
 
@@ -112,8 +117,8 @@ async def main() -> int:
     validated = len(rows) - fallbacks
     status = "PENDING_HUMAN" if validated == len(rows) and dupes == 0 else "AUTOMATED_HOLD"
     payload = {
-        "version": "3.83.4",
-        "work_item": "W22.4",
+        "version": "3.83.5",
+        "work_item": "W22.4.1",
         "contract": REVIEW_PACKETS[0].contract_version,
         "mode": args.mode,
         "status": status,
@@ -131,7 +136,7 @@ async def main() -> int:
         json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     result = "\n".join((
-        "Yoru v3.83.4 W22.4 Tier 2 Context Review",
+        "Yoru v3.83.5 W22.4.1 Tier 2 Context Review",
         f"MODE={args.mode}",
         f"STATUS={status}",
         f"TOTAL={len(rows)}",
