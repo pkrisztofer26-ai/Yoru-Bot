@@ -1,0 +1,12 @@
+W22.5.1.2 Tier 3 surface v4 provider review
+version=3.83.10
+contract=tier3-game-master-surface-v4
+source_sha=8/8
+ci_targeted=38/38
+full_release_w22=224/224
+fixture_effective=12/12
+live_effective=12/12
+player_facing_ai=OFF
+runtime_wiring=NONE
+gameplay_authority=NONE
+live_deploy=UNCHANGED
