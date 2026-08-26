@@ -1,0 +1,183 @@
+--- a/VERSION
++++ b/VERSION
+@@ -1 +1 @@
+-3.83.12
++3.83.13
+--- a/app/config.py
++++ b/app/config.py
+@@ -65,6 +65,7 @@
+     test_guild_id: int | None
+     ai_director_pilot_enabled: bool
+     ai_director_context_pilot_enabled: bool
++    ai_director_game_master_pilot_enabled: bool
+     groq_api_key: str = field(repr=False)
+     starting_balance: int
+     event_channel_id: int | None
+@@ -94,6 +95,7 @@
+     guild_id = _optional_snowflake("TEST_GUILD_ID")
+     ai_director_pilot_enabled = env_bool("YORU_AI_DIRECTOR_PILOT_ENABLED", False)
+     ai_director_context_pilot_enabled = env_bool("YORU_AI_DIRECTOR_CONTEXT_PILOT_ENABLED", False)
++    ai_director_game_master_pilot_enabled = env_bool("YORU_AI_DIRECTOR_GAME_MASTER_PILOT_ENABLED", False)
+     groq_api_key = os.getenv("GROQ_API_KEY", "").strip()
+     if ai_director_pilot_enabled and guild_id is None:
+         raise RuntimeError(
+@@ -106,6 +108,13 @@
+             raise RuntimeError("A YORU_AI_DIRECTOR_CONTEXT_PILOT_ENABLED csak explicit TEST_GUILD_ID mellett kapcsolható be.")
+         if not groq_api_key:
+             raise RuntimeError("A Tier 2 Context Pilot bekapcsolásához GROQ_API_KEY szükséges.")
++    if ai_director_game_master_pilot_enabled:
++        if not ai_director_pilot_enabled:
++            raise RuntimeError("A Tier 3 Game Master Pilot csak bekapcsolt Tier 1 AI pilot mellett engedélyezhető.")
++        if guild_id is None:
++            raise RuntimeError("A YORU_AI_DIRECTOR_GAME_MASTER_PILOT_ENABLED csak explicit TEST_GUILD_ID mellett kapcsolható be.")
++        if not groq_api_key:
++            raise RuntimeError("A Tier 3 Game Master Pilot bekapcsolásához GROQ_API_KEY szükséges.")
+     event_channel_id = _optional_snowflake("EVENT_CHANNEL_ID")
+ 
+     # Install-level fallback only. Per-guild `/settings` values in guild_state
+@@ -172,6 +181,7 @@
+         test_guild_id=guild_id,
+         ai_director_pilot_enabled=ai_director_pilot_enabled,
+         ai_director_context_pilot_enabled=ai_director_context_pilot_enabled,
++        ai_director_game_master_pilot_enabled=ai_director_game_master_pilot_enabled,
+         groq_api_key=groq_api_key,
+         starting_balance=starting_balance,
+         event_channel_id=event_channel_id,
+--- a/app/main.py
++++ b/app/main.py
+@@ -43,6 +43,8 @@
+ from app.ai_director_pilot import AIDirectorPilot
+ from app.services.ai_director_context import AIDirectorContextPilot
+ from app.providers.ai_director_context_groq import GroqAIDirectorContextProvider
++from app.services.ai_director_game_master import AIDirectorGameMaster
++from app.providers.ai_director_game_master_groq import GroqAIDirectorGameMasterProvider
+ from app.services.contracts import ContractService
+ from app.services.cases import CaseService
+ from app.services.proceeds import ProceedsService
+@@ -264,6 +266,20 @@
+             timeout_seconds=8.0,
+             cache_ttl_seconds=300.0,
+         )
++        # W22.6 Tier-3 Game Master is a separate rare-content presentation pilot.
++        # It is disabled by default and cannot activate outside TEST_GUILD_ID.
++        game_master_provider = None
++        if self.settings.ai_director_game_master_pilot_enabled:
++            game_master_provider = GroqAIDirectorGameMasterProvider(
++                self.settings.groq_api_key, timeout=8.0, http_retries=1, max_completion_tokens=280
++            )
++        self.ai_director_game_master = AIDirectorGameMaster(
++            provider=game_master_provider,
++            enabled=self.settings.ai_director_game_master_pilot_enabled,
++            test_guild_id=self.settings.test_guild_id,
++            timeout_seconds=8.0,
++            cache_ttl_seconds=300.0,
++        )
+         self.crew = CrewService(self.database, self.statistics)
+         self.crew.bind_bot(self)
+         self.crew.bind_characters(self.characters)
+--- a/app/services/ai_director_game_master.py
++++ b/app/services/ai_director_game_master.py
+@@ -2,6 +2,7 @@
+ 
+ import asyncio
+ import logging
++import time
+ from dataclasses import dataclass
+ from typing import Any, Mapping, Protocol
+ 
+@@ -30,11 +31,11 @@
+ 
+ 
+ class AIDirectorGameMaster:
+-    """W22.5 fail-closed Tier 3 runtime shell.
++    """W22.6 fail-closed Tier 3 test-guild presentation service.
+ 
+-    W22.5 has no player-facing integration.  This service exists so provider,
+-    timeout and fallback semantics can be proven before any live story call-site
+-    is allowed to depend on it.
++    Only explicit TEST_GUILD_ID opt-in call-sites may request a surface. Provider
++    timeout, validation failure or packet rejection never changes host-owned state;
++    presentation falls back to deterministic Scenario Engine text.
+     """
+ 
+     def __init__(
+@@ -44,10 +45,13 @@
+         enabled: bool = False,
+         test_guild_id: int | None = None,
+         timeout_seconds: float = 8.0,
++        cache_ttl_seconds: float = 300.0,
+     ) -> None:
+         self.provider = provider
+         self.policy = AIDirectorGameMasterPolicy(bool(enabled), test_guild_id)
+         self.timeout_seconds = max(2.0, min(float(timeout_seconds), 15.0))
++        self.cache_ttl_seconds = max(30.0, min(float(cache_ttl_seconds), 1800.0))
++        self._cache: dict[str, tuple[float, AIDirectorGameMasterSurface]] = {}
+         self._provider_lock = asyncio.Lock()
+ 
+     def active_for_guild(self, guild_id: int | None) -> bool:
+@@ -60,19 +64,40 @@
+         fallback = fallback_game_master_surface(packet)
+         if self.provider is None:
+             return fallback
++        cache_key = packet.digest()
++        cached = self._cache.get(cache_key)
++        now = time.monotonic()
++        if cached is not None and cached[0] > now:
++            value = cached[1]
++            return AIDirectorGameMasterSurface(
++                story_key=value.story_key, family=value.family, title=value.title,
++                description=value.description, source="ai_game_master_cache",
++                packet_digest=value.packet_digest, contract_version=value.contract_version,
++            )
+         try:
+             async with self._provider_lock:
+                 raw = await asyncio.wait_for(self.provider.generate_game_master(packet), timeout=self.timeout_seconds)
+             title, description = validate_game_master_surface(packet, raw)
+-            return AIDirectorGameMasterSurface(
++            surface = AIDirectorGameMasterSurface(
+                 story_key=packet.story_key,
+                 family=packet.family,
+                 title=title,
+                 description=description,
+                 source="ai_game_master",
+-                packet_digest=packet.digest(),
++                packet_digest=cache_key,
+                 contract_version=packet.contract_version,
+             )
++            self._cache[cache_key] = (time.monotonic() + self.cache_ttl_seconds, surface)
++            if len(self._cache) > 128:
++                cutoff = time.monotonic()
++                self._cache = {key: value for key, value in self._cache.items() if value[0] > cutoff}
++            return surface
+         except Exception as exc:
+             logger.warning("Tier3 Game Master fallback guild=%s family=%s key=%s error=%s", guild_id, packet.family, packet.story_key, type(exc).__name__)
+             return fallback
++
++    async def field_value(self, guild_id: int | None, packet: AIDirectorGameMasterPacket) -> str | None:
++        surface = await self.surface(guild_id, packet)
++        if surface is None:
++            return None
++        return f"**{surface.title}**\n{surface.description}"[:1024]
+--- a/app/ai_director_game_master.py
++++ b/app/ai_director_game_master.py
+@@ -5,7 +5,7 @@
+ The Game Master layer may narrate only host-owned facts that were already
+ resolved by canonical deterministic services.  It never chooses gameplay truth,
+ branches, rewards, success/failure, permissions, inventory or state mutation.
+-W22.5/W22.5.1/W22.5.1.1/W22.5.1.2/W22.5.1.3/W22.5.1.4 deliberately ship no player-facing call sites.
++W22.6 opens bounded player-facing presentation only behind explicit test-guild opt-in; host services remain authoritative.
+ """
+ 
+ import hashlib
+--- a/app/ai_director_game_master_integration.py
++++ b/app/ai_director_game_master_integration.py
+@@ -0,0 +1,27 @@
++from __future__ import annotations
++
++import logging
++from collections.abc import Callable
++
++from app.ai_director_game_master import AIDirectorGameMasterPacket
++
++logger = logging.getLogger("yoru.ai_game_master.integration")
++GAME_MASTER_FIELD_NAME = "🌙 Yoru Director • GM teszt"
