@@ -15,7 +15,8 @@
   },
   "live_deploy": false,
   "projection": "YoruBot v3.82.7 W21.8 Phase 11 closure + packaged regression dependency projection",
-  "source_archive_sha256": "1d50a5612beb96ea0fc83a281e3a7ad5526192306873250819c12f0ad65bc69b",
+  "source_archive_sha256": "c02cd661c653913e1c452ae8da97a1d9cf5fdabfbb0fae39afd7238e6ee21545",
+  "source_archive_format": "tar.zst",
   "source_file_count": 91,
   "uploaded_zip_sha256": "5c29d16ce538fb2365e8e9584d2447d4d80de879ae0241b441be3458bafb4947"
 }
