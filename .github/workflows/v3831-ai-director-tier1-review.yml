@@ -32,7 +32,7 @@ jobs:
           GATE=.ci/v3831_ai_director_review
           rm -rf "$GATE/source"
           mkdir -p "$GATE/source"
-          base64 -d "$GATE/source.tar.gz.b64" > "$GATE/source.tar.gz"
+          cat "$GATE"/payload/source.part*.b64 | base64 -d > "$GATE/source.tar.gz"
           echo "13e0241131bc8c5db039b2c9ee06741ac2801384d991719dee638539fd651504  $GATE/source.tar.gz" | sha256sum -c -
           tar -xzf "$GATE/source.tar.gz" -C "$GATE/source"
 
