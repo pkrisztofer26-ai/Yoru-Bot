@@ -1,0 +1,143 @@
+--- a/app/ai_director_context.py
++++ b/app/ai_director_context.py
+@@ -16,7 +16,7 @@
+ from typing import Any, Mapping
+ 
+ 
+-CONTEXT_CONTRACT_VERSION = "tier2-context-surface-v2"
++CONTEXT_CONTRACT_VERSION = "tier2-context-surface-v3"
+ CONTEXT_FIELD_NAME = "🌙 Yoru Director • Kontext teszt"
+ CONTEXT_DOMAINS = frozenset({"career", "business", "travel", "housing", "npc", "tips", "case"})
+ CONTEXT_TITLE_MAX = 120
+@@ -53,6 +53,10 @@
+     r"\b(?:canonical|authority|mechanikai|validator|fallback|provider|contract)\b",
+     re.IGNORECASE,
+ )
++_FORBIDDEN_HUNGARIAN_SURFACE_RE = re.compile(
++    r"(?:\bérkezett\b.{0,48}\bérkezett\b|\botthonvárosban\s+helyezkedik\s+el\b|\bügyben\s+áll\b|\ba\s+üzleti\s+kapcsolat\b)",
++    re.IGNORECASE | re.DOTALL,
++)
+ _KEY_RE = re.compile(r"^[a-z0-9][a-z0-9_.:-]{0,95}$")
+ 
+ 
+@@ -153,6 +157,8 @@
+         raise AIDirectorContextValidationError("A Tier 2 AI mechanikai/numerikus állítást próbált hozzáadni.")
+     if _FORBIDDEN_META_OUTPUT_RE.search(merged):
+         raise AIDirectorContextValidationError("A Tier 2 AI belső rendszerzsargont próbált player-facing szövegbe tenni.")
++    if _FORBIDDEN_HUNGARIAN_SURFACE_RE.search(merged):
++        raise AIDirectorContextValidationError("A Tier 2 AI ismert magyar megfogalmazási regressziót adott vissza.")
+     folded = _fold(merged)
+     for term in packet.required_terms:
+         anchor = _fold(str(term).strip())
+@@ -222,11 +228,15 @@
+ 
+ 
+ def housing_context_packet(*, home_city: str, housing_tier: str, location_state: str) -> AIDirectorContextPacket:
++    if location_state.casefold().strip() == "otthonvárosban":
++        desc = f"Az otthonod {home_city} területén található; típusa: {housing_tier}. Jelenleg az otthonvárosodban tartózkodsz."
++    else:
++        desc = f"Az otthonod {home_city} területén található; típusa: {housing_tier}. Jelenleg {location_state}."
+     return _packet(
+         "housing", "home_snapshot",
+         {"home_city": home_city, "housing_tier": housing_tier, "location_state": location_state},
+         "Otthoni helyzetkép",
+-        f"Az otthonod {home_city} területén található; típusa: {housing_tier}. Jelenlegi helyzet: {location_state}.",
++        desc,
+         required=(home_city, housing_tier),
+     )
+ 
+@@ -236,17 +246,19 @@
+         "npc", "relationship_snapshot",
+         {"npc_name": npc_name, "npc_role": npc_role, "relationship_state": relationship_state},
+         "Kapcsolati helyzetkép",
+-        f"{npc_name} ({npc_role}) felől most {relationship_state} jellegű ügy látszik.",
++        f"{npc_name} ({npc_role}) kapcsán most ez a kapcsolati helyzet látszik: {relationship_state}.",
+         required=(npc_name, npc_role),
+     )
+ 
+ 
+ def tips_context_packet(*, topic: str, source_label: str, certainty: str) -> AIDirectorContextPacket:
++    first = source_label.strip()[:1].casefold()
++    article = "az" if first in "aáeéiíoóöőuúüű" else "a"
+     return _packet(
+         "tips", "tip_snapshot",
+         {"topic": topic, "source_label": source_label, "certainty": certainty},
+         "Füles a háttérben",
+-        f"{topic} témában a {source_label} felől érkezett {certainty}. Ez önmagában még nem jelez biztos kimenetelt.",
++        f"{topic} témában {article} {source_label} felől {certainty} érkezett. Ez önmagában még nem jelez biztos kimenetelt.",
+         required=(topic, source_label),
+     )
+ 
+--- a/app/providers/ai_director_context_groq.py
++++ b/app/providers/ai_director_context_groq.py
+@@ -19,7 +19,7 @@
+             "jutalomról, esélyről, siker/bukásról, cooldownról, inventoryról, XP-ről, police/heatről, "
+             "settlementről, choice-ról vagy branchről. Ne írj számokat, összegeket, százalékot vagy ígéretet. "
+             "Player-facing szövegben ne használj belső technikai szavakat, például canonical, authority, mechanikai, "
+-            "validator, fallback, provider vagy contract. Kizárólag természetes magyar title és rövid description mezőt adj vissza."
++            "validator, fallback, provider vagy contract. Kerüld a szóismétlést és a magyartalan szerkezeteket; ugyanazt az igét ne ismételd rövid távolságon belül. Kizárólag természetes magyar title és rövid description mezőt adj vissza."
+         )
+ 
+     @staticmethod
+@@ -33,7 +33,7 @@
+             f"TITLE: {packet.fallback_title}\nDESCRIPTION: {packet.fallback_description}\n\n"
+             "Fogalmazd át tömör, természetes magyar context-szöveggé. A fallback jelentési határán kívül ne adj "
+             "hozzá új tényt. Ne adj tanácsot, mechanikai következtetést, jutalmat vagy garantált kimenetelt. "
+-            "A válaszban ne jelenjen meg belső rendszerzsargon (canonical, authority, mechanikai, validator, fallback, provider, contract)."
++            "A válaszban ne jelenjen meg belső rendszerzsargon (canonical, authority, mechanikai, validator, fallback, provider, contract). Kerüld az olyan merev formákat is, mint „ügyben áll”, „otthonvárosban helyezkedik el”, illetve az ismétlődő „érkezett … érkezett”."
+         )
+ 
+     def request_body(self, packet: AIDirectorContextPacket) -> dict[str, Any]:
+--- a/scripts/ai_director_tier2_context_review.py
++++ b/scripts/ai_director_tier2_context_review.py
+@@ -117,8 +117,8 @@
+     validated = len(rows) - fallbacks
+     status = "PENDING_HUMAN" if validated == len(rows) and dupes == 0 else "AUTOMATED_HOLD"
+     payload = {
+-        "version": "3.83.5",
+-        "work_item": "W22.4.1",
++        "version": "3.83.6",
++        "work_item": "W22.4.2",
+         "contract": REVIEW_PACKETS[0].contract_version,
+         "mode": args.mode,
+         "status": status,
+@@ -136,7 +136,7 @@
+         json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+     )
+     result = "\n".join((
+-        "Yoru v3.83.5 W22.4.1 Tier 2 Context Review",
++        "Yoru v3.83.6 W22.4.2 Tier 2 Context Review",
+         f"MODE={args.mode}",
+         f"STATUS={status}",
+         f"TOTAL={len(rows)}",
+--- a/tests/test_w22_4_context_core_ci.py
++++ b/tests/test_w22_4_context_core_ci.py
+@@ -77,6 +77,28 @@
+         assert not any(word in text for word in forbidden)
+ 
+ 
++
++@pytest.mark.parametrize("desc", [
++    "Debrecenben saját lakásod található, amely otthonvárosban helyezkedik el.",
++    "Réka ingatlanos, jelenleg tisztázatlan kapcsolati ügyben áll.",
++    "Üzleti kapcsolattól érkezett ellenőrizetlen jelzés érkezett az eltűnt szállítmányról.",
++])
++def test_human_qa_hungarian_regressions_rejected(desc):
++    packet = p()
++    with pytest.raises(AIDirectorContextValidationError):
++        validate_context_surface(packet, {"title":"Raktáros", "description":f"A Modine raktáros munkája Miskolc mellett. {desc}"})
++
++
++def test_hardened_fallbacks_are_natural_and_article_safe():
++    housing = housing_context_packet(home_city="Debrecen", housing_tier="Saját lakás", location_state="otthonvárosban")
++    npc = npc_context_packet(npc_name="Réka", npc_role="Ingatlanos", relationship_state="tisztázatlan kapcsolati ügy")
++    tip = tips_context_packet(topic="Eltűnt szállítmány", source_label="üzleti kapcsolat", certainty="ellenőrizetlen jelzés")
++    merged = " ".join((housing.fallback_description, npc.fallback_description, tip.fallback_description)).casefold()
++    assert "otthonvárosban helyezkedik el" not in merged
++    assert "ügyben áll" not in merged
++    assert "a üzleti kapcsolat" not in merged
++    assert "az üzleti kapcsolat" in merged
++
+ def test_missing_anchor_rejected():
+     with pytest.raises(AIDirectorContextValidationError): validate_context_surface(p(), {"title":"Munka", "description":"Egy csapatnál nyugodt a helyzet."})
+ 
