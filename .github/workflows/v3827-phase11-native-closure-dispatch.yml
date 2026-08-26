@@ -58,7 +58,10 @@ jobs:
           }
 
           restore "$PAYLOAD/app__services__chapters.py.gz.b64" "$SRC/app/services/chapters.py"
-          restore "$PAYLOAD/app__services__assets.py.gz.b64" "$SRC/app/services/assets.py"
+          cat "$PAYLOAD/app__services__assets.py.gz.b64.part00" \
+              "$PAYLOAD/app__services__assets.py.gz.b64.part01" \
+              "$PAYLOAD/app__services__assets.py.gz.b64.part02" \
+            | base64 -d | gzip -dc > "$SRC/app/services/assets.py"
           restore "$PAYLOAD/app__db_backend.py.gz.b64" "$SRC/app/db_backend.py"
           restore "$PAYLOAD/app__chapter_config.py.gz.b64" "$SRC/app/chapter_config.py"
           restore "$PAYLOAD/app__asset_config.py.gz.b64" "$SRC/app/asset_config.py"
