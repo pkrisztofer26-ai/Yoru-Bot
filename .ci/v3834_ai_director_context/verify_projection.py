@@ -9,9 +9,9 @@ SRC = GATE / "source"
 BASE = GATE.parent / "v3831_ai_director_review" / "frozen"
 manifest = json.loads((GATE / "MANIFEST.json").read_text(encoding="utf-8"))
 
-assert manifest["version"] == "3.83.4"
-assert manifest["work_item"] == "W22.4"
-assert manifest["contract"] == "tier2-context-surface-v1"
+assert manifest["version"] == "3.83.5"
+assert manifest["work_item"] == "W22.4.1"
+assert manifest["contract"] == "tier2-context-surface-v2"
 assert manifest["player_facing_scope"] == "TEST_GUILD_ONLY_DEFAULT_OFF"
 assert manifest["gameplay_authority"] == "NONE"
 assert manifest["live_deploy"] is False
@@ -50,11 +50,16 @@ assert "json_schema" in provider
 assert '"temperature": 0.15' in provider
 assert "max_completion_tokens" in provider
 assert "GROQ_API_KEY" in review
+assert "_FORBIDDEN_META_OUTPUT_RE" in core
+assert "canonical" in provider and "authority" in provider and "mechanikai" in provider
+assert "http_retries=1" in review and "await asyncio.sleep(2.0)" in review
+assert '"version": "3.83.5"' in review and '"work_item": "W22.4.1"' in review
 
-print("W22_4_SOURCE_VERIFY=PASS")
+print("W22_4_1_SOURCE_VERIFY=PASS")
 print("NEW_SOURCE_SHA256=5/5 PASS")
 print("INHERITED_W22_2_PROVIDER_SHA256=PASS")
 print("TIER2_DOMAINS=7/7 PASS")
+print("HUNGARIAN_SURFACE_HARDENING=PASS")
 print("AUTHORITY_BOUNDARY=PASS")
 print("PLAYER_FACING_SCOPE=TEST_GUILD_ONLY_DEFAULT_OFF")
 print("GAMEPLAY_AUTHORITY=NONE")
