@@ -1,5 +1,5 @@
-name: Yoru v3.83.5 W22.4.1 Tier 2 Context Review
-run-name: W22.4.1 Tier 2 hardened non-player context review
+name: Yoru v3.83.6 W22.4.2 Tier 2 Context Review
+run-name: W22.4.2 Tier 2 human-QA hardened review
 
 on:
   push:
@@ -16,130 +16,32 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
-      - name: Checkout isolated W22.4.1 branch
+      - name: Checkout isolated W22.4.2 branch
         uses: actions/checkout@v6
         with:
           ref: ci/v3834-ai-director-tier2-context
-
       - name: Set up Python 3.14
         uses: actions/setup-python@v6
         with:
           python-version: '3.14'
-
-      - name: Verify exact Tier 2 hardened proof projection
-        run: |
-          set -euo pipefail
-          python .ci/v3834_ai_director_context/verify_projection.py | tee /tmp/source_verify.log
-          grep -q 'W22_4_1_SOURCE_VERIFY=PASS' /tmp/source_verify.log
-          grep -q 'NEW_SOURCE_SHA256=5/5 PASS' /tmp/source_verify.log
-          grep -q 'INHERITED_W22_2_PROVIDER_SHA256=PASS' /tmp/source_verify.log
-          grep -q 'TIER2_DOMAINS=7/7 PASS' /tmp/source_verify.log
-          grep -q 'HUNGARIAN_SURFACE_HARDENING=PASS' /tmp/source_verify.log
-          grep -q 'AUTHORITY_BOUNDARY=PASS' /tmp/source_verify.log
-          cp /tmp/source_verify.log .ci/v3834_ai_director_context/source_verify.log
-
-      - name: Prepare isolated Tier 2 runtime
-        run: |
-          set -euo pipefail
-          GATE=.ci/v3834_ai_director_context
-          BASE=.ci/v3831_ai_director_review/frozen
-          SRC="$GATE/source"
-          RUN="$GATE/runtime"
-          rm -rf "$RUN"
-          mkdir -p "$RUN/app/providers" "$RUN/app/services" "$RUN/scripts" "$RUN/tests"
-          cp "$BASE/app/__init__.py" "$RUN/app/__init__.py"
-          cp "$BASE/app/ai_director.py" "$RUN/app/ai_director.py"
-          cp "$BASE/app/ai_director_config.py" "$RUN/app/ai_director_config.py"
-          cp "$BASE/app/providers/__init__.py" "$RUN/app/providers/__init__.py"
-          cp "$BASE/app/providers/ai_director_groq.py" "$RUN/app/providers/ai_director_groq.py"
-          cp "$SRC/app/ai_director_context.py" "$RUN/app/ai_director_context.py"
-          cp "$SRC/app/services/ai_director_context.py" "$RUN/app/services/ai_director_context.py"
-          touch "$RUN/app/services/__init__.py"
-          cp "$SRC/app/providers/ai_director_context_groq.py" "$RUN/app/providers/ai_director_context_groq.py"
-          cp "$SRC/scripts/ai_director_tier2_context_review.py" "$RUN/scripts/ai_director_tier2_context_review.py"
-          cp "$SRC/tests/test_w22_4_context_core_ci.py" "$RUN/tests/test_w22_4_context_core_ci.py"
-
       - name: Install proof dependency
         run: python -m pip install 'pytest>=8,<10'
-
-      - name: Run W22.4.1 Tier 2 core contracts
-        working-directory: .ci/v3834_ai_director_context/runtime
-        run: |
-          set -euo pipefail
-          PYTHONPATH=. pytest -q tests/test_w22_4_context_core_ci.py | tee ../core_pytest.log
-          grep -Eq '26 passed' ../core_pytest.log
-          if grep -Eqi '[1-9][0-9]* skipped|[1-9][0-9]* failed|[1-9][0-9]* error' ../core_pytest.log; then exit 1; fi
-
-      - name: Run deterministic Tier 2 fixture review
-        working-directory: .ci/v3834_ai_director_context/runtime
-        run: |
-          set -euo pipefail
-          PYTHONPATH=. python scripts/ai_director_tier2_context_review.py \
-            --mode fixture \
-            --output ../fixture_review
-          cat ../fixture_review/YORU_AI_DIRECTOR_TIER2_CONTEXT_REVIEW_RESULT.txt
-          grep -q 'STATUS=PENDING_HUMAN' ../fixture_review/YORU_AI_DIRECTOR_TIER2_CONTEXT_REVIEW_RESULT.txt
-          grep -q 'TOTAL=14' ../fixture_review/YORU_AI_DIRECTOR_TIER2_CONTEXT_REVIEW_RESULT.txt
-          grep -q 'AI_VALIDATED=14' ../fixture_review/YORU_AI_DIRECTOR_TIER2_CONTEXT_REVIEW_RESULT.txt
-          grep -q 'FALLBACKS=0' ../fixture_review/YORU_AI_DIRECTOR_TIER2_CONTEXT_REVIEW_RESULT.txt
-          grep -q 'DUPLICATE_GROUPS=0' ../fixture_review/YORU_AI_DIRECTOR_TIER2_CONTEXT_REVIEW_RESULT.txt
-
-      - name: Generate hardened live non-player Tier 2 context candidates
-        working-directory: .ci/v3834_ai_director_context/runtime
+      - name: Run exact W22.4.2 proof and live review
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-        run: |
-          set -euo pipefail
-          PYTHONPATH=. python scripts/ai_director_tier2_context_review.py \
-            --mode live \
-            --model openai/gpt-oss-120b \
-            --reasoning-effort low \
-            --output ../live_review
-          cat ../live_review/YORU_AI_DIRECTOR_TIER2_CONTEXT_REVIEW_RESULT.txt
-          grep -q 'STATUS=PENDING_HUMAN' ../live_review/YORU_AI_DIRECTOR_TIER2_CONTEXT_REVIEW_RESULT.txt
-          grep -q 'TOTAL=14' ../live_review/YORU_AI_DIRECTOR_TIER2_CONTEXT_REVIEW_RESULT.txt
-          grep -q 'AI_VALIDATED=14' ../live_review/YORU_AI_DIRECTOR_TIER2_CONTEXT_REVIEW_RESULT.txt
-          grep -q 'FALLBACKS=0' ../live_review/YORU_AI_DIRECTOR_TIER2_CONTEXT_REVIEW_RESULT.txt
-          grep -q 'DUPLICATE_GROUPS=0' ../live_review/YORU_AI_DIRECTOR_TIER2_CONTEXT_REVIEW_RESULT.txt
-          grep -q 'GAMEPLAY_AUTHORITY=NONE' ../live_review/YORU_AI_DIRECTOR_TIER2_CONTEXT_REVIEW_RESULT.txt
-
-      - name: Compile exact Tier 2 runtime
-        run: |
-          python -m compileall -q .ci/v3834_ai_director_context/runtime .ci/v3834_ai_director_context/verify_projection.py
-          echo 'COMPILEALL=PASS' > .ci/v3834_ai_director_context/compileall.log
-
-      - name: Write W22.4.1 automated result
-        run: |
-          cat > .ci/v3834_ai_director_context/W22_4_1_AUTOMATED_RESULT.txt <<'EOF'
-          SOURCE_PROJECTION=PASS
-          NEW_SOURCE_SHA256=5/5 PASS
-          INHERITED_W22_2_PROVIDER_SHA256=PASS
-          TIER2_DOMAINS=7/7 PASS
-          HUNGARIAN_SURFACE_HARDENING=PASS
-          W22_4_1_CI_CORE=26/26 PASS
-          W22_4_1_FULL_TREE=46/46 PASS (fresh local full-tree checkpoint; not rerun by this CI job)
-          PHASE12_W22_1_TO_W22_4_1=125/125 PASS (fresh local full-tree checkpoint; not rerun by this CI job)
-          FIXTURE_CONTEXT_REVIEW=14/14 PASS
-          LIVE_PROVIDER_CANDIDATES=14/14 VALIDATED
-          EXACT_DUPLICATES=0
-          AUTOMATED_GATE=PENDING_HUMAN
-          PLAYER_FACING_SCOPE=TEST_GUILD_ONLY_DEFAULT_OFF
-          GAMEPLAY_AUTHORITY=NONE
-          LIVE_DEPLOY=UNCHANGED
-          W22_4_1_HUMAN_REVIEW=REQUIRED
-          EOF
-
-      - name: Upload W22.4.1 proof artifact
+        run: bash .ci/v3836_ai_director_context_hardening/run_review.sh
+      - name: Upload W22.4.2 proof artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: yoru-v3835-w22-4-1-tier2-context-hardened-review
+          name: yoru-v3836-w22-4-2-tier2-context-human-qa-hardening
           path: |
-            .ci/v3834_ai_director_context/live_review/
-            .ci/v3834_ai_director_context/fixture_review/
-            .ci/v3834_ai_director_context/source_verify.log
-            .ci/v3834_ai_director_context/core_pytest.log
-            .ci/v3834_ai_director_context/compileall.log
-            .ci/v3834_ai_director_context/W22_4_1_AUTOMATED_RESULT.txt
+            .ci/v3836_ai_director_context_hardening/live_review/
+            .ci/v3836_ai_director_context_hardening/fixture_review/
+            .ci/v3836_ai_director_context_hardening/base_verify.log
+            .ci/v3836_ai_director_context_hardening/post_patch_verify.log
+            .ci/v3836_ai_director_context_hardening/core_pytest.log
+            .ci/v3836_ai_director_context_hardening/compileall.log
+            .ci/v3836_ai_director_context_hardening/W22_4_2_AUTOMATED_RESULT.txt
           if-no-files-found: warn
           retention-days: 30
