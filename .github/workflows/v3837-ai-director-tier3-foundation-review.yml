@@ -45,6 +45,8 @@ jobs:
           rm -rf "$RUN"
           mkdir -p "$RUN/app/providers" "$RUN/app/services" "$RUN/scripts" "$RUN/tests"
           touch "$RUN/app/__init__.py" "$RUN/app/providers/__init__.py" "$RUN/app/services/__init__.py"
+          cp "$BASE/app/ai_director.py" "$RUN/app/ai_director.py"
+          cp "$BASE/app/ai_director_config.py" "$RUN/app/ai_director_config.py"
           cp "$BASE/app/providers/ai_director_groq.py" "$RUN/app/providers/ai_director_groq.py"
           cp "$SRC/app/ai_director_game_master.py" "$RUN/app/ai_director_game_master.py"
           cp "$SRC/app/services/ai_director_game_master.py" "$RUN/app/services/ai_director_game_master.py"
