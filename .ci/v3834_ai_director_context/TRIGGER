@@ -1,0 +1,7 @@
+W22.4 Tier 2 context live review
+expected_ci_core=23/23
+fixture_review=14/14
+live_review=14/14
+player_facing_scope=TEST_GUILD_ONLY_DEFAULT_OFF
+gameplay_authority=NONE
+live_deploy=UNCHANGED
