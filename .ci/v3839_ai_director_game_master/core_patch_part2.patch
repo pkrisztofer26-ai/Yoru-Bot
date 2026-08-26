@@ -1,0 +1,79 @@
++        for token in ("emlek", "mese"):
++            if token in merged_folded and token not in facts_folded:
++                errors.append("unsupported_legacy_reframing")
++                break
++    return tuple(errors)
++
++
+ @dataclass(frozen=True, slots=True)
+ class AIDirectorGameMasterPacket:
+     story_key: str
+@@ -163,6 +217,11 @@
+         raise AIDirectorGameMasterValidationError("A Tier 3 AI belső rendszerzsargont próbált player-facing szövegbe tenni.")
+     if _FORBIDDEN_AUTHORITY_CLAIM_RE.search(merged):
+         raise AIDirectorGameMasterValidationError("A Tier 3 AI authority-jellegű állítást próbált tenni.")
++    quality_errors = game_master_surface_quality_errors(packet, title, description)
++    if quality_errors:
++        raise AIDirectorGameMasterValidationError(
++            "A Tier 3 AI human-review quality guardon bukott: " + ",".join(quality_errors)
++        )
+     folded = _fold(merged)
+     for term in packet.required_terms:
+         anchor = _fold(str(term).strip())
+@@ -212,7 +271,7 @@
+         {"target_name": target_name, "phase_label": phase_label, "approach_label": approach_label, "route_label": route_label,
+          "host_resolution": host_resolution, "consequence_note": consequence_note},
+         "A Nagy Meló visszhangja",
+-        f"A {target_name} akció {host_resolution} lezárást kapott. A {approach_label} megközelítés és a {route_label} útvonal után ez maradt meg a történetből: {consequence_note}",
++        f"„{target_name}” — az akció lezárása: {host_resolution}. Megközelítés: {approach_label}. Útvonal: {route_label}. {_sentence_lead(consequence_note)}.",
+         required=(target_name, host_resolution),
+     )
+ 
+@@ -223,7 +282,7 @@
+         {"npc_name": npc_name, "npc_role": npc_role, "relationship_band": relationship_band,
+          "recalled_event": recalled_event, "current_story_state": current_story_state},
+         f"{npc_name} emlékszik",
+-        f"{npc_name} ({npc_role}) számára továbbra is számít, hogy {recalled_event}. A kapcsolat jelenlegi hangulata: {relationship_band}; a történeti helyzet: {current_story_state}.",
++        f"{npc_name}, {npc_role}. A kapcsolat jelenlegi hangulata: {relationship_band}. Felidézett esemény: {_sentence_lead(recalled_event)}. Jelenlegi történeti helyzet: {_sentence_lead(current_story_state)}.",
+         required=(npc_name, recalled_event),
+     )
+ 
+@@ -234,7 +293,7 @@
+         {"subject_label": subject_label, "memory_category": memory_category, "remembered_event": remembered_event,
+          "current_relevance": current_relevance},
+         "Egy régi döntés visszhangja",
+-        f"{subject_label} kapcsán újra előkerül, hogy {remembered_event}. Ez most azért releváns, mert {current_relevance}.",
++        f"{_sentence_lead(subject_label)} kapcsán újra előkerül, hogy {remembered_event}. A jelenlegi összefüggés: {current_relevance}.",
+         required=(subject_label, remembered_event),
+     )
+ 
+@@ -243,10 +302,10 @@
+     facts = {"chapter_title": chapter_title, "stage_title": stage_title, "world_story_title": world_story_title, "community_note": community_note}
+     if host_ending:
+         facts["host_ending"] = host_ending
+-        desc = f"A {chapter_title} fejezete a {stage_title} szakasz után a {host_ending} lezárás felé ért. A háttérben {world_story_title}; {community_note}."
++        desc = f"A „{chapter_title}” fejezet lezárása: {host_ending}. Utolsó szakasz: {stage_title}. Háttértörténet: {world_story_title}. {_sentence_lead(community_note)}."
+         required = (chapter_title, host_ending)
+     else:
+-        desc = f"A {chapter_title} jelenleg a {stage_title} szakaszban jár. A háttérben {world_story_title}; {community_note}."
++        desc = f"A „{chapter_title}” fejezet jelenlegi szakasza: {stage_title}. Háttértörténet: {world_story_title}. {_sentence_lead(community_note)}."
+         required = (chapter_title, stage_title)
+     return _packet("chapter", "chapter_scene", facts, "A fejezet helyzete", desc, required=required)
+ 
+@@ -257,7 +316,7 @@
+         {"national_title": national_title, "story_title": story_title, "beat_title": beat_title,
+          "city_label": city_label, "world_note": world_note},
+         story_title,
+-        f"{national_title} hátterében a {story_title} történetszál {beat_title} pontja került előtérbe {city_label} körül. {world_note}",
++        f"Országos háttér: „{national_title}”. Történetszál: „{story_title}”. Aktuális pont: „{beat_title}”. Helyszín: {city_label}. {_sentence_lead(world_note)}.",
+         required=(story_title, beat_title),
+     )
+ 
+@@ -268,6 +327,6 @@
+         {"event_name": event_name, "access_context": access_context, "phase_label": phase_label,
+          "host_resolution": host_resolution, "legacy_note": legacy_note},
+         "Legendás ügy",
+-        f"A {event_name} története a {phase_label} pont után {host_resolution} lezárást kapott. Ami megmaradt belőle: {legacy_note}",
++        f"„{event_name}” történetének lezárása: {host_resolution}. Szakasz: {phase_label}. {_sentence_lead(legacy_note)}.",
+         required=(event_name, host_resolution),
+     )
