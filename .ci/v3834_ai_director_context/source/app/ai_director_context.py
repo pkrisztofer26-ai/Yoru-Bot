@@ -54,7 +54,7 @@ _FORBIDDEN_META_OUTPUT_RE = re.compile(
     re.IGNORECASE,
 )
 _FORBIDDEN_HUNGARIAN_SURFACE_RE = re.compile(
-    r"(?:\bérkezett\b.{0,48}\bérkezett\b|\botthonvárosban\s+helyezkedik\s+el\b|\bügyben\s+áll\b|\ba\s+üzleti\s+kapcsolat\b)",
+    r"(?:\bérkezett\b.{0,48}\bérkezett\b|\botthonvárosban\s+helyezkedik\s+el\b|\bügyben\s+áll\b|\ba\s+üzleti\s+kapcsolat\b|\bszolgáltatás\s+profilú\b|\bszívességet\s+tart\s+nyilván\b)",
     re.IGNORECASE | re.DOTALL,
 )
 _KEY_RE = re.compile(r"^[a-z0-9][a-z0-9_.:-]{0,95}$")
@@ -200,11 +200,16 @@ def career_context_packet(*, career_name: str, employer: str, city: str, positio
 
 
 def business_context_packet(*, business_name: str, category: str, city: str, operating_model: str) -> AIDirectorContextPacket:
+    category_text = category.strip()
+    if category_text.casefold() == "szolgáltatás":
+        profile = "szolgáltató vállalkozás"
+    else:
+        profile = f"{category_text} profilú vállalkozás"
     return _packet(
         "business", "portfolio_snapshot",
         {"business_name": business_name, "category": category, "city": city, "operating_model": operating_model},
         "Üzleti helyzetkép",
-        f"A {business_name} {city} területén működő, {category} profilú vállalkozás. Működési iránya: {operating_model}.",
+        f"A {business_name} {city} területén működő {profile}. Működési iránya: {operating_model}.",
         required=(business_name, city, operating_model),
     )
 
