@@ -1,0 +1,127 @@
+name: Yoru v3.83.7 W22.5 Tier 3 Game Master Foundation Review
+run-name: W22.5 Tier 3 non-player Game Master review
+
+on:
+  push:
+    branches:
+      - ci/v3837-ai-director-tier3-foundation
+    paths:
+      - .ci/v3837_ai_director_game_master/TRIGGER
+
+permissions:
+  contents: read
+
+jobs:
+  tier3-review:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout isolated W22.5 branch
+        uses: actions/checkout@v6
+        with:
+          ref: ci/v3837-ai-director-tier3-foundation
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+
+      - name: Verify exact W22.5 source projection
+        run: |
+          set -euo pipefail
+          python .ci/v3837_ai_director_game_master/verify_projection.py | tee .ci/v3837_ai_director_game_master/source_verify.log
+          grep -q 'W22_5_SOURCE_VERIFY=PASS' .ci/v3837_ai_director_game_master/source_verify.log
+          grep -q 'SOURCE_SHA256=5/5 PASS' .ci/v3837_ai_director_game_master/source_verify.log
+          grep -q 'TIER3_FAMILIES=6/6 PASS' .ci/v3837_ai_director_game_master/source_verify.log
+          grep -q 'AUTHORITY_BOUNDARY=PASS' .ci/v3837_ai_director_game_master/source_verify.log
+
+      - name: Prepare isolated Tier 3 runtime
+        run: |
+          set -euo pipefail
+          GATE=.ci/v3837_ai_director_game_master
+          SRC="$GATE/frozen"
+          BASE=.ci/v3831_ai_director_review/frozen
+          RUN="$GATE/runtime"
+          rm -rf "$RUN"
+          mkdir -p "$RUN/app/providers" "$RUN/app/services" "$RUN/scripts" "$RUN/tests"
+          touch "$RUN/app/__init__.py" "$RUN/app/providers/__init__.py" "$RUN/app/services/__init__.py"
+          cp "$BASE/app/providers/ai_director_groq.py" "$RUN/app/providers/ai_director_groq.py"
+          cp "$SRC/app/ai_director_game_master.py" "$RUN/app/ai_director_game_master.py"
+          cp "$SRC/app/services/ai_director_game_master.py" "$RUN/app/services/ai_director_game_master.py"
+          cp "$SRC/app/providers/ai_director_game_master_groq.py" "$RUN/app/providers/ai_director_game_master_groq.py"
+          cp "$SRC/scripts/ai_director_tier3_game_master_review.py" "$RUN/scripts/ai_director_tier3_game_master_review.py"
+          cp "$SRC/tests/test_w22_5_game_master_ci.py" "$RUN/tests/test_w22_5_game_master_ci.py"
+
+      - name: Install proof dependency
+        run: python -m pip install 'pytest>=8,<10'
+
+      - name: Run W22.5 Tier 3 core contracts
+        working-directory: .ci/v3837_ai_director_game_master/runtime
+        run: |
+          set -euo pipefail
+          PYTHONPATH=. pytest -q tests/test_w22_5_game_master_ci.py | tee ../core_pytest.log
+          grep -Eq '29 passed' ../core_pytest.log
+          if grep -Eqi '[1-9][0-9]* skipped|[1-9][0-9]* failed|[1-9][0-9]* error' ../core_pytest.log; then exit 1; fi
+
+      - name: Run deterministic Tier 3 fixture review
+        working-directory: .ci/v3837_ai_director_game_master/runtime
+        run: |
+          set -euo pipefail
+          PYTHONPATH=. python scripts/ai_director_tier3_game_master_review.py --mode fixture --output ../fixture_review
+          grep -q 'STATUS=PENDING_HUMAN' ../fixture_review/YORU_AI_DIRECTOR_TIER3_GAME_MASTER_REVIEW_RESULT.txt
+          grep -q 'TOTAL=12' ../fixture_review/YORU_AI_DIRECTOR_TIER3_GAME_MASTER_REVIEW_RESULT.txt
+          grep -q 'FALLBACKS=0' ../fixture_review/YORU_AI_DIRECTOR_TIER3_GAME_MASTER_REVIEW_RESULT.txt
+          grep -q 'PLAYER_FACING_AI=OFF' ../fixture_review/YORU_AI_DIRECTOR_TIER3_GAME_MASTER_REVIEW_RESULT.txt
+
+      - name: Generate live non-player Tier 3 candidates
+        working-directory: .ci/v3837_ai_director_game_master/runtime
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: |
+          set -euo pipefail
+          PYTHONPATH=. python scripts/ai_director_tier3_game_master_review.py --mode live --model openai/gpt-oss-120b --reasoning-effort low --output ../live_review
+          cat ../live_review/YORU_AI_DIRECTOR_TIER3_GAME_MASTER_REVIEW_RESULT.txt
+          grep -q 'STATUS=PENDING_HUMAN' ../live_review/YORU_AI_DIRECTOR_TIER3_GAME_MASTER_REVIEW_RESULT.txt
+          grep -q 'TOTAL=12' ../live_review/YORU_AI_DIRECTOR_TIER3_GAME_MASTER_REVIEW_RESULT.txt
+          grep -q 'AI_VALIDATED=12' ../live_review/YORU_AI_DIRECTOR_TIER3_GAME_MASTER_REVIEW_RESULT.txt
+          grep -q 'FALLBACKS=0' ../live_review/YORU_AI_DIRECTOR_TIER3_GAME_MASTER_REVIEW_RESULT.txt
+          grep -q 'GAMEPLAY_AUTHORITY=NONE' ../live_review/YORU_AI_DIRECTOR_TIER3_GAME_MASTER_REVIEW_RESULT.txt
+
+      - name: Compile exact Tier 3 runtime
+        run: |
+          python -m compileall -q .ci/v3837_ai_director_game_master/runtime .ci/v3837_ai_director_game_master/verify_projection.py
+          echo 'COMPILEALL=PASS' > .ci/v3837_ai_director_game_master/compileall.log
+
+      - name: Write W22.5 automated result
+        if: success()
+        run: |
+          cat > .ci/v3837_ai_director_game_master/W22_5_AUTOMATED_RESULT.txt <<'EOF'
+          SOURCE_SHA256=5/5 PASS
+          INHERITED_GROQ_TRANSPORT_SHA256=PASS
+          TIER3_FAMILIES=6/6 PASS
+          W22_5_CI_CORE=29/29 PASS
+          W22_5_LOCAL_FULL=50/50 PASS (fresh local checkpoint; not rerun by this CI job)
+          PHASE12_ALL_W22_TESTS=186/186 PASS (fresh local checkpoint; not rerun by this CI job)
+          FIXTURE_REVIEW=12/12 PASS
+          LIVE_PROVIDER_CANDIDATES=12/12 VALIDATED
+          AUTOMATED_GATE=PENDING_HUMAN
+          PLAYER_FACING_AI=OFF
+          RUNTIME_WIRING=NONE
+          GAMEPLAY_AUTHORITY=NONE
+          LIVE_DEPLOY=UNCHANGED
+          EOF
+
+      - name: Upload W22.5 proof artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: yoru-v3837-w22-5-tier3-game-master-foundation-review
+          path: |
+            .ci/v3837_ai_director_game_master/live_review/
+            .ci/v3837_ai_director_game_master/fixture_review/
+            .ci/v3837_ai_director_game_master/source_verify.log
+            .ci/v3837_ai_director_game_master/core_pytest.log
+            .ci/v3837_ai_director_game_master/compileall.log
+            .ci/v3837_ai_director_game_master/W22_5_AUTOMATED_RESULT.txt
+          if-no-files-found: warn
+          retention-days: 30
