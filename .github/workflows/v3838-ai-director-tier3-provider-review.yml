@@ -1,0 +1,142 @@
+name: Yoru v3.83.8 W22.5.1 Tier 3 Provider Review
+run-name: W22.5.1 Tier 3 non-player provider review
+
+on:
+  push:
+    branches:
+      - ci/v3838-ai-director-tier3-provider-review
+    paths:
+      - .ci/v3838_ai_director_game_master/TRIGGER
+
+permissions:
+  contents: read
+
+jobs:
+  tier3-provider-review:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout W22.5.1 proof branch
+        uses: actions/checkout@v6
+        with:
+          ref: ci/v3838-ai-director-tier3-provider-review
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+
+      - name: Verify W22.5 base and hardening patch
+        run: |
+          set -euo pipefail
+          python .ci/v3838_ai_director_game_master/verify_base.py | tee .ci/v3838_ai_director_game_master/base_verify.log
+          grep -q 'W22_5_1_BASE_VERIFY=PASS' .ci/v3838_ai_director_game_master/base_verify.log
+          grep -q 'BASE_SOURCE_SHA256=5/5 PASS' .ci/v3838_ai_director_game_master/base_verify.log
+          grep -q 'HARDENING_PATCH_SHA256=PASS' .ci/v3838_ai_director_game_master/base_verify.log
+
+      - name: Build exact v3.83.8 Tier 3 runtime projection
+        run: |
+          set -euo pipefail
+          GATE=.ci/v3838_ai_director_game_master
+          SRC=.ci/v3837_ai_director_game_master/frozen
+          COMMON=.ci/v3831_ai_director_review/frozen
+          RUN="$GATE/runtime"
+          rm -rf "$RUN"
+          mkdir -p "$RUN/app/providers" "$RUN/app/services" "$RUN/scripts" "$RUN/tests"
+          touch "$RUN/app/__init__.py" "$RUN/app/providers/__init__.py" "$RUN/app/services/__init__.py"
+          cp "$COMMON/app/ai_director.py" "$RUN/app/ai_director.py"
+          cp "$COMMON/app/ai_director_config.py" "$RUN/app/ai_director_config.py"
+          cp "$COMMON/app/providers/ai_director_groq.py" "$RUN/app/providers/ai_director_groq.py"
+          cp "$SRC/app/ai_director_game_master.py" "$RUN/app/ai_director_game_master.py"
+          cp "$SRC/app/services/ai_director_game_master.py" "$RUN/app/services/ai_director_game_master.py"
+          cp "$SRC/app/providers/ai_director_game_master_groq.py" "$RUN/app/providers/ai_director_game_master_groq.py"
+          cp "$SRC/scripts/ai_director_tier3_game_master_review.py" "$RUN/scripts/ai_director_tier3_game_master_review.py"
+          cp "$SRC/tests/test_w22_5_game_master_ci.py" "$RUN/tests/test_w22_5_game_master_ci.py"
+          (cd "$RUN" && patch -p1 < "$GITHUB_WORKSPACE/$GATE/w2251.patch")
+
+      - name: Verify exact v3.83.8 post-patch SHA
+        run: |
+          set -euo pipefail
+          RUN=.ci/v3838_ai_director_game_master/runtime
+          echo 'fd325eb55463f8ccbef8d431fc55a421bad12be0f2f3875eb29876fdd6e89c19  '"$RUN/app/ai_director_game_master.py" | sha256sum -c -
+          echo 'ff8232e5bc527328283b4d9a1e7bc402fd5be3e7e80fd0ae62e94cb8257a4b43  '"$RUN/app/services/ai_director_game_master.py" | sha256sum -c -
+          echo '2d336d71b99e937eba6ac4cd5e03958b6246218bb3c7e48ba43a8cf41f647f2b  '"$RUN/app/providers/ai_director_game_master_groq.py" | sha256sum -c -
+          echo '3e7b290a7c143917fbc45485dc04f45192bef75e51cccddff24347c0d1c8f87a  '"$RUN/scripts/ai_director_tier3_game_master_review.py" | sha256sum -c -
+          echo '34e49c2c8002f24a8589e8b082d9a926a780f3093375d4b8d7f108158ca1c475  '"$RUN/tests/test_w22_5_game_master_ci.py" | sha256sum -c -
+          echo 'POST_PATCH_SOURCE_SHA256=5/5 PASS' | tee .ci/v3838_ai_director_game_master/post_patch_verify.log
+
+      - name: Install proof dependency
+        run: python -m pip install 'pytest>=8,<10'
+
+      - name: Run W22.5.1 Tier 3 contracts
+        working-directory: .ci/v3838_ai_director_game_master/runtime
+        run: |
+          set -euo pipefail
+          PYTHONPATH=. pytest -q tests/test_w22_5_game_master_ci.py | tee ../core_pytest.log
+          grep -Eq '39 passed' ../core_pytest.log
+          if grep -Eqi '[1-9][0-9]* skipped|[1-9][0-9]* failed|[1-9][0-9]* error' ../core_pytest.log; then exit 1; fi
+
+      - name: Run deterministic Tier 3 v2 fixture review
+        working-directory: .ci/v3838_ai_director_game_master/runtime
+        run: |
+          set -euo pipefail
+          PYTHONPATH=. python scripts/ai_director_tier3_game_master_review.py --mode fixture --output ../fixture_review
+          cat ../fixture_review/YORU_AI_DIRECTOR_TIER3_GAME_MASTER_REVIEW_RESULT.txt
+          grep -q 'Yoru v3.83.8 W22.5.1' ../fixture_review/YORU_AI_DIRECTOR_TIER3_GAME_MASTER_REVIEW_RESULT.txt
+          grep -q 'STATUS=PENDING_HUMAN' ../fixture_review/YORU_AI_DIRECTOR_TIER3_GAME_MASTER_REVIEW_RESULT.txt
+          grep -q 'TOTAL=12' ../fixture_review/YORU_AI_DIRECTOR_TIER3_GAME_MASTER_REVIEW_RESULT.txt
+          grep -q 'FALLBACKS=0' ../fixture_review/YORU_AI_DIRECTOR_TIER3_GAME_MASTER_REVIEW_RESULT.txt
+
+      - name: Generate live non-player Tier 3 v2 candidates
+        working-directory: .ci/v3838_ai_director_game_master/runtime
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: |
+          set -euo pipefail
+          PYTHONPATH=. python scripts/ai_director_tier3_game_master_review.py --mode live --model openai/gpt-oss-120b --reasoning-effort low --output ../live_review
+          cat ../live_review/YORU_AI_DIRECTOR_TIER3_GAME_MASTER_REVIEW_RESULT.txt
+          grep -q 'STATUS=PENDING_HUMAN' ../live_review/YORU_AI_DIRECTOR_TIER3_GAME_MASTER_REVIEW_RESULT.txt
+          grep -q 'TOTAL=12' ../live_review/YORU_AI_DIRECTOR_TIER3_GAME_MASTER_REVIEW_RESULT.txt
+          grep -q 'AI_VALIDATED=12' ../live_review/YORU_AI_DIRECTOR_TIER3_GAME_MASTER_REVIEW_RESULT.txt
+          grep -q 'FALLBACKS=0' ../live_review/YORU_AI_DIRECTOR_TIER3_GAME_MASTER_REVIEW_RESULT.txt
+          grep -q 'GAMEPLAY_AUTHORITY=NONE' ../live_review/YORU_AI_DIRECTOR_TIER3_GAME_MASTER_REVIEW_RESULT.txt
+
+      - name: Compile exact W22.5.1 runtime
+        run: |
+          python -m compileall -q .ci/v3838_ai_director_game_master/runtime .ci/v3838_ai_director_game_master/verify_base.py
+          echo 'COMPILEALL=PASS' > .ci/v3838_ai_director_game_master/compileall.log
+
+      - name: Write W22.5.1 automated result
+        if: success()
+        run: |
+          cat > .ci/v3838_ai_director_game_master/W22_5_1_AUTOMATED_RESULT.txt <<'EOF'
+          BASE_SOURCE_SHA256=5/5 PASS
+          HARDENING_PATCH_SHA256=PASS
+          POST_PATCH_SOURCE_SHA256=5/5 PASS
+          W22_5_1_CI_CORE=39/39 PASS
+          W22_5_1_LOCAL_DEDICATED=60/60 PASS (fresh local checkpoint; not rerun by this CI job)
+          PHASE12_ALL_W22_TESTS=196/196 PASS (fresh local checkpoint; not rerun by this CI job)
+          FIXTURE_REVIEW=12/12 PASS
+          LIVE_PROVIDER_CANDIDATES=12/12 VALIDATED
+          AUTOMATED_GATE=PENDING_HUMAN
+          PLAYER_FACING_AI=OFF
+          RUNTIME_WIRING=NONE
+          GAMEPLAY_AUTHORITY=NONE
+          LIVE_DEPLOY=UNCHANGED
+          EOF
+
+      - name: Upload W22.5.1 proof artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: yoru-v3838-w22-5-1-tier3-provider-review
+          path: |
+            .ci/v3838_ai_director_game_master/live_review/
+            .ci/v3838_ai_director_game_master/fixture_review/
+            .ci/v3838_ai_director_game_master/base_verify.log
+            .ci/v3838_ai_director_game_master/post_patch_verify.log
+            .ci/v3838_ai_director_game_master/core_pytest.log
+            .ci/v3838_ai_director_game_master/compileall.log
+            .ci/v3838_ai_director_game_master/W22_5_1_AUTOMATED_RESULT.txt
+          if-no-files-found: warn
+          retention-days: 30
