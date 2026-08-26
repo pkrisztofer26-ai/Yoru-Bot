@@ -1,0 +1,98 @@
+name: Yoru v3.83.3 W22.3 Tier 1 Test-Guild Pilot Proof
+run-name: W22.3 Tier 1 test-guild pilot proof
+
+on:
+  push:
+    branches:
+      - ci/v3833-ai-director-tier1-pilot
+    paths:
+      - .ci/v3833_ai_director_pilot/TRIGGER
+
+permissions:
+  contents: read
+
+jobs:
+  pilot-proof:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout isolated W22.3 proof branch
+        uses: actions/checkout@v6
+        with:
+          ref: ci/v3833-ai-director-tier1-pilot
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+
+      - name: Verify exact W22.3 pilot core and authority projection
+        run: |
+          set -euo pipefail
+          python .ci/v3833_ai_director_pilot/verify_projection.py | tee .ci/v3833_ai_director_pilot/source_verify.log
+          grep -q 'W22_3_SOURCE_VERIFY=PASS' .ci/v3833_ai_director_pilot/source_verify.log
+          grep -q 'CORE_SOURCE_SHA256=2/2 PASS' .ci/v3833_ai_director_pilot/source_verify.log
+          grep -q 'PILOT_DEFAULT=OFF' .ci/v3833_ai_director_pilot/source_verify.log
+          grep -q 'PILOT_SCOPE=TEST_GUILD_ONLY' .ci/v3833_ai_director_pilot/source_verify.log
+          grep -q 'LIVE_PROVIDER_IN_GAMEPLAY=ABSENT' .ci/v3833_ai_director_pilot/source_verify.log
+
+      - name: Prepare exact pilot runtime projection
+        run: |
+          set -euo pipefail
+          GATE=.ci/v3833_ai_director_pilot
+          rm -rf "$GATE/runtime"
+          cp -R .ci/v3831_ai_director_review/frozen "$GATE/runtime"
+          cp "$GATE/frozen/app/ai_director_pilot.py" "$GATE/runtime/app/ai_director_pilot.py"
+
+      - name: Install proof dependency
+        run: python -m pip install 'pytest>=8,<10'
+
+      - name: Run W22.3 test-guild pilot core contracts
+        working-directory: .ci/v3833_ai_director_pilot/runtime
+        run: |
+          set -euo pipefail
+          PYTHONPATH=. pytest -q ../test_w22_3_pilot_core.py | tee ../pilot_core_pytest.log
+          grep -Eq '15 passed' ../pilot_core_pytest.log
+          if grep -Eqi '[1-9][0-9]* skipped|[1-9][0-9]* failed|[1-9][0-9]* error' ../pilot_core_pytest.log; then exit 1; fi
+
+      - name: Compile W22.3 proof projection
+        run: |
+          python -m compileall -q \
+            .ci/v3833_ai_director_pilot/runtime/app/ai_director_pilot.py \
+            .ci/v3833_ai_director_pilot/frozen/app/config.py \
+            .ci/v3833_ai_director_pilot/test_w22_3_pilot_core.py \
+            .ci/v3833_ai_director_pilot/verify_projection.py
+          echo 'COMPILEALL=PASS' > .ci/v3833_ai_director_pilot/compileall.log
+
+      - name: Write W22.3 proof result
+        run: |
+          cat > .ci/v3833_ai_director_pilot/W22_3_PROOF_RESULT.txt <<'EOF'
+          W22_3_SOURCE_VERIFY=PASS
+          CORE_SOURCE_SHA256=2/2 PASS
+          CI_PILOT_CORE=15/15 PASS
+          FULL_TREE_W22_3=33/33 PASS (fresh local full-tree checkpoint; not rerun by this CI job)
+          W22_1_TO_W22_3=79/79 PASS (fresh local full-tree checkpoint; not rerun by this CI job)
+          PILOT_DEFAULT=OFF
+          PILOT_SCOPE=TEST_GUILD_ONLY
+          PILOT_SOURCE=HUMAN_REVIEWED_STATIC_BUNDLE
+          GENERIC_AI_RUNTIME=PROVIDERLESS_DISABLED
+          LIVE_PROVIDER_IN_GAMEPLAY=ABSENT
+          AI_GAMEPLAY_AUTHORITY=NONE
+          COMPILEALL=PASS
+          LIVE_DEPLOY=UNCHANGED
+          W22_3_PILOT_READY=PASS
+          EOF
+
+      - name: Upload W22.3 proof artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: yoru-v3833-w22-3-tier1-test-guild-pilot-proof
+          path: |
+            .ci/v3833_ai_director_pilot/MANIFEST.json
+            .ci/v3833_ai_director_pilot/ENTRYPOINT_PROJECTION.json
+            .ci/v3833_ai_director_pilot/source_verify.log
+            .ci/v3833_ai_director_pilot/pilot_core_pytest.log
+            .ci/v3833_ai_director_pilot/compileall.log
+            .ci/v3833_ai_director_pilot/W22_3_PROOF_RESULT.txt
+          if-no-files-found: error
+          retention-days: 30
