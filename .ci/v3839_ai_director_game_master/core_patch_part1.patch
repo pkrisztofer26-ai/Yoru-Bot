@@ -1,0 +1,79 @@
+diff -ruN old/app/ai_director_game_master.py new/app/ai_director_game_master.py
+--- old/app/ai_director_game_master.py
++++ new/app/ai_director_game_master.py
+@@ -5,7 +5,7 @@
+ The Game Master layer may narrate only host-owned facts that were already
+ resolved by canonical deterministic services.  It never chooses gameplay truth,
+ branches, rewards, success/failure, permissions, inventory or state mutation.
+-W22.5 deliberately ships no player-facing call sites.
++W22.5/W22.5.1/W22.5.1.1 deliberately ship no player-facing call sites.
+ """
+ 
+ import hashlib
+@@ -16,7 +16,7 @@
+ from typing import Any, Mapping
+ 
+ 
+-GAME_MASTER_CONTRACT_VERSION = "tier3-game-master-surface-v1"
++GAME_MASTER_CONTRACT_VERSION = "tier3-game-master-surface-v3"
+ GAME_MASTER_RUNTIME_ENABLED_DEFAULT = False
+ GAME_MASTER_FAMILIES = frozenset({
+     "big_job",
+@@ -61,6 +61,20 @@
+     r"kimenetel|ág|branch|állapot|hozzáférés)\b",
+     re.IGNORECASE | re.DOTALL,
+ )
++
++# Human-review-derived Tier 3 presentation quality regressions. These rules are
++# presentation-only and never change gameplay truth; they only force the
++# deterministic fallback when generated Hungarian is awkward or overstates the
++# host-owned facts.
++_HUMAN_DERIVED_SURFACE_REJECTIONS: tuple[tuple[re.Pattern[str], str], ...] = (
++    (re.compile(r"\b(?:részsiker|siker)\s+lezárást\s+kapott\b", re.IGNORECASE), "unnatural_resolution_phrase"),
++    (re.compile(r"\bfelé\s+(?:közeledik|ért)\b", re.IGNORECASE), "unsupported_temporal_progression"),
++    (re.compile(r"\.\s+[a-záéíóöőúüű]", re.UNICODE), "lowercase_sentence_start"),
++    (re.compile(r"\b(?:örökre|legendákban|legendává|emlékezetes(?:\s+kaland)?|mesékben)\b", re.IGNORECASE), "unsupported_embellishment"),
++    (re.compile(r"\b([a-záéíóöőúüű]{3,})\s+\1\b", re.IGNORECASE), "repeated_word"),
++    (re.compile(r"\ba\s+[aáeéiíoóöőuúüű]", re.IGNORECASE), "wrong_hungarian_article"),
++    (re.compile(r"\btörténetszál\s+[^.!?]{1,80}\s+pontja\b", re.IGNORECASE), "awkward_story_beat_phrase"),
++)
+ _KEY_RE = re.compile(r"^[a-z0-9][a-z0-9_.:-]{0,95}$")
+ 
+ 
+@@ -73,6 +87,46 @@
+     return "".join(ch for ch in decomposed if not unicodedata.combining(ch))
+ 
+ 
++def _sentence_lead(value: str) -> str:
++    text = str(value).strip()
++    if not text:
++        return text
++    return text[:1].upper() + text[1:]
++
++
++def game_master_surface_quality_errors(packet: AIDirectorGameMasterPacket, title: str, description: str) -> tuple[str, ...]:
++    merged = f"{str(title).strip()}\n{str(description).strip()}"
++    errors: list[str] = []
++    for pattern, label in _HUMAN_DERIVED_SURFACE_REJECTIONS:
++        if pattern.search(merged):
++            errors.append(label)
++    causal_re = re.compile(
++        r"\b(?:hiszen|mivel|ezért|emiatt|ennek\s+köszönhetően|következtében)\b",
++        re.IGNORECASE,
++    )
++    if packet.family in {"npc_story", "consequence_recall"} and causal_re.search(merged):
++        errors.append("unsupported_memory_causality")
++
++    facts_folded = _fold(" ".join(str(value) for value in packet.facts.values()))
++    merged_folded = _fold(merged)
++    # Human-review-derived ambient/world expansion tokens. These are allowed only
++    # when the host facts already contain the same concept.
++    for token in ("kornyek", "pletyka", "sajto", "tanu", "hatosag"):
++        if token in merged_folded and token not in facts_folded:
++            errors.append("unsupported_ambient_expansion")
++            break
++    if packet.family == "world_story":
++        beat = _fold(packet.facts.get("beat_title", "")).strip()
++        if beat and re.search(re.escape(beat) + r"[^a-z0-9]{0,4}pontja\b", merged_folded):
++            errors.append("awkward_story_beat_phrase")
++    if packet.family == "legendary_event":
