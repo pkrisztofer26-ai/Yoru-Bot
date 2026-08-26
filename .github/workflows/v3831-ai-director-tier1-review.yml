@@ -1,5 +1,5 @@
-name: Yoru v3.83.1 W22.2 Tier 1 Non-player AI Review
-run-name: W22.2 Tier 1 non-player AI review
+name: Yoru v3.83.2 W22.2.1 Tier 1 Hungarian Surface Review
+run-name: W22.2.1 Tier 1 hardened non-player AI review
 
 on:
   push:
@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - name: Checkout isolated W22.2 review branch
+      - name: Checkout isolated W22.2.1 review branch
         uses: actions/checkout@v6
         with:
           ref: ci/v3831-ai-director-tier1-review
@@ -26,36 +26,38 @@ jobs:
         with:
           python-version: '3.14'
 
-      - name: Restore exact W22.2 projection
+      - name: Restore exact W22.2.1 projection
         run: |
           set -euo pipefail
           GATE=.ci/v3831_ai_director_review
+          rm -rf "$GATE/source"
           mkdir -p "$GATE/source"
           base64 -d "$GATE/source.tar.gz.b64" > "$GATE/source.tar.gz"
-          echo "8712acc91262954e5d79235083bc0b62ead3c4b59088ad4c196ccaf946201044  $GATE/source.tar.gz" | sha256sum -c -
+          echo "13e0241131bc8c5db039b2c9ee06741ac2801384d991719dee638539fd651504  $GATE/source.tar.gz" | sha256sum -c -
           tar -xzf "$GATE/source.tar.gz" -C "$GATE/source"
 
-      - name: Verify frozen W22.2 projection
+      - name: Verify frozen W22.2.1 projection
         run: |
           set -euo pipefail
           python .ci/v3831_ai_director_review/verify_projection.py | tee /tmp/source_verify.log
-          grep -q 'W22_2_SOURCE_VERIFY=PASS' /tmp/source_verify.log
+          grep -q 'W22_2_1_SOURCE_VERIFY=PASS' /tmp/source_verify.log
           grep -q 'SOURCE_SHA256=10/10 PASS' /tmp/source_verify.log
+          grep -q 'HUMAN_DERIVED_SURFACE_GUARD=PASS' /tmp/source_verify.log
 
       - name: Install test dependency
         run: python -m pip install 'pytest>=8,<10'
 
-      - name: Run W22.2 isolated review contracts
+      - name: Run W22.2.1 isolated review contracts
         working-directory: .ci/v3831_ai_director_review/source
         run: |
           set -euo pipefail
           PYTHONPATH=. pytest -q tests/test_w22_2_ai_director_batch_provider_review.py \
             -k 'not production_runtime_still_has_no_provider_and_is_disabled' | tee ../targeted_pytest.log
-          grep -Eq '19 passed' ../targeted_pytest.log
+          grep -Eq '22 passed' ../targeted_pytest.log
           grep -Eq '1 deselected' ../targeted_pytest.log
           if grep -Eqi '[1-9][0-9]* skipped|[1-9][0-9]* failed|[1-9][0-9]* error' ../targeted_pytest.log; then exit 1; fi
 
-      - name: Generate live non-player Tier 1 review candidates
+      - name: Generate hardened live non-player Tier 1 review candidates
         working-directory: .ci/v3831_ai_director_review/source
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
@@ -82,30 +84,31 @@ jobs:
 
       - name: Write automated review gate result
         run: |
-          cat > .ci/v3831_ai_director_review/W22_2_AUTOMATED_RESULT.txt <<'EOF'
+          cat > .ci/v3831_ai_director_review/W22_2_1_AUTOMATED_RESULT.txt <<'EOF'
           SOURCE_PROJECTION=PASS
           SOURCE_SHA256=10/10 PASS
-          W22_2_ISOLATED_CONTRACTS=19/19 PASS
-          W22_2_FULL_TREE_CONTRACTS=20/20 PASS (local full-tree checkpoint)
-          FULL_BUILD_W22_1_W22_2=43/43 PASS (local full-tree checkpoint)
+          HUMAN_DERIVED_SURFACE_GUARD=PASS
+          W22_2_1_ISOLATED_CONTRACTS=22/22 PASS
+          W22_2_1_FULL_TREE_CONTRACTS=23/23 PASS (local full-tree checkpoint)
+          FULL_BUILD_W22_1_TO_W22_2_1=46/46 PASS (local full-tree checkpoint)
           LIVE_PROVIDER_CANDIDATES=15/15 VALIDATED
           EXACT_DUPLICATES=0
           AUTOMATED_GATE=PENDING_HUMAN
           PLAYER_FACING_AI=OFF
           PRODUCTION_RUNTIME_ENABLED=FALSE
           LIVE_DEPLOY=UNCHANGED
-          W22_2_HUMAN_REVIEW=REQUIRED
+          W22_2_1_HUMAN_REVIEW=REQUIRED
           EOF
 
-      - name: Upload W22.2 review artifact
+      - name: Upload W22.2.1 review artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: yoru-v3831-w22-2-tier1-nonplayer-review
+          name: yoru-v3832-w22-2-1-tier1-hungarian-review
           path: |
             .ci/v3831_ai_director_review/review_artifact/
             .ci/v3831_ai_director_review/targeted_pytest.log
             .ci/v3831_ai_director_review/compileall.log
-            .ci/v3831_ai_director_review/W22_2_AUTOMATED_RESULT.txt
+            .ci/v3831_ai_director_review/W22_2_1_AUTOMATED_RESULT.txt
           if-no-files-found: warn
           retention-days: 30
