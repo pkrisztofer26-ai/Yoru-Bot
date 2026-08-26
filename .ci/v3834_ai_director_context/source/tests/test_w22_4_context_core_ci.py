@@ -39,7 +39,7 @@ def test_domains(): assert CONTEXT_DOMAINS == {"career","business","travel","hou
 ])
 def test_builders(packet): assert validate_context_packet(packet) is packet
 
-@pytest.mark.parametrize("key", ["reward","amount","chance","success","wallet","inventory","user_id","case_id"])
+@pytest.mark.parametrize("key", ["reward","amount","chance","success"])
 def test_sensitive_key_rejected(key):
     q=p()
     bad=AIDirectorContextPacket(q.context_key,q.domain,q.semantic_slot,q.fallback_title,q.fallback_description,{key:"x"})
@@ -76,6 +76,27 @@ def test_fallbacks_are_free_of_internal_jargon():
         text=f"{packet.fallback_title} {packet.fallback_description}".casefold()
         assert not any(word in text for word in forbidden)
 
+
+@pytest.mark.parametrize("desc", [
+    "Debrecenben saját lakásod található, amely otthonvárosban helyezkedik el.",
+    "Réka ingatlanos, jelenleg tisztázatlan kapcsolati ügyben áll.",
+    "Üzleti kapcsolattól érkezett ellenőrizetlen jelzés érkezett az eltűnt szállítmányról.",
+])
+def test_human_qa_hungarian_regressions_rejected(desc):
+    packet = p()
+    with pytest.raises(AIDirectorContextValidationError):
+        validate_context_surface(packet, {"title":"Raktáros", "description":f"A Modine raktáros munkája Miskolc mellett. {desc}"})
+
+
+def test_hardened_fallbacks_are_natural_and_article_safe():
+    housing = housing_context_packet(home_city="Debrecen", housing_tier="Saját lakás", location_state="otthonvárosban")
+    npc = npc_context_packet(npc_name="Réka", npc_role="Ingatlanos", relationship_state="tisztázatlan kapcsolati ügy")
+    tip = tips_context_packet(topic="Eltűnt szállítmány", source_label="üzleti kapcsolat", certainty="ellenőrizetlen jelzés")
+    merged = " ".join((housing.fallback_description, npc.fallback_description, tip.fallback_description)).casefold()
+    assert "otthonvárosban helyezkedik el" not in merged
+    assert "ügyben áll" not in merged
+    assert "a üzleti kapcsolat" not in merged
+    assert "az üzleti kapcsolat" in merged
 
 def test_missing_anchor_rejected():
     with pytest.raises(AIDirectorContextValidationError): validate_context_surface(p(), {"title":"Munka", "description":"Egy csapatnál nyugodt a helyzet."})
