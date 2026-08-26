@@ -1,0 +1,111 @@
++            phase_label="Lezárt ügy",
++            approach_label="Csendes út",
++            route_label="Eredeti útvonal",
++            host_resolution="Siker",
++            consequence_note="Lezárt ügy.",
++        )
++
++    assert run(add_game_master_field(bot, embed, 10, bad_packet)) is False
++    assert embed.fields == []
++
++
++def test_all_six_reviewed_families_still_build_valid_packets():
++    packets = (
++        big(),
++        npc_story_packet(
++            npc_name="Mira", npc_role="informátor", relationship_band="Jó kapcsolat",
++            recalled_event="Korábban információt adott.", current_story_state="Jó kapcsolat",
++        ),
++        consequence_recall_packet(
++            subject_label="Korábbi ügy", memory_category="Élettörténet",
++            remembered_event="A korábbi ügy lezárult.", current_relevance="A feljegyzés megmaradt az élettörténetben.",
++        ),
++        chapter_packet(
++            chapter_title="Törésvonalak", stage_title="Utórezgések", world_story_title="Csendes közeledés",
++            community_note="A közösségi projekt lezárult.", host_ending=None,
++        ),
++        world_story_packet(
++            national_title="Feszült országos helyzet", story_title="Csendes közeledés",
++            beat_title="Új kapcsolatok", city_label="Budapest", world_note="A történetszál új ponthoz ért.",
++        ),
++        legendary_event_packet(
++            event_name="Éjféli Konvoj", access_context="Legendary meghívásból megnyílt ügy",
++            phase_label="Lezárt művelet", host_resolution="Siker", legacy_note="A Legendary művelet lezárt ügyként szerepel.",
++        ),
++    )
++    assert {packet.family for packet in packets} == {
++        "big_job", "npc_story", "consequence_recall", "chapter", "world_story", "legendary_event"
++    }
++
++
++def test_main_has_separate_game_master_provider_gate():
++    text = Path("app/main.py").read_text(encoding="utf-8")
++    assert "if self.settings.ai_director_game_master_pilot_enabled:" in text
++    assert "GroqAIDirectorGameMasterProvider" in text
++    assert "self.ai_director_game_master = AIDirectorGameMaster" in text
++    assert "provider=None, runtime_enabled=False" in text  # generic AI remains closed
++
++
++def test_runtime_flag_is_separate_from_tier2_flag():
++    text = Path("app/config.py").read_text(encoding="utf-8")
++    assert "YORU_AI_DIRECTOR_GAME_MASTER_PILOT_ENABLED" in text
++    assert "YORU_AI_DIRECTOR_CONTEXT_PILOT_ENABLED" in text
++    assert "ai_director_game_master_pilot_enabled" in text
++
++
++def test_big_job_and_legendary_wire_only_in_result_presentation():
++    cog = Path("app/cogs/heist.py").read_text(encoding="utf-8")
++    service = Path("app/services/heist.py").read_text(encoding="utf-8")
++    assert "big_job_packet" in cog and "legendary_event_packet" in cog
++    assert "await add_game_master_field" in cog
++    assert "big_job_packet" not in service
++    assert "legendary_event_packet" not in service
++    assert cog.index("result.get(\"resolution_key\")") < cog.index("await add_game_master_field", cog.index("async def build_result_embed"))
++
++
++def test_world_chapter_npc_wiring_is_read_only_character_presentation():
++    text = Path("app/cogs/character.py").read_text(encoding="utf-8")
++    assert "world_story_packet" in text
++    assert "chapter_packet" in text
++    assert "npc_story_packet" in text
++    assert "await add_game_master_field" in text
++    for authoritative in ("app/services/world.py", "app/services/chapters.py", "app/services/npc_followups.py"):
++        body = Path(authoritative).read_text(encoding="utf-8")
++        assert "add_game_master_field" not in body
++
++
++def test_consequence_recall_wires_only_to_existing_history_view():
++    text = Path("app/cogs/character_views/profile.py").read_text(encoding="utf-8")
++    assert "consequence_recall_packet" in text
++    assert "latest = events[0]" in text
++    assert "await add_game_master_field" in text
++    memory = Path("app/services/memory.py").read_text(encoding="utf-8")
++    assert "add_game_master_field" not in memory
++
++
++def test_integration_layer_imports_no_authoritative_domain_service():
++    text = Path("app/ai_director_game_master_integration.py").read_text(encoding="utf-8")
++    for forbidden in (
++        "services.economy", "services.heist", "services.world", "services.chapters",
++        "services.memory", "services.assets", "services.contracts", "services.police",
++    ):
++        assert forbidden not in text
++
++
++def test_storyteller_pacing_is_not_opened_by_w226():
++    combined = "\n".join(Path(path).read_text(encoding="utf-8") for path in (
++        "app/ai_director_game_master_integration.py", "app/services/ai_director_game_master.py", "app/main.py"
++    )).casefold()
++    assert "storyteller pacing" not in combined
++    assert "storyteller_pacing" not in combined
++
++
++def test_player_call_sites_never_receive_gameplay_numbers_or_ids():
++    heist = Path("app/cogs/heist.py").read_text(encoding="utf-8")
++    character = Path("app/cogs/character.py").read_text(encoding="utf-8")
++    profile = Path("app/cogs/character_views/profile.py").read_text(encoding="utf-8")
++    snippets = heist[heist.index("# W22.6:"):heist.index("return embed", heist.index("# W22.6:"))]
++    for forbidden in ("total_reward", "payouts=", "fines=", "lobby_id=", "run_id=", "user_id="):
++        assert forbidden not in snippets
++    assert "chapter_run_id=" not in character
++    assert "memory_id=" not in profile
