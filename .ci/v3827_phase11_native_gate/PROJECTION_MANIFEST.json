@@ -14,8 +14,8 @@
     "tests/test_w21_2_music_provider_hardening.py": "9bf5e0dae5adf4d21a81f150eb0f3df80486f95786b0b1d0a35da5c106166874"
   },
   "live_deploy": false,
-  "projection": "YoruBot v3.82.7 W21.8 Phase 11 native closure source projection",
-  "source_archive_sha256": "b085fa7998f064509574a311afb6684f44ae31bcd7f8cd943056570ae840de21",
-  "source_file_count": 247,
+  "projection": "YoruBot v3.82.7 W21.8 Phase 11 closure + packaged regression dependency projection",
+  "source_archive_sha256": "1d50a5612beb96ea0fc83a281e3a7ad5526192306873250819c12f0ad65bc69b",
+  "source_file_count": 91,
   "uploaded_zip_sha256": "5c29d16ce538fb2365e8e9584d2447d4d80de879ae0241b441be3458bafb4947"
 }
