@@ -1,0 +1,21 @@
+{
+  "expected_focused_regression": "23 passed",
+  "expected_native_closure": "6 passed",
+  "key_files": {
+    "VERSION": "02ee1ef25d921f0dcf1f3ec4009239a2125272242ce0d4cdeb451212ce0a8305",
+    "app/asset_config.py": "e7f09eafec3d877885d97e7301bb8600a3bc104fb0e5bb7ba3444a7f38b110e1",
+    "app/chapter_config.py": "f9a0e312880f513e1842e2871b563562ee266c63d20e24a9637e583ab99172a3",
+    "app/cogs/character_views/world.py": "98fe3d8d169172d1a8ae398c6bd52ccffbe112901d896f70ca727379187e5f73",
+    "app/database.py": "48b702acd8bb3934bdb05d30a11e6d94a0312da68bc6a10d4be0b5783086c091",
+    "app/db_backend.py": "2820a18cb05b355be3cc756b6871832fe1b3e1525aae791622933776b80ad7ca",
+    "app/services/assets.py": "a44177d11b6d04c834dc0ac4f7ad68ab36616f2ccd2a0f5f46f1c00ea1597944",
+    "app/services/chapters.py": "4b61494d1684a5d06adca65168bad5b64f28e321b40f3e5453364ef3398c3081",
+    "tests/test_w21_2_chapter_signal_weights.py": "f40283a006582d02d816a7943f33329d26f4d31904e1432054834d82e83b8cb0",
+    "tests/test_w21_2_music_provider_hardening.py": "9bf5e0dae5adf4d21a81f150eb0f3df80486f95786b0b1d0a35da5c106166874"
+  },
+  "live_deploy": false,
+  "projection": "YoruBot v3.82.7 W21.8 Phase 11 native closure source projection",
+  "source_archive_sha256": "b085fa7998f064509574a311afb6684f44ae31bcd7f8cd943056570ae840de21",
+  "source_file_count": 247,
+  "uploaded_zip_sha256": "5c29d16ce538fb2365e8e9584d2447d4d80de879ae0241b441be3458bafb4947"
+}
