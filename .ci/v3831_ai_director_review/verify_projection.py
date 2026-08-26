@@ -5,8 +5,8 @@ from pathlib import Path
 GATE=Path(__file__).resolve().parent
 SRC=GATE/'source'
 manifest=json.loads((GATE/'MANIFEST.json').read_text(encoding='utf-8'))
-assert manifest['version']=='3.83.1'
-assert manifest['contract']=='tier1-cached-surface-v2'
+assert manifest['version']=='3.83.2'
+assert manifest['contract']=='tier1-cached-surface-v3'
 assert manifest['player_facing_ai'] is False
 assert manifest['production_runtime_enabled'] is False
 assert manifest['live_deploy'] is False
@@ -24,12 +24,16 @@ for forbidden in ('services.economy','services.assets','services.contracts','ser
     assert forbidden not in layer, forbidden
 assert 'json_schema' in provider and 'additionalProperties' in provider
 assert 'GOLDEN SEED' in provider
+assert 'esetragjait' in provider and 'téren' in provider and 'térben' in provider
 assert 'AIDirectorDailyTokenLimit' in provider
+assert 'review_surface_quality_errors' in review
+assert 'unnatural_square_locative' in review
 assert 'PENDING_HUMAN' in review and 'AUTOMATED_HOLD' in review
 assert 'PLAYER_FACING_AI=OFF' in script
 assert 'PRODUCTION_RUNTIME_ENABLED=FALSE' in script
-print('W22_2_SOURCE_VERIFY=PASS')
+print('W22_2_1_SOURCE_VERIFY=PASS')
 print('SOURCE_SHA256=10/10 PASS')
+print('HUMAN_DERIVED_SURFACE_GUARD=PASS')
 print('AUTHORITY_BOUNDARY=PASS')
 print('PLAYER_FACING_AI=OFF')
 print('PRODUCTION_RUNTIME_ENABLED=FALSE')
