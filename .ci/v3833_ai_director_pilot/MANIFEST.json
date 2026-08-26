@@ -15,7 +15,7 @@
   },
   "fresh_local_w22_3": "33/33 PASS",
   "fresh_local_w22_1_to_w22_3": "79/79 PASS",
-  "expected_ci_core": "18 passed",
+  "expected_ci_core": "15 passed",
   "pilot_default": false,
   "test_guild_only": true,
   "live_provider_in_gameplay": false,
