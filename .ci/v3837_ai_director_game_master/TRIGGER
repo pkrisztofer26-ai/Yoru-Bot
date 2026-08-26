@@ -1,4 +1,4 @@
-W22.5 Tier 3 Game Master foundation review
+W22.5.1 Tier 3 Game Master live provider review trigger
 version=3.83.7
 contract=tier3-game-master-surface-v1
 expected_source_sha=5/5
@@ -9,3 +9,4 @@ player_facing_ai=OFF
 runtime_wiring=NONE
 gameplay_authority=NONE
 live_deploy=UNCHANGED
+trigger_mode=git-ref-push
