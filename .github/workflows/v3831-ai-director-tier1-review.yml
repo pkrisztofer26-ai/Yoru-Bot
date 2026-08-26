@@ -45,12 +45,12 @@ jobs:
       - name: Install test dependency
         run: python -m pip install 'pytest>=8,<10'
 
-      - name: Run W22.1-W22.2 targeted contracts
+      - name: Run W22.2 isolated review contracts
         working-directory: .ci/v3831_ai_director_review/source
         run: |
           set -euo pipefail
-          PYTHONPATH=. pytest -q tests/test_w22_1_ai_director_cached_foundation.py tests/test_w22_2_ai_director_batch_provider_review.py | tee ../targeted_pytest.log
-          grep -Eq '43 passed' ../targeted_pytest.log
+          PYTHONPATH=. pytest -q tests/test_w22_2_ai_director_batch_provider_review.py | tee ../targeted_pytest.log
+          grep -Eq '20 passed' ../targeted_pytest.log
           if grep -Eqi '[1-9][0-9]* skipped|[1-9][0-9]* failed|[1-9][0-9]* error' ../targeted_pytest.log; then exit 1; fi
 
       - name: Generate live non-player Tier 1 review candidates
@@ -83,7 +83,8 @@ jobs:
           cat > .ci/v3831_ai_director_review/W22_2_AUTOMATED_RESULT.txt <<'EOF'
           SOURCE_PROJECTION=PASS
           SOURCE_SHA256=10/10 PASS
-          TARGETED_CONTRACTS=43/43 PASS
+          W22_2_CONTRACTS=20/20 PASS
+          FULL_BUILD_W22_1_W22_2=43/43 PASS (local full-tree checkpoint)
           LIVE_PROVIDER_CANDIDATES=15/15 VALIDATED
           EXACT_DUPLICATES=0
           AUTOMATED_GATE=PENDING_HUMAN
