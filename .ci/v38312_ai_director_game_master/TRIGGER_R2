@@ -1,0 +1,13 @@
+W22.5.1.4 Tier 3 surface v6 provider review R2
+version=3.83.12
+contract=tier3-game-master-surface-v6
+projection_order=fixed
+source_sha=8/8
+targeted=42/42
+full_w22_local=228/228
+fixture_effective=12/12
+live_effective=12/12
+player_facing_ai=OFF
+runtime_wiring=NONE
+gameplay_authority=NONE
+live_deploy=UNCHANGED
