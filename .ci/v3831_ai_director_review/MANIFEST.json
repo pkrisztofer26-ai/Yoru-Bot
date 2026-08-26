@@ -1,0 +1,22 @@
+{
+  "version": "3.83.1",
+  "contract": "tier1-cached-surface-v2",
+  "files": {
+    "app/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "app/ai_director.py": "2947c5b004b9d331507b82d54c9970e90439ee353858c3c55a8942db34683f8e",
+    "app/ai_director_config.py": "0fd2e10031fb4f69aa4e35bd506542683ea440cbfe008f1d99f37ee09c0bbe01",
+    "app/ai_director_review.py": "30cb70cf1f63002c976386f08fde5bbb7999bb689e94bf1394f1ad8b4cf7ac3b",
+    "app/ai_director_tier1.py": "2b4fca862ffec9dc08acbd86414276305086630110afd47603b09d19f4fdd6cd",
+    "app/providers/__init__.py": "f6808f84f306d812d70f8e5213e61120e26e8f045f1873acdb8c3241bb7c072d",
+    "app/providers/ai_director_groq.py": "776dab128f2e8efea956331a6c1314f307c75a56fbcd064137999cd2da0476a3",
+    "scripts/ai_director_tier1_review.py": "304a765c4b9eb58e3ba81d5f89993a0799983cfe1a38116466287e6d6aa01462",
+    "tests/test_w22_1_ai_director_cached_foundation.py": "3b3a8405af99d02a58812e55742378ba2dc03813cbaf9a85438f7e7f9c74e8f8",
+    "tests/test_w22_2_ai_director_batch_provider_review.py": "246d88acf8f761553b16da8995b40547f18a52d24643b6179b770ef117ae0a08"
+  },
+  "expected_targeted": "43 passed",
+  "expected_candidates": 15,
+  "player_facing_ai": false,
+  "production_runtime_enabled": false,
+  "live_deploy": false,
+  "source_archive_sha256": "8712acc91262954e5d79235083bc0b62ead3c4b59088ad4c196ccaf946201044"
+}
