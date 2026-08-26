@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from typing import Any, Mapping
 
 
-CONTEXT_CONTRACT_VERSION = "tier2-context-surface-v1"
+CONTEXT_CONTRACT_VERSION = "tier2-context-surface-v2"
 CONTEXT_FIELD_NAME = "🌙 Yoru Director • Kontext teszt"
 CONTEXT_DOMAINS = frozenset({"career", "business", "travel", "housing", "npc", "tips", "case"})
 CONTEXT_TITLE_MAX = 120
@@ -47,6 +47,10 @@ _FORBIDDEN_FACT_KEYS = frozenset({
 _FORBIDDEN_OUTPUT_RE = re.compile(
     r"(?:\d|\b(?:ft|forint|jutalom|kifizetés|payout|esély|százalék|cooldown|xp|inventory|"
     r"wallet|bank|rng|garantált\s+siker|biztos\s+siker|biztosan\s+nyersz)\b|<@|https?://)",
+    re.IGNORECASE,
+)
+_FORBIDDEN_META_OUTPUT_RE = re.compile(
+    r"\b(?:canonical|authority|mechanikai|validator|fallback|provider|contract)\b",
     re.IGNORECASE,
 )
 _KEY_RE = re.compile(r"^[a-z0-9][a-z0-9_.:-]{0,95}$")
@@ -100,7 +104,6 @@ class AIDirectorContextSurface:
     contract_version: str
 
 
-
 def validate_context_packet(packet: AIDirectorContextPacket) -> AIDirectorContextPacket:
     for value, label in (
         (packet.context_key, "context_key"),
@@ -148,6 +151,8 @@ def validate_context_surface(packet: AIDirectorContextPacket, raw: Mapping[str, 
     merged = f"{title}\n{description}"
     if _FORBIDDEN_OUTPUT_RE.search(merged):
         raise AIDirectorContextValidationError("A Tier 2 AI mechanikai/numerikus állítást próbált hozzáadni.")
+    if _FORBIDDEN_META_OUTPUT_RE.search(merged):
+        raise AIDirectorContextValidationError("A Tier 2 AI belső rendszerzsargont próbált player-facing szövegbe tenni.")
     folded = _fold(merged)
     for term in packet.required_terms:
         anchor = _fold(str(term).strip())
@@ -183,7 +188,7 @@ def career_context_packet(*, career_name: str, employer: str, city: str, positio
         "career", "employment_snapshot",
         {"career_name": career_name, "employer": employer, "city": city, "position": position},
         "Munkahelyi helyzetkép",
-        f"A {career_name} állásod {city} területén, a {employer} csapatánál jelenleg {position} pozícióban látszik.",
+        f"A {employer} csapatánál {career_name} munkakörben dolgozol {city} területén. Jelenlegi szerepköröd: {position}.",
         required=(career_name, city, employer),
     )
 
@@ -193,7 +198,7 @@ def business_context_packet(*, business_name: str, category: str, city: str, ope
         "business", "portfolio_snapshot",
         {"business_name": business_name, "category": category, "city": city, "operating_model": operating_model},
         "Üzleti helyzetkép",
-        f"A {business_name} {city} területén működő {category} vállalkozás; a jelenlegi működési irány: {operating_model}.",
+        f"A {business_name} {city} területén működő, {category} profilú vállalkozás. Működési iránya: {operating_model}.",
         required=(business_name, city, operating_model),
     )
 
@@ -205,10 +210,13 @@ def travel_context_packet(*, current_city: str, destination_city: str | None = N
     if travel_mode:
         facts["travel_mode"] = travel_mode
     if destination_city:
-        desc = f"Jelenlegi helyed {current_city}; a kiválasztott úticél {destination_city}. Az utazás mechanikáját továbbra is a Yoru útvonalrendszere kezeli."
+        if travel_mode:
+            desc = f"Jelenleg {current_city} területén vagy; úticélod {destination_city}, a választott közlekedési mód pedig {travel_mode}."
+        else:
+            desc = f"Jelenleg {current_city} területén vagy; úticélod {destination_city}."
         required = (current_city, destination_city)
     else:
-        desc = f"Jelenleg {current_city} területén vagy. Innen választhatsz a canonical Yoru útvonalak közül."
+        desc = f"Jelenleg {current_city} területén vagy. Innen az elérhető útvonalak közül választhatsz."
         required = (current_city,)
     return _packet("travel", "route_snapshot", facts, "Utazási helyzetkép", desc, required=required)
 
@@ -218,7 +226,7 @@ def housing_context_packet(*, home_city: str, housing_tier: str, location_state:
         "housing", "home_snapshot",
         {"home_city": home_city, "housing_tier": housing_tier, "location_state": location_state},
         "Otthoni helyzetkép",
-        f"Az otthonod {home_city} területén {housing_tier} szinten van; a jelenlegi helyzet: {location_state}.",
+        f"Az otthonod {home_city} területén található; típusa: {housing_tier}. Jelenlegi helyzet: {location_state}.",
         required=(home_city, housing_tier),
     )
 
@@ -228,7 +236,7 @@ def npc_context_packet(*, npc_name: str, npc_role: str, relationship_state: str)
         "npc", "relationship_snapshot",
         {"npc_name": npc_name, "npc_role": npc_role, "relationship_state": relationship_state},
         "Kapcsolati helyzetkép",
-        f"{npc_name}, a {npc_role} felől most {relationship_state} jellegű ügy látszik. A kapcsolat mechanikai állapotát nem ez a szöveg dönti el.",
+        f"{npc_name} ({npc_role}) felől most {relationship_state} jellegű ügy látszik.",
         required=(npc_name, npc_role),
     )
 
@@ -238,7 +246,7 @@ def tips_context_packet(*, topic: str, source_label: str, certainty: str) -> AID
         "tips", "tip_snapshot",
         {"topic": topic, "source_label": source_label, "certainty": certainty},
         "Füles a háttérben",
-        f"A {source_label} felől a(z) {topic} téma került elő; a jelzés {certainty}, ezért önmagában nem garantál kimenetelt.",
+        f"{topic} témában a {source_label} felől érkezett {certainty}. Ez önmagában még nem jelez biztos kimenetelt.",
         required=(topic, source_label),
     )
 
@@ -248,6 +256,6 @@ def case_context_packet(*, case_type: str, case_status: str, subject: str) -> AI
         "case", "case_snapshot",
         {"case_type": case_type, "case_status": case_status, "subject": subject},
         "Ügyhelyzet",
-        f"A {subject} jelenleg {case_status} állapotú {case_type} ügyként jelenik meg. A nyomok és lezárás authorityja a canonical Case rendszeré marad.",
+        f"{subject} jelenleg {case_status} {case_type} ügyként szerepel.",
         required=(subject, case_status),
     )
