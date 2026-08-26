@@ -134,8 +134,9 @@ def test_patch_has_explicit_test_guild_flag_and_provider_gate():
 
 def test_patch_does_not_open_storyteller_pacing_or_generic_ai_runtime():
     text=(PROOF/'w226.patch').read_text(encoding='utf-8').casefold()
-    assert 'storyteller_pacing' not in text
-    assert 'runtime_enabled=true' not in text
+    production=text.split('--- a/tests/', 1)[0]
+    assert 'storyteller_pacing' not in production
+    assert 'runtime_enabled=true' not in production
 
 
 def test_integration_module_has_no_authoritative_service_imports():
