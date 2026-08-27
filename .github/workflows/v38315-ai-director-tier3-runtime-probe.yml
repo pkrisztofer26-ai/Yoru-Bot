@@ -1,0 +1,109 @@
+name: Yoru v3.83.15 W22.7.1 Tier 3 Runtime Probe Candidate
+run-name: W22.7.1 Tier 3 runtime probe deployment-candidate proof
+
+on:
+  push:
+    branches:
+      - ci/v38315-ai-director-tier3-runtime-probe
+    paths:
+      - .ci/v38315_ai_director_game_master_runtime_probe/TRIGGER
+
+permissions:
+  contents: read
+
+jobs:
+  tier3-runtime-probe-candidate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout W22.7.1 proof branch
+        uses: actions/checkout@v6
+        with:
+          ref: ci/v38315-ai-director-tier3-runtime-probe
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+
+      - name: Build exact W22.7.1 runtime-probe slice
+        run: |
+          set -euo pipefail
+          W226=.ci/v38313_ai_director_game_master_pilot/frozen
+          W227=.ci/v38314_ai_director_game_master_observation
+          W2271=.ci/v38315_ai_director_game_master_runtime_probe
+          RUN="$W2271/runtime"
+          rm -rf "$RUN"
+          mkdir -p "$RUN/app/services" "$RUN/app/cogs" "$RUN/scripts" "$RUN/tests"
+          touch "$RUN/app/__init__.py" "$RUN/app/services/__init__.py" "$RUN/app/cogs/__init__.py"
+          cp "$W226/app/ai_director_game_master.py" "$RUN/app/ai_director_game_master.py"
+          cp "$W226/app/services/ai_director_game_master.py" "$RUN/app/services/ai_director_game_master.py"
+          cp "$W226/app/ai_director_game_master_integration.py" "$RUN/app/ai_director_game_master_integration.py"
+          (cd "$RUN" && patch -p1 < "$GITHUB_WORKSPACE/$W227/w227_runtime.patch")
+          cp "$W2271/frozen/VERSION" "$RUN/VERSION"
+          cp "$W2271/frozen/app/services/ai_director_game_master.py" "$RUN/app/services/ai_director_game_master.py"
+          cp "$W2271/frozen/app/ai_director_game_master_runtime_probe.py" "$RUN/app/ai_director_game_master_runtime_probe.py"
+          cp "$W2271/frozen/app/cogs/admin.py" "$RUN/app/cogs/admin.py"
+          cp "$W2271/frozen/tests/test_w22_7_1_ai_director_tier3_live_runtime_probe.py" "$RUN/tests/test_w22_7_1_ai_director_tier3_live_runtime_probe.py"
+
+      - name: Verify exact W22.7.1 source 7/7
+        run: |
+          set -euo pipefail
+          R=.ci/v38315_ai_director_game_master_runtime_probe/runtime
+          echo 'bd1948a4b0e85d4fd3857932b77fbccd3d0a53dc6260755ea33b0e4b49e4748d  '"$R/VERSION" | sha256sum -c -
+          echo 'ca65a33f98b5f4c5c63e12e036c0a193b9581acaf40f9bba6fa70a1d7111e8fe  '"$R/app/ai_director_game_master.py" | sha256sum -c -
+          echo '8f8b143155e1c0d4fe5e991c752243d4e10069842229749e146b5493cabb299d  '"$R/app/services/ai_director_game_master.py" | sha256sum -c -
+          echo '74cab48519b3e68345b88d8c4ce8eeaadb9cbeb4df42e0b93292d142dfa2ebaa  '"$R/app/ai_director_game_master_integration.py" | sha256sum -c -
+          echo 'f9684e9b235f83c06deba9ab50022a44560ac3bbfe2d5adf4d16e0e11bfeb7e9  '"$R/app/ai_director_game_master_runtime_probe.py" | sha256sum -c -
+          echo '9ee213ef2676a5f34e8cb1310d254d8a8924bcb09db215703a583aaeb84faac3  '"$R/app/cogs/admin.py" | sha256sum -c -
+          echo '00d063a0eeb0656fe6a2b6188e52e3ffb0e440dc0eb3ca7d093c5ab45b0dfc5b  '"$R/tests/test_w22_7_1_ai_director_tier3_live_runtime_probe.py" | sha256sum -c -
+          echo 'W22_7_1_SOURCE_SHA256=7/7 PASS' | tee .ci/v38315_ai_director_game_master_runtime_probe/source_verify.log
+
+      - name: Install proof dependency
+        run: python -m pip install 'pytest>=8,<10'
+
+      - name: Run W22.7.1 runtime-probe contracts
+        working-directory: .ci/v38315_ai_director_game_master_runtime_probe/runtime
+        run: |
+          set -euo pipefail
+          PYTHONPATH=. pytest -q tests/test_w22_7_1_ai_director_tier3_live_runtime_probe.py | tee ../pytest.log
+          grep -Eq '8 passed' ../pytest.log
+
+      - name: Verify owner-only test-guild command boundary
+        run: |
+          set -euo pipefail
+          F=.ci/v38315_ai_director_game_master_runtime_probe/runtime/app/cogs/admin.py
+          grep -q 'name="gmpilotprobe"' "$F"
+          grep -q 'await self.bot.is_owner(interaction.user)' "$F"
+          grep -q 'pilot.active_for_guild(interaction.guild.id)' "$F"
+          grep -q 'YORU_v3.83.15_W22.7.1_LIVE_RUNTIME_PROBE.json' "$F"
+          echo 'W22_7_1_COMMAND_BOUNDARY=PASS'
+
+      - name: Compile exact runtime-probe slice and write result
+        run: |
+          set -euo pipefail
+          python -m compileall -q .ci/v38315_ai_director_game_master_runtime_probe/runtime
+          cat > .ci/v38315_ai_director_game_master_runtime_probe/W22_7_1_AUTOMATED_RESULT.txt <<'EOF'
+          W22_7_1_SOURCE_SHA256=7/7 PASS
+          W22_7_1_CI_CONTRACT=8/8 PASS
+          W22_7_1_COMMAND_BOUNDARY=PASS
+          FULL_RELEASE_W22_LOCAL=286/286 PASS
+          GAMEPLAY_AUTHORITY=NONE
+          OBSERVATION_PERSISTENCE=NONE
+          PRODUCTION_ROLLOUT=NO
+          LIVE_DISCORD_EVIDENCE=REQUIRED
+          STORYTELLER_PACING=LOCKED
+          EOF
+
+      - name: Upload W22.7.1 deployment-candidate proof artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: yoru-v38315-w22-7-1-tier3-runtime-probe-candidate-proof
+          path: |
+            .ci/v38315_ai_director_game_master_runtime_probe/runtime/
+            .ci/v38315_ai_director_game_master_runtime_probe/source_verify.log
+            .ci/v38315_ai_director_game_master_runtime_probe/pytest.log
+            .ci/v38315_ai_director_game_master_runtime_probe/W22_7_1_AUTOMATED_RESULT.txt
+          if-no-files-found: warn
+          retention-days: 30
