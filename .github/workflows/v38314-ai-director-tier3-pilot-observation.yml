@@ -1,0 +1,112 @@
+name: Yoru v3.83.14 W22.7 Tier 3 Pilot Observation
+run-name: W22.7 Tier 3 pilot observation closure proof
+
+on:
+  push:
+    branches:
+      - ci/v38314-ai-director-tier3-pilot-observation
+    paths:
+      - .ci/v38314_ai_director_game_master_observation/TRIGGER
+
+permissions:
+  contents: read
+
+jobs:
+  tier3-pilot-observation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout W22.7 proof branch
+        uses: actions/checkout@v6
+        with:
+          ref: ci/v38314-ai-director-tier3-pilot-observation
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+
+      - name: Build exact W22.7 observed runtime
+        run: |
+          set -euo pipefail
+          BASE=.ci/v38313_ai_director_game_master_pilot/frozen
+          OBS=.ci/v38314_ai_director_game_master_observation
+          RUN="$OBS/runtime"
+          rm -rf "$RUN"
+          mkdir -p "$RUN/app/services" "$RUN/scripts" "$RUN/tests"
+          touch "$RUN/app/__init__.py" "$RUN/app/services/__init__.py"
+          cp "$BASE/app/ai_director_game_master.py" "$RUN/app/ai_director_game_master.py"
+          cp "$BASE/app/services/ai_director_game_master.py" "$RUN/app/services/ai_director_game_master.py"
+          cp "$BASE/app/ai_director_game_master_integration.py" "$RUN/app/ai_director_game_master_integration.py"
+          cp "$OBS/frozen/scripts/ai_director_tier3_pilot_observation.py" "$RUN/scripts/ai_director_tier3_pilot_observation.py"
+          cp "$OBS/frozen/tests/test_w22_7_ai_director_tier3_pilot_observation.py" "$RUN/tests/test_w22_7_ai_director_tier3_pilot_observation.py"
+          cp "$OBS/frozen/VERSION" "$RUN/VERSION"
+          echo '82fad2971d20779b5680cdb57dc7219a6287b4b36fdf4bb816e2fe586af91ea9  '"$OBS/w227_runtime.patch" | sha256sum -c -
+          (cd "$RUN" && patch -p1 < "$GITHUB_WORKSPACE/$OBS/w227_runtime.patch")
+          echo 'W22_7_PATCH_APPLICATION=PASS'
+
+      - name: Verify exact W22.7 source 6/6
+        run: |
+          set -euo pipefail
+          R=.ci/v38314_ai_director_game_master_observation/runtime
+          echo '9b43e9c7a88f4e8dd4506e82f5080872476322feabf00c48899834d4a2e987c8  '"$R/VERSION" | sha256sum -c -
+          echo 'ca65a33f98b5f4c5c63e12e036c0a193b9581acaf40f9bba6fa70a1d7111e8fe  '"$R/app/ai_director_game_master.py" | sha256sum -c -
+          echo '1801df86baf5ed352dc0b35dc12f2135193936aa4fe5a4f6fcaaf108087238cd  '"$R/app/services/ai_director_game_master.py" | sha256sum -c -
+          echo '74cab48519b3e68345b88d8c4ce8eeaadb9cbeb4df42e0b93292d142dfa2ebaa  '"$R/app/ai_director_game_master_integration.py" | sha256sum -c -
+          echo '6b84ec36ae98e484c3de4807d0fd48a6df9b1d7a1247488538e554250bcbb894  '"$R/scripts/ai_director_tier3_pilot_observation.py" | sha256sum -c -
+          echo 'ee4d763b54b773550c414fe36bbac2efe4fa81a6393ff383de07a71b4dcb6633  '"$R/tests/test_w22_7_ai_director_tier3_pilot_observation.py" | sha256sum -c -
+          echo 'W22_7_SOURCE_SHA256=6/6 PASS' | tee .ci/v38314_ai_director_game_master_observation/source_verify.log
+
+      - name: Install proof dependency
+        run: python -m pip install 'pytest>=8,<10'
+
+      - name: Run W22.7 observation contracts
+        working-directory: .ci/v38314_ai_director_game_master_observation/runtime
+        run: |
+          set -euo pipefail
+          PYTHONPATH=. pytest -q tests/test_w22_7_ai_director_tier3_pilot_observation.py | tee ../pytest.log
+          grep -Eq '24 passed' ../pytest.log
+
+      - name: Run synthetic test-guild observation matrix
+        working-directory: .ci/v38314_ai_director_game_master_observation/runtime
+        run: |
+          set -euo pipefail
+          PYTHONPATH=. python scripts/ai_director_tier3_pilot_observation.py --output ../observation
+          grep -q 'STATUS=GO' ../observation/YORU_AI_DIRECTOR_TIER3_PILOT_OBSERVATION_RESULT.txt
+          grep -q 'SCENARIOS=9' ../observation/YORU_AI_DIRECTOR_TIER3_PILOT_OBSERVATION_RESULT.txt
+          grep -q 'CHECKS=10/10' ../observation/YORU_AI_DIRECTOR_TIER3_PILOT_OBSERVATION_RESULT.txt
+          grep -q 'GAMEPLAY_AUTHORITY=NONE' ../observation/YORU_AI_DIRECTOR_TIER3_PILOT_OBSERVATION_RESULT.txt
+          grep -q 'LIVE_DEPLOY=UNCHANGED' ../observation/YORU_AI_DIRECTOR_TIER3_PILOT_OBSERVATION_RESULT.txt
+          grep -q 'STORYTELLER_PACING=LOCKED' ../observation/YORU_AI_DIRECTOR_TIER3_PILOT_OBSERVATION_RESULT.txt
+
+      - name: Compile exact runtime and write result
+        run: |
+          set -euo pipefail
+          python -m compileall -q .ci/v38314_ai_director_game_master_observation/runtime
+          cat > .ci/v38314_ai_director_game_master_observation/W22_7_AUTOMATED_RESULT.txt <<'EOF'
+          W22_7_PATCH_APPLICATION=PASS
+          W22_7_SOURCE_SHA256=6/6 PASS
+          W22_7_CI_OBSERVATION_CONTRACT=24/24 PASS
+          W22_7_SYNTHETIC_SCENARIOS=9/9 EXECUTED
+          W22_7_CLOSURE_CHECKS=10/10 PASS
+          FULL_RELEASE_W22_LOCAL=278/278 PASS
+          HOST_PANEL_AI_DEPENDENCY=NONE
+          GAMEPLAY_AUTHORITY=NONE
+          OBSERVATION_PERSISTENCE=NONE
+          LIVE_DEPLOY=UNCHANGED
+          STORYTELLER_PACING=LOCKED
+          EOF
+
+      - name: Upload W22.7 proof artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: yoru-v38314-w22-7-tier3-pilot-observation-proof
+          path: |
+            .ci/v38314_ai_director_game_master_observation/runtime/
+            .ci/v38314_ai_director_game_master_observation/observation/
+            .ci/v38314_ai_director_game_master_observation/source_verify.log
+            .ci/v38314_ai_director_game_master_observation/pytest.log
+            .ci/v38314_ai_director_game_master_observation/W22_7_AUTOMATED_RESULT.txt
+          if-no-files-found: warn
+          retention-days: 30
