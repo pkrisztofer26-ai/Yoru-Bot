@@ -1,0 +1,196 @@
+--- a/app/services/ai_director_game_master.py
++++ b/app/services/ai_director_game_master.py
+@@ -9,6 +9,7 @@
+ from app.ai_director_game_master import (
+     AIDirectorGameMasterPacket,
+     AIDirectorGameMasterSurface,
++    AIDirectorGameMasterValidationError,
+     fallback_game_master_surface,
+     validate_game_master_packet,
+     validate_game_master_surface,
+@@ -30,8 +31,46 @@
+         return bool(self.enabled and self.test_guild_id is not None and guild_id is not None and int(guild_id) == int(self.test_guild_id))
+ 
+ 
++@dataclass(frozen=True, slots=True)
++class AIDirectorGameMasterObservationSnapshot:
++    requests_total: int
++    inactive_skips: int
++    packet_rejections: int
++    provider_unavailable: int
++    provider_attempts: int
++    provider_failures: int
++    provider_timeouts: int
++    output_validation_failures: int
++    ai_surfaces: int
++    cache_hits: int
++    deterministic_fallbacks: int
++    fields_added: int
++    presentation_skips: int
++    integration_failures: int
++    family_requests: tuple[tuple[str, int], ...]
++
++    def as_dict(self) -> dict[str, Any]:
++        return {
++            "requests_total": self.requests_total,
++            "inactive_skips": self.inactive_skips,
++            "packet_rejections": self.packet_rejections,
++            "provider_unavailable": self.provider_unavailable,
++            "provider_attempts": self.provider_attempts,
++            "provider_failures": self.provider_failures,
++            "provider_timeouts": self.provider_timeouts,
++            "output_validation_failures": self.output_validation_failures,
++            "ai_surfaces": self.ai_surfaces,
++            "cache_hits": self.cache_hits,
++            "deterministic_fallbacks": self.deterministic_fallbacks,
++            "fields_added": self.fields_added,
++            "presentation_skips": self.presentation_skips,
++            "integration_failures": self.integration_failures,
++            "family_requests": dict(self.family_requests),
++        }
++
++
+ class AIDirectorGameMaster:
+-    """W22.6 fail-closed Tier 3 test-guild presentation service.
++    """W22.7 observed fail-closed Tier 3 test-guild presentation service.
+ 
+     Only explicit TEST_GUILD_ID opt-in call-sites may request a surface. Provider
+     timeout, validation failure or packet rejection never changes host-owned state;
+@@ -53,31 +92,85 @@
+         self.cache_ttl_seconds = max(30.0, min(float(cache_ttl_seconds), 1800.0))
+         self._cache: dict[str, tuple[float, AIDirectorGameMasterSurface]] = {}
+         self._provider_lock = asyncio.Lock()
++        self._observation: dict[str, int] = {
++            "requests_total": 0,
++            "inactive_skips": 0,
++            "packet_rejections": 0,
++            "provider_unavailable": 0,
++            "provider_attempts": 0,
++            "provider_failures": 0,
++            "provider_timeouts": 0,
++            "output_validation_failures": 0,
++            "ai_surfaces": 0,
++            "cache_hits": 0,
++            "deterministic_fallbacks": 0,
++            "fields_added": 0,
++            "presentation_skips": 0,
++            "integration_failures": 0,
++        }
++        self._family_requests: dict[str, int] = {}
+ 
+     def active_for_guild(self, guild_id: int | None) -> bool:
+         return self.policy.active_for_guild(guild_id)
+ 
++    def _record(self, key: str, family: str | None = None) -> None:
++        if key in self._observation:
++            self._observation[key] += 1
++        if key == "requests_total" and family:
++            self._family_requests[family] = self._family_requests.get(family, 0) + 1
++
++    def observation_snapshot(self) -> AIDirectorGameMasterObservationSnapshot:
++        return AIDirectorGameMasterObservationSnapshot(
++            **self._observation,
++            family_requests=tuple(sorted(self._family_requests.items())),
++        )
++
++    def reset_observation(self) -> None:
++        for key in self._observation:
++            self._observation[key] = 0
++        self._family_requests.clear()
++
++    def note_presentation_result(self, *, added: bool = False, integration_failure: bool = False) -> None:
++        if added:
++            self._record("fields_added")
++        else:
++            self._record("presentation_skips")
++        if integration_failure:
++            self._record("integration_failures")
++
+     async def surface(self, guild_id: int | None, packet: AIDirectorGameMasterPacket) -> AIDirectorGameMasterSurface | None:
+-        validate_game_master_packet(packet)
++        family = getattr(packet, "family", None)
++        self._record("requests_total", str(family) if family else None)
++        try:
++            validate_game_master_packet(packet)
++        except Exception:
++            self._record("packet_rejections")
++            raise
+         if not self.active_for_guild(guild_id):
++            self._record("inactive_skips")
+             return None
+         fallback = fallback_game_master_surface(packet)
+         if self.provider is None:
++            self._record("provider_unavailable")
++            self._record("deterministic_fallbacks")
+             return fallback
+         cache_key = packet.digest()
+         cached = self._cache.get(cache_key)
+         now = time.monotonic()
+         if cached is not None and cached[0] > now:
++            self._record("cache_hits")
+             value = cached[1]
+             return AIDirectorGameMasterSurface(
+                 story_key=value.story_key, family=value.family, title=value.title,
+                 description=value.description, source="ai_game_master_cache",
+                 packet_digest=value.packet_digest, contract_version=value.contract_version,
+             )
++        self._record("provider_attempts")
+         try:
+             async with self._provider_lock:
+                 raw = await asyncio.wait_for(self.provider.generate_game_master(packet), timeout=self.timeout_seconds)
+             title, description = validate_game_master_surface(packet, raw)
++            self._record("ai_surfaces")
+             surface = AIDirectorGameMasterSurface(
+                 story_key=packet.story_key,
+                 family=packet.family,
+@@ -92,7 +185,19 @@
+                 cutoff = time.monotonic()
+                 self._cache = {key: value for key, value in self._cache.items() if value[0] > cutoff}
+             return surface
++        except asyncio.TimeoutError as exc:
++            self._record("provider_timeouts")
++            self._record("deterministic_fallbacks")
++            logger.warning("Tier3 Game Master timeout fallback guild=%s family=%s key=%s error=%s", guild_id, packet.family, packet.story_key, type(exc).__name__)
++            return fallback
++        except AIDirectorGameMasterValidationError as exc:
++            self._record("output_validation_failures")
++            self._record("deterministic_fallbacks")
++            logger.warning("Tier3 Game Master validation fallback guild=%s family=%s key=%s error=%s", guild_id, packet.family, packet.story_key, type(exc).__name__)
++            return fallback
+         except Exception as exc:
++            self._record("provider_failures")
++            self._record("deterministic_fallbacks")
+             logger.warning("Tier3 Game Master fallback guild=%s family=%s key=%s error=%s", guild_id, packet.family, packet.story_key, type(exc).__name__)
+             return fallback
+ 
+--- a/app/ai_director_game_master_integration.py
++++ b/app/ai_director_game_master_integration.py
+@@ -11,17 +11,23 @@
+ 
+ 
+ async def add_game_master_field(bot, embed, guild_id: int | None, packet_source: GameMasterPacketSource) -> bool:
+-    """Append one bounded Tier-3 field; packet/provider failures never break the host panel."""
++    """Append one bounded Tier-3 field; every presentation failure stays outside host authority."""
+     pilot = getattr(bot, "ai_director_game_master", None)
+     if pilot is None:
+         return False
+     try:
+         packet = packet_source() if callable(packet_source) else packet_source
+         value = await pilot.field_value(guild_id, packet)
++        if not value:
++            pilot.note_presentation_result(added=False)
++            return False
++        embed.add_field(name=GAME_MASTER_FIELD_NAME, value=value, inline=False)
++        pilot.note_presentation_result(added=True)
++        return True
+     except Exception:
++        try:
++            pilot.note_presentation_result(added=False, integration_failure=True)
++        except Exception:
++            pass
+         logger.exception("Tier3 Game Master presentation failed closed")
+         return False
+-    if not value:
+-        return False
+-    embed.add_field(name=GAME_MASTER_FIELD_NAME, value=value, inline=False)
+-    return True
