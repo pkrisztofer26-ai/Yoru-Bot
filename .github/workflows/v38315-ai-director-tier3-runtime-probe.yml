@@ -55,7 +55,7 @@ jobs:
           echo '8f8b143155e1c0d4fe5e991c752243d4e10069842229749e146b5493cabb299d  '"$R/app/services/ai_director_game_master.py" | sha256sum -c -
           echo '74cab48519b3e68345b88d8c4ce8eeaadb9cbeb4df42e0b93292d142dfa2ebaa  '"$R/app/ai_director_game_master_integration.py" | sha256sum -c -
           echo 'f9684e9b235f83c06deba9ab50022a44560ac3bbfe2d5adf4d16e0e11bfeb7e9  '"$R/app/ai_director_game_master_runtime_probe.py" | sha256sum -c -
-          echo '9ee213ef2676a5f34e8cb1310d254d8a8924bcb09db215703a583aaeb84faac3  '"$R/app/cogs/admin.py" | sha256sum -c -
+          echo '8e50467c19d014a53e91a9f27a8953be7ef699ebc0aa558db22d44e2dbfd5f39  '"$R/app/cogs/admin.py" | sha256sum -c -
           echo '00d063a0eeb0656fe6a2b6188e52e3ffb0e440dc0eb3ca7d093c5ab45b0dfc5b  '"$R/tests/test_w22_7_1_ai_director_tier3_live_runtime_probe.py" | sha256sum -c -
           echo 'W22_7_1_SOURCE_SHA256=7/7 PASS' | tee .ci/v38315_ai_director_game_master_runtime_probe/source_verify.log
 
