@@ -1,0 +1,112 @@
+                "YORU_AI_DIRECTOR_PILOT_ENABLED és YORU_AI_DIRECTOR_GAME_MASTER_PILOT_ENABLED beállításokat.",
+                ephemeral=True,
+            )
+
+        await interaction.response.defer(ephemeral=True)
+
+        def embed_factory(family: str, pass_index: int) -> discord.Embed:
+            embed = base_embed(
+                "🧪 W22.7.1 • Tier-3 live runtime probe",
+                f"Canonical host probe • `{family}` • pass {pass_index}",
+            )
+            embed.add_field(name="HOST", value="Canonical host panel intact", inline=False)
+            return embed
+
+        report, preview_embeds = await run_live_runtime_probe(
+            self.bot, interaction.guild.id, embed_factory=embed_factory, provider_spacing_seconds=6.0
+        )
+        evidence = report.as_dict()
+        metrics = evidence["metrics"]
+        passed = sum(1 for value in evidence["checks"].values() if value)
+        total = len(evidence["checks"])
+        icon = "✅" if report.status == "GO" else "⚠️"
+
+        # First-pass embeds are actually transmitted through Discord so W22.7.1
+        # validates the real network/presentation path, not only in-process objects.
+        if preview_embeds:
+            await interaction.followup.send(embeds=preview_embeds[:10], ephemeral=True)
+
+        payload = json.dumps(evidence, ensure_ascii=False, indent=2).encode("utf-8")
+        file = discord.File(io.BytesIO(payload), filename="YORU_v3.83.21_W22.7.1_LIVE_RUNTIME_PROBE.json")
+        await interaction.followup.send(
+            f"{icon} **W22.7.1 live runtime probe: {report.status}**\n"
+            f"Checks: **{passed}/{total}** • provider: **{metrics.get('provider_attempts', 0)}** "
+            f"• AI: **{metrics.get('ai_surfaces', 0)}** • cache: **{metrics.get('cache_hits', 0)}** "
+            f"• fallback: **{metrics.get('deterministic_fallbacks', 0)}** "
+            f"• integration failure: **{metrics.get('integration_failures', 0)}**\n"
+            "Gameplay authority: **NONE** • persistence: **NONE** • production rollout: **NO**",
+            file=file,
+            ephemeral=True,
+        )
+
+    @app_commands.command(
+        name="gmrolloutstatus",
+        description="W22.8: owner-only bounded Tier-3 rollout status.",
+    )
+    @app_commands.checks.has_permissions(administrator=True)
+    async def gm_rollout_status_slash(self, interaction: discord.Interaction) -> None:
+        if interaction.guild is None:
+            return await interaction.response.send_message("❌ Ez a parancs csak szerveren használható.", ephemeral=True)
+        if not await self.bot.is_owner(interaction.user):
+            return await interaction.response.send_message("❌ Ez a W22.8 parancs csak a bot tulajdonosának érhető el.", ephemeral=True)
+        pilot = getattr(self.bot, "ai_director_game_master", None)
+        if pilot is None:
+            return await interaction.response.send_message("❌ Tier-3 runtime nincs betöltve.", ephemeral=True)
+        status = pilot.rollout_status()
+        obs = status["observation"]
+        families = ", ".join(status["eligible_families"])
+        await interaction.response.send_message(
+            "🧪 **W22.8 bounded rollout status**\n"
+            f"Env gate: **{'ON' if status['enabled'] else 'OFF'}** • runtime pause: **{'ON' if status['paused'] else 'OFF'}**\n"
+            f"Scope: **1 explicit guild** • cohort: **{status['percent']}%** (hard cap {status['hard_cap_percent']}%)\n"
+            f"Families: `{families}` • provider cap: **{status['provider_attempts_per_minute_cap']}/perc**\n"
+            f"Observed: requests **{obs['rollout_requests']}** • eligible **{obs['rollout_eligible']}** • "
+            f"AI **{obs['rollout_ai_surfaces']}** • fallback **{obs['rollout_fallbacks']}** • "
+            f"budget skip **{obs['rollout_budget_skips']}**\n"
+            "Gameplay authority: **NONE** • persistence: **NONE**",
+            ephemeral=True,
+        )
+
+    @app_commands.command(
+        name="gmrolloutpause",
+        description="W22.8: azonnal leállítja a broader Tier-3 rolloutot erre a processre.",
+    )
+    @app_commands.checks.has_permissions(administrator=True)
+    async def gm_rollout_pause_slash(self, interaction: discord.Interaction) -> None:
+        if interaction.guild is None:
+            return await interaction.response.send_message("❌ Ez a parancs csak szerveren használható.", ephemeral=True)
+        if not await self.bot.is_owner(interaction.user):
+            return await interaction.response.send_message("❌ Ezt csak a bot tulajdonosa használhatja.", ephemeral=True)
+        pilot = getattr(self.bot, "ai_director_game_master", None)
+        if pilot is None:
+            return await interaction.response.send_message("❌ Tier-3 runtime nincs betöltve.", ephemeral=True)
+        pilot.pause_rollout()
+        await interaction.response.send_message(
+            "⛔ **W22.8 rollout runtime PAUSED.** Új broader-rollout AI mező nem indul; a test-guild pilot külön marad.",
+            ephemeral=True,
+        )
+
+    @app_commands.command(
+        name="gmrolloutresume",
+        description="W22.8: visszaengedi az env-ben már engedélyezett bounded rolloutot.",
+    )
+    @app_commands.checks.has_permissions(administrator=True)
+    async def gm_rollout_resume_slash(self, interaction: discord.Interaction) -> None:
+        if interaction.guild is None:
+            return await interaction.response.send_message("❌ Ez a parancs csak szerveren használható.", ephemeral=True)
+        if not await self.bot.is_owner(interaction.user):
+            return await interaction.response.send_message("❌ Ezt csak a bot tulajdonosa használhatja.", ephemeral=True)
+        pilot = getattr(self.bot, "ai_director_game_master", None)
+        if pilot is None:
+            return await interaction.response.send_message("❌ Tier-3 runtime nincs betöltve.", ephemeral=True)
+        if not pilot.rollout_policy.enabled:
+            return await interaction.response.send_message(
+                "❌ Az env rollout gate OFF; runtime paranccsal nem lehet megkerülni.",
+                ephemeral=True,
+            )
+        if not pilot.rollout_policy.guild_matches(interaction.guild.id):
+            return await interaction.response.send_message(
+                "❌ Resume csak az explicit rollout guildon engedélyezett.",
+                ephemeral=True,
+            )
+        pilot.resume_rollout()
