@@ -1,0 +1,38 @@
+            f"🧾 Tranzakciók: **{result.get('transactions', 0)}**\n"
+            "\nMindenki a következő gazdasági parancsnál új játékosként indul. "
+            "A kezdő pénzt a `!settings → Gazdaság → Haladó → Kezdő egyenleg` kezeli.",
+            ephemeral=True,
+        )
+
+    @commands.command(name="reseteconomy", aliases=["reseteco", "economyreset", "ereset"])
+    @commands.has_permissions(administrator=True)
+    @commands.guild_only()
+    async def reseteconomy_prefix(self, ctx: commands.Context, confirm: str = "") -> None:
+        if confirm != "RESET":
+            try:
+                await ctx.author.send(
+                    "⚠️ **Yoru játékgazdasági visszaállítás**\nA teljes játékgazdaság törléséhez használd: `!reseteconomy RESET`"
+                )
+            except discord.HTTPException:
+                pass
+            return
+        reason = self._economy_reset_block_reason(ctx.guild.id)
+        if reason:
+            try:
+                await ctx.author.send(f"❌ **A visszaállítás most nem indítható.**\n{reason}")
+            except discord.HTTPException:
+                pass
+            return
+
+        result = await self._perform_economy_reset(ctx.guild)
+        try:
+            await ctx.author.send(
+                "✅ **TELJES JÁTÉKGAZDASÁGI VISSZAÁLLÍTÁS KÉSZ**\n"
+                f"👥 Törölt játékosprofilok: **{result.get('users', 0)}**\n"
+                f"🎒 Tárgysorok: **{result.get('inventory', 0)}**\n"
+                f"🏅 Eredmények: **{result.get('achievements', 0)}**\n"                f"🌙 Szervezetk: **{result.get('crews', 0)}** • tagságok: **{result.get('crew_members', 0)}**\n"
+                f"🧾 Tranzakciók: **{result.get('transactions', 0)}**\n"
+                "Mindenki a következő gazdasági parancsnál új játékosként indul."
+            )
+        except discord.HTTPException:
+            pass
