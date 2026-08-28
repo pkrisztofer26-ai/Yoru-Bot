@@ -1,0 +1,135 @@
+name: W22.8 bounded rare-content rollout gate proof
+run-name: W22.8 bounded rare-content rollout gate proof
+
+on:
+  push:
+    branches:
+      - ci/v38321-ai-director-tier3-bounded-rollout
+    paths:
+      - .ci/v38321_ai_director_game_master_bounded_rollout/TRIGGER
+
+permissions:
+  contents: read
+
+jobs:
+  proof:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout proof branch
+        uses: actions/checkout@v6
+
+      - name: Setup Python 3.14
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+
+      - name: Build exact W22.8 frozen runtime slice
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="$GITHUB_WORKSPACE/.ci/v38313_ai_director_game_master_pilot/frozen"
+          SRC="$GITHUB_WORKSPACE/.ci/v38321_ai_director_game_master_bounded_rollout/frozen"
+          PARTS="$GITHUB_WORKSPACE/.ci/v38321_ai_director_game_master_bounded_rollout/parts"
+          SUPPORT="$GITHUB_WORKSPACE/.ci/v38321_ai_director_game_master_bounded_rollout/support"
+          RUNTIME="$RUNNER_TEMP/w228-runtime"
+          rm -rf "$RUNTIME"
+          mkdir -p "$RUNTIME/app/services" "$RUNTIME/app/cogs" "$RUNTIME/tests"
+          touch "$RUNTIME/app/__init__.py" "$RUNTIME/app/services/__init__.py" "$RUNTIME/app/cogs/__init__.py"
+
+          # Certified Tier-3 v6 packet/validator base inherited from the previous proof chain.
+          cp "$BASE/app/ai_director_game_master.py" "$RUNTIME/app/ai_director_game_master.py"
+
+          # Exact W22.8 release overlay.
+          cp "$SRC/VERSION" "$RUNTIME/VERSION"
+          cp "$SRC/.env.example" "$RUNTIME/.env.example"
+          cp "$SRC/app/ai_director_game_master_rollout.py" "$RUNTIME/app/ai_director_game_master_rollout.py"
+          cp "$SRC/app/services/ai_director_game_master.py" "$RUNTIME/app/services/ai_director_game_master.py"
+          cp "$SRC/app/ai_director_game_master_integration.py" "$RUNTIME/app/ai_director_game_master_integration.py"
+          cp "$SRC/app/config.py" "$RUNTIME/app/config.py"
+          cat "$PARTS"/admin.* > "$RUNTIME/app/cogs/admin.py"
+          cat "$PARTS"/test_w22_8.* > "$RUNTIME/tests/test_w22_8_ai_director_bounded_rare_content_rollout.py"
+
+          # Isolated config-test support only; not counted as release-source proof.
+          cp "$SUPPORT/economy_config.py" "$RUNTIME/app/economy_config.py"
+          echo "RUNTIME=$RUNTIME" >> "$GITHUB_ENV"
+
+      - name: Verify exact W22.8 runtime overlay 8/8
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNTIME"
+          sha256sum -c "$GITHUB_WORKSPACE/.ci/v38321_ai_director_game_master_bounded_rollout/RUNTIME_SHA256.txt"
+          test "$(wc -l < "$GITHUB_WORKSPACE/.ci/v38321_ai_director_game_master_bounded_rollout/RUNTIME_SHA256.txt")" -eq 8
+          echo 'W22_8_EXACT_RUNTIME_SOURCE=8/8 PASS'
+
+      - name: Install isolated test dependencies
+        run: python -m pip install --disable-pip-version-check 'pytest>=8,<10' 'python-dotenv>=1,<2'
+
+      - name: Run W22.8 bounded rollout contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNTIME"
+          PYTHONPATH=. pytest -q tests/test_w22_8_ai_director_bounded_rare_content_rollout.py | tee "$RUNNER_TEMP/w228-pytest.txt"
+          grep -Eq '12 passed' "$RUNNER_TEMP/w228-pytest.txt"
+
+      - name: Compile exact frozen slice
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNTIME"
+          python -m compileall -q app tests
+
+      - name: Verify locked rollout boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          R="$RUNTIME"
+          grep -q 'ROLLOUT_ELIGIBLE_FAMILIES = frozenset({"world_story", "legendary_event"})' "$R/app/ai_director_game_master_rollout.py"
+          grep -q 'ROLLOUT_PERCENT_HARD_CAP = 10' "$R/app/ai_director_game_master_rollout.py"
+          grep -q 'ROLLOUT_PROVIDER_ATTEMPTS_PER_MINUTE = 4' "$R/app/ai_director_game_master_rollout.py"
+          grep -q 'YORU_AI_DIRECTOR_GAME_MASTER_ROLLOUT_ENABLED=false' "$R/.env.example"
+          grep -q 'name="gmrolloutpause"' "$R/app/cogs/admin.py"
+          grep -q 'if not pilot.rollout_policy.enabled' "$R/app/cogs/admin.py"
+          echo 'W22_8_SCOPE_AND_ROLLBACK_BOUNDARY=PASS'
+
+      - name: Write proof result
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/w228-proof"
+          mkdir -p "$OUT"
+          cp "$RUNNER_TEMP/w228-pytest.txt" "$OUT/pytest.txt"
+          cp "$GITHUB_WORKSPACE/.ci/v38321_ai_director_game_master_bounded_rollout/RUNTIME_SHA256.txt" "$OUT/RUNTIME_SHA256.txt"
+          cat > "$OUT/W22_8_CI_RESULT.txt" <<'EOF2'
+          Yoru v3.83.21 W22.8
+          STATUS=PREDEPLOY_GO_ROLLOUT_OFF
+          W22_8_DEDICATED=12/12 PASS
+          FULL_PHASE12_W22_LOCAL=320/320 PASS
+          COMPILEALL=PASS
+          EXACT_RUNTIME_OVERLAY_SHA256=8/8 PASS
+          W22_8_SCOPE_AND_ROLLBACK_BOUNDARY=PASS
+          ROLLOUT_DEFAULT=OFF
+          ROLLOUT_SCOPE=ONE_EXPLICIT_GUILD
+          ROLLOUT_FAMILIES=world_story,legendary_event
+          ROLLOUT_PERCENT_HARD_CAP=10
+          ROLLOUT_PROVIDER_ATTEMPTS_PER_MINUTE_CAP=4
+          COHORT=CONTENT_HASH_ONLY
+          PERSONAL_COHORTING=NO
+          IMMEDIATE_RUNTIME_PAUSE=YES
+          GAMEPLAY_AUTHORITY=NONE
+          OBSERVATION_PERSISTENCE=NONE
+          PRODUCTION_ROLLOUT=NO
+          STORYTELLER_PACING=LOCKED
+          LIVE_BOUNDED_ROLLOUT_EVIDENCE=REQUIRED_BEFORE_CLOSURE
+          EOF2
+
+      - name: Upload W22.8 proof artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: yoru-v38321-w22-8-bounded-rollout-predeploy-proof
+          path: ${{ runner.temp }}/w228-proof
+          if-no-files-found: warn
+          retention-days: 30
