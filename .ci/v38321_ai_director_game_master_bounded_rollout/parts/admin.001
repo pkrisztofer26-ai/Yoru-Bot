@@ -1,0 +1,108 @@
+from __future__ import annotations
+
+import io
+import json
+import discord
+from discord import app_commands
+from discord.ext import commands
+
+from app.database import Database
+from app.services.economy_events_settings import EconomyEventsSettingsService
+from app.ui import base_embed, money, money_inline
+from app.ai_director_game_master_runtime_probe import run_live_runtime_probe
+
+
+def _duration_label(hours: float) -> str:
+    minutes = hours * 60
+    if hours < 1:
+        rounded = round(minutes)
+        return f"{rounded} perc"
+    if float(hours).is_integer():
+        return f"{int(hours)} óra"
+    return f"{hours:g} óra"
+
+
+class AdminCog(commands.Cog):
+    def __init__(self, bot: commands.Bot, db: Database) -> None:
+        self.bot = bot
+        self.db = db
+        self.guild_settings = EconomyEventsSettingsService(db)
+
+    async def _config_embed(self, guild: discord.Guild) -> discord.Embed:
+        settings = self.bot.settings  # type: ignore[attr-defined]
+        await self.guild_settings.prepare_currency(guild.id)
+        event_cfg = await self.guild_settings.get_event_config(guild.id, settings)
+        users, wallets, banks, richest = await self.db.economy_summary(guild.id)
+        embed = base_embed("⚙️ Yoru szerverbeállítások")
+        embed.add_field(name="💰 Economy", value="✅ Bekapcsolva" if await self.guild_settings.get_economy_enabled(guild.id) else "❌ Kikapcsolva", inline=True)
+        eco_channels = await self.guild_settings.get_economy_channel_ids(guild.id)
+        eco_categories = await self.guild_settings.get_economy_category_ids(guild.id)
+        if eco_channels or eco_categories:
+            eco_places = f"{len(eco_channels)} csatorna • {len(eco_categories)} kategória"
+        else:
+            eco_places = "Minden csatorna"
+        embed.add_field(name="💬 Economy helyek", value=eco_places, inline=True)
+        embed.add_field(name="🎁 Event csatorna", value=(f"<#{event_cfg.channel_id}>" if event_cfg.channel_id else "Nincs beállítva"), inline=True)
+        embed.add_field(name="🤖 Auto event", value="✅ Bekapcsolva" if event_cfg.auto_enabled else "❌ Kikapcsolva", inline=True)
+        embed.add_field(name="⏱️ Auto intervallum", value=f"{_duration_label(event_cfg.min_hours)} – {_duration_label(event_cfg.max_hours)}", inline=True)
+
+        event_cog = self.bot.get_cog("EventCog")
+        activity_status = None
+        if event_cog is not None:
+            runtime = getattr(event_cog, "get_runtime_config", None)
+            if callable(runtime):
+                await runtime(guild.id)
+            getter = getattr(event_cog, "get_activity_status", None)
+            if callable(getter):
+                activity_status = getter(guild.id)
+        if activity_status:
+            state = "🟢 Felfegyverezve" if activity_status["armed"] else "🟡 Gyűjtés"
+            activity_value = (
+                f"{state}\n**{activity_status['messages']}/{activity_status['required_messages']}** üzenet • "
+                f"**{activity_status['users']}/{activity_status['required_users']}** user\n"
+                f"{activity_status['window_minutes']} perc ablak • {activity_status['user_cooldown_seconds']} mp/user"
+            )
+        else:
+            activity_value = f"**{event_cfg.activity_messages}** üzenet • **{event_cfg.activity_min_users}** user\n{event_cfg.activity_window_minutes} perc ablak • {event_cfg.activity_user_cooldown_seconds} mp/user"
+        embed.add_field(name="💬 Event aktivitás", value=activity_value, inline=False)
+        embed.add_field(name="🎁 Auto Láda", value=f"{money(event_cfg.safe_min_reward)} – {money(event_cfg.safe_max_reward)}", inline=money_inline(event_cfg.safe_min_reward, event_cfg.safe_max_reward))
+        embed.add_field(name="☠️ Auto HH belépő", value=f"{money(event_cfg.bomb_min_entry)} – {money(event_cfg.bomb_max_entry)}", inline=money_inline(event_cfg.bomb_min_entry, event_cfg.bomb_max_entry))
+        embed.add_field(name="⏳ Nevezési idő", value=f"{event_cfg.join_seconds} mp", inline=True)
+        embed.add_field(name="💥 HH köridő", value=f"{event_cfg.bomb_round_seconds} mp", inline=True)
+        embed.add_field(name="👥 Economy userek", value=str(users), inline=True)
+        embed.add_field(name="💵 Tárcák összesen", value=money(wallets), inline=money_inline(wallets, banks, richest))
+        embed.add_field(name="🏦 Bankok összesen", value=money(banks), inline=money_inline(wallets, banks, richest))
+        embed.add_field(name="👑 Legnagyobb vagyon", value=money(richest), inline=money_inline(wallets, banks, richest))
+        embed.add_field(name="🗄️ Adatbázis", value=f"`{settings.database_path}`", inline=True)
+        return embed
+
+    @app_commands.command(name="yoruconfig", description="Yoru gazdasági és eseményállapot (adminisztrátor).")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def yoruconfig_slash(self, interaction: discord.Interaction) -> None:
+        if interaction.guild is None:
+            return
+        await interaction.response.send_message(embed=await self._config_embed(interaction.guild), ephemeral=True)
+
+    @commands.command(name="yoruconfig", aliases=["yc", "config"])
+    @commands.has_permissions(administrator=True)
+    @commands.guild_only()
+    async def yoruconfig_prefix(self, ctx: commands.Context) -> None:
+        await ctx.send(embed=await self._config_embed(ctx.guild))
+
+
+
+    @app_commands.command(
+        name="gmpilotprobe",
+        description="W22.7.1: owner-only Tier-3 live test-guild runtime probe.",
+    )
+    @app_commands.checks.has_permissions(administrator=True)
+    async def gm_pilot_probe_slash(self, interaction: discord.Interaction) -> None:
+        if interaction.guild is None:
+            return await interaction.response.send_message("❌ Ez a probe csak szerveren használható.", ephemeral=True)
+        if not await self.bot.is_owner(interaction.user):
+            return await interaction.response.send_message("❌ Ez a W22.7.1 probe csak a bot tulajdonosának érhető el.", ephemeral=True)
+
+        pilot = getattr(self.bot, "ai_director_game_master", None)
+        if pilot is None or not pilot.active_for_guild(interaction.guild.id):
+            return await interaction.response.send_message(
+                "❌ A Tier-3 pilot ezen a guildon nem aktív. Ellenőrizd a YORU_AI_PILOT_GUILD_ID, "
