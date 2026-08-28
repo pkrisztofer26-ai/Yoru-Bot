@@ -1,0 +1,127 @@
+        enabled=True,
+        test_guild_id=PILOT_GUILD,
+        rollout_enabled=True,
+        rollout_guild_id=ROLLOUT_GUILD,
+        rollout_percent=10,
+    )
+    gm.pause_rollout()
+    assert asyncio.run(gm.surface(ROLLOUT_GUILD, packet)) is None
+    assert provider.calls == 0
+    assert gm.observation_snapshot().rollout_paused_skips == 1
+    assert gm.resume_rollout() is True
+    assert asyncio.run(gm.surface(ROLLOUT_GUILD, packet)) is not None
+    assert provider.calls == 1
+
+    disabled = AIDirectorGameMaster(provider=provider, rollout_enabled=False)
+    disabled.pause_rollout()
+    assert disabled.resume_rollout() is False
+    assert disabled.rollout_status()["enabled"] is False
+
+
+def test_w22_8_rollout_field_is_player_facing_but_test_field_contract_stays_separate():
+    provider = SuccessProvider()
+    packet, _ = find_world_packet(eligible=True)
+    gm = AIDirectorGameMaster(
+        provider=provider,
+        enabled=True,
+        test_guild_id=PILOT_GUILD,
+        rollout_enabled=True,
+        rollout_guild_id=ROLLOUT_GUILD,
+        rollout_percent=10,
+    )
+    embed = Embed()
+    added = asyncio.run(
+        add_game_master_field(SimpleNamespace(ai_director_game_master=gm), embed, ROLLOUT_GUILD, packet)
+    )
+    assert added is True
+    assert embed.fields[-1][0] == ROLLOUT_GAME_MASTER_FIELD_NAME
+    snap = gm.observation_snapshot().as_dict()
+    assert snap["rollout_fields_added"] == 1
+    assert snap["integration_failures"] == 0
+
+
+def test_w22_8_status_and_policy_do_not_expose_identifiers_or_persist_state():
+    gm = AIDirectorGameMaster(
+        enabled=True,
+        test_guild_id=PILOT_GUILD,
+        rollout_enabled=True,
+        rollout_guild_id=ROLLOUT_GUILD,
+        rollout_percent=10,
+    )
+    text = str(gm.rollout_status()).casefold()
+    for forbidden in (str(PILOT_GUILD), str(ROLLOUT_GUILD), "user_id", "guild_id", "packet_digest"):
+        assert forbidden not in text
+
+    source = Path("app/ai_director_game_master_rollout.py").read_text(encoding="utf-8").casefold()
+    for forbidden in ("from app.database", "import database", ".execute(", ".commit(", "insert into", "update ", "delete from"):
+        assert forbidden not in source
+    assert "no user identifier is used" in source
+
+
+def _base_env(monkeypatch):
+    for key in (
+        "TEST_GUILD_ID",
+        "YORU_AI_PILOT_GUILD_ID",
+        "YORU_AI_DIRECTOR_PILOT_ENABLED",
+        "YORU_AI_DIRECTOR_CONTEXT_PILOT_ENABLED",
+        "YORU_AI_DIRECTOR_GAME_MASTER_PILOT_ENABLED",
+        "YORU_AI_DIRECTOR_GAME_MASTER_ROLLOUT_ENABLED",
+        "YORU_AI_GAME_MASTER_ROLLOUT_GUILD_ID",
+        "YORU_AI_GAME_MASTER_ROLLOUT_PERCENT",
+        "GROQ_API_KEY",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("DISCORD_TOKEN", "test-token")
+
+
+def test_w22_8_config_defaults_off_and_rejects_scope_escape(monkeypatch):
+    _base_env(monkeypatch)
+    settings = load_settings()
+    assert settings.ai_director_game_master_rollout_enabled is False
+    assert settings.ai_director_game_master_rollout_guild_id is None
+    assert settings.ai_director_game_master_rollout_percent == 0
+
+    monkeypatch.setenv("YORU_AI_GAME_MASTER_ROLLOUT_PERCENT", "11")
+    with pytest.raises(RuntimeError, match="0 és 10"):
+        load_settings()
+
+
+def test_w22_8_config_requires_separate_explicit_guild_and_both_pilot_gates(monkeypatch):
+    _base_env(monkeypatch)
+    monkeypatch.setenv("YORU_AI_PILOT_GUILD_ID", str(PILOT_GUILD))
+    monkeypatch.setenv("YORU_AI_DIRECTOR_PILOT_ENABLED", "true")
+    monkeypatch.setenv("YORU_AI_DIRECTOR_GAME_MASTER_PILOT_ENABLED", "true")
+    monkeypatch.setenv("YORU_AI_DIRECTOR_GAME_MASTER_ROLLOUT_ENABLED", "true")
+    monkeypatch.setenv("YORU_AI_GAME_MASTER_ROLLOUT_PERCENT", "5")
+    monkeypatch.setenv("GROQ_API_KEY", "test-groq")
+
+    with pytest.raises(RuntimeError, match="explicit YORU_AI_GAME_MASTER_ROLLOUT_GUILD_ID"):
+        load_settings()
+
+    monkeypatch.setenv("YORU_AI_GAME_MASTER_ROLLOUT_GUILD_ID", str(PILOT_GUILD))
+    with pytest.raises(RuntimeError, match="nem lehet azonos"):
+        load_settings()
+
+    monkeypatch.setenv("YORU_AI_GAME_MASTER_ROLLOUT_GUILD_ID", str(ROLLOUT_GUILD))
+    settings = load_settings()
+    assert settings.ai_director_game_master_rollout_enabled is True
+    assert settings.ai_director_game_master_rollout_guild_id == ROLLOUT_GUILD
+    assert settings.ai_director_game_master_rollout_percent == 5
+
+
+def test_w22_8_admin_rollback_controls_are_owner_only_and_env_resume_is_fail_closed():
+    source = Path("app/cogs/admin.py").read_text(encoding="utf-8")
+    for command in ("gmrolloutstatus", "gmrolloutpause", "gmrolloutresume"):
+        assert f'name="{command}"' in source
+    assert source.count("await self.bot.is_owner(interaction.user)") >= 4
+    assert "if not pilot.rollout_policy.enabled" in source
+    assert "pilot.rollout_policy.guild_matches(interaction.guild.id)" in source
+    assert "ephemeral=True" in source
+
+
+def test_w22_8_current_release_and_env_example_keep_rollout_off():
+    assert Path("VERSION").read_text(encoding="utf-8").strip() == "3.83.21"
+    env = Path(".env.example").read_text(encoding="utf-8")
+    assert "YORU_AI_DIRECTOR_GAME_MASTER_ROLLOUT_ENABLED=false" in env
+    assert "YORU_AI_GAME_MASTER_ROLLOUT_PERCENT=0" in env
+    assert "YORU_AI_GAME_MASTER_ROLLOUT_GUILD_ID=" in env
