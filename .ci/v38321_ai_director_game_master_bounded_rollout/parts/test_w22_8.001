@@ -1,0 +1,192 @@
+from __future__ import annotations
+
+import asyncio
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+from app.ai_director_game_master import big_job_packet, world_story_packet
+from app.ai_director_game_master_integration import ROLLOUT_GAME_MASTER_FIELD_NAME, add_game_master_field
+from app.ai_director_game_master_rollout import (
+    AIDirectorGameMasterRolloutPolicy,
+    ROLLOUT_CONTRACT_VERSION,
+    ROLLOUT_ELIGIBLE_FAMILIES,
+    ROLLOUT_PERCENT_HARD_CAP,
+    ROLLOUT_PROVIDER_ATTEMPTS_PER_MINUTE,
+)
+from app.config import load_settings
+from app.services.ai_director_game_master import AIDirectorGameMaster
+
+PILOT_GUILD = 9300801
+ROLLOUT_GUILD = 9300802
+WRONG_GUILD = 9300803
+
+
+class SuccessProvider:
+    def __init__(self):
+        self.calls = 0
+
+    async def generate_game_master(self, packet):
+        self.calls += 1
+        return {"title": packet.fallback_title, "description": packet.fallback_description}
+
+
+class Embed:
+    def __init__(self):
+        self.fields = [("HOST", "canonical", False)]
+
+    def add_field(self, *, name, value, inline):
+        self.fields.append((name, value, inline))
+
+
+def _letters(index: int) -> str:
+    # Alphabetic-only deterministic suffix because Tier-3 facts intentionally reject digits.
+    chars: list[str] = []
+    value = index
+    while True:
+        chars.append(chr(ord("a") + (value % 26)))
+        value //= 26
+        if value == 0:
+            break
+    return "".join(reversed(chars))
+
+
+def world_packet(index: int = 0):
+    suffix = _letters(index)
+    return world_story_packet(
+        national_title="Feszült országos helyzet",
+        story_title="Csendes közeledés",
+        beat_title="Új kapcsolatok",
+        city_label="Budapest",
+        world_note=f"A történetszál új ponthoz ért, jelzés {suffix}.",
+    )
+
+
+def big_packet():
+    return big_job_packet(
+        target_name="Belvárosi trezor",
+        phase_label="Lezárt ügy",
+        approach_label="Csendes út",
+        route_label="Eredeti útvonal",
+        host_resolution="Siker",
+        consequence_note="A csapat az eredeti útvonalon maradt.",
+    )
+
+
+def find_world_packet(*, eligible: bool, percent: int = 10, start: int = 0):
+    policy = AIDirectorGameMasterRolloutPolicy(True, ROLLOUT_GUILD, percent)
+    for index in range(start, start + 5000):
+        packet = world_packet(index)
+        if policy.decision(ROLLOUT_GUILD, packet).eligible is eligible:
+            return packet, index
+    raise AssertionError("Could not find deterministic rollout cohort sample")
+
+
+def test_w22_8_locked_scope_is_one_digest_cohort_and_two_families():
+    assert ROLLOUT_CONTRACT_VERSION == "tier3-rare-content-rollout-v1"
+    assert ROLLOUT_ELIGIBLE_FAMILIES == {"world_story", "legendary_event"}
+    assert ROLLOUT_PERCENT_HARD_CAP == 10
+    assert ROLLOUT_PROVIDER_ATTEMPTS_PER_MINUTE == 4
+
+    packet, _ = find_world_packet(eligible=True)
+    policy_a = AIDirectorGameMasterRolloutPolicy(True, ROLLOUT_GUILD, 10)
+    policy_b = AIDirectorGameMasterRolloutPolicy(True, ROLLOUT_GUILD, 10)
+    decision_a = policy_a.decision(ROLLOUT_GUILD, packet)
+    decision_b = policy_b.decision(ROLLOUT_GUILD, packet)
+    assert decision_a == decision_b
+    assert decision_a.bucket is not None
+    assert 0 <= decision_a.bucket < 1000
+
+
+def test_w22_8_wrong_guild_and_nonrare_family_never_call_provider():
+    provider = SuccessProvider()
+    gm = AIDirectorGameMaster(
+        provider=provider,
+        enabled=True,
+        test_guild_id=PILOT_GUILD,
+        rollout_enabled=True,
+        rollout_guild_id=ROLLOUT_GUILD,
+        rollout_percent=10,
+    )
+    eligible, _ = find_world_packet(eligible=True)
+    assert asyncio.run(gm.surface(WRONG_GUILD, eligible)) is None
+    assert asyncio.run(gm.surface(ROLLOUT_GUILD, big_packet())) is None
+    assert provider.calls == 0
+    snap = gm.observation_snapshot().as_dict()
+    assert snap["rollout_requests"] == 1
+    assert snap["rollout_ineligible"] == 1
+
+
+def test_w22_8_test_guild_pilot_keeps_all_six_family_semantics_unbounded():
+    provider = SuccessProvider()
+    gm = AIDirectorGameMaster(
+        provider=provider,
+        enabled=True,
+        test_guild_id=PILOT_GUILD,
+        rollout_enabled=True,
+        rollout_guild_id=ROLLOUT_GUILD,
+        rollout_percent=1,
+    )
+    result = asyncio.run(gm.surface(PILOT_GUILD, big_packet()))
+    assert result is not None
+    assert result.source == "ai_game_master"
+    assert provider.calls == 1
+    assert gm.active_for_guild(PILOT_GUILD) is True
+    assert gm.active_for_guild(ROLLOUT_GUILD) is False
+
+
+def test_w22_8_ineligible_content_cohort_fails_closed_without_provider():
+    provider = SuccessProvider()
+    gm = AIDirectorGameMaster(
+        provider=provider,
+        enabled=True,
+        test_guild_id=PILOT_GUILD,
+        rollout_enabled=True,
+        rollout_guild_id=ROLLOUT_GUILD,
+        rollout_percent=10,
+    )
+    packet, _ = find_world_packet(eligible=False)
+    result = asyncio.run(gm.surface(ROLLOUT_GUILD, packet))
+    assert result is None
+    assert provider.calls == 0
+    snap = gm.observation_snapshot().as_dict()
+    assert snap["rollout_requests"] == 1
+    assert snap["rollout_eligible"] == 0
+    assert snap["rollout_ineligible"] == 1
+
+
+def test_w22_8_provider_budget_caps_rollout_at_four_attempts_per_minute():
+    provider = SuccessProvider()
+    gm = AIDirectorGameMaster(
+        provider=provider,
+        enabled=True,
+        test_guild_id=PILOT_GUILD,
+        rollout_enabled=True,
+        rollout_guild_id=ROLLOUT_GUILD,
+        rollout_percent=10,
+    )
+    packets = []
+    cursor = 0
+    while len(packets) < 5:
+        packet, cursor = find_world_packet(eligible=True, start=cursor)
+        packets.append(packet)
+        cursor += 1
+
+    results = [asyncio.run(gm.surface(ROLLOUT_GUILD, packet)) for packet in packets]
+    assert provider.calls == 4
+    assert all(result is not None for result in results)
+    assert results[-1].source == "deterministic_scenario_v2_fallback"
+    snap = gm.observation_snapshot().as_dict()
+    assert snap["rollout_eligible"] == 5
+    assert snap["provider_attempts"] == 4
+    assert snap["rollout_ai_surfaces"] == 4
+    assert snap["rollout_budget_skips"] == 1
+    assert snap["rollout_fallbacks"] == 1
+
+
+def test_w22_8_owner_runtime_pause_is_immediate_and_resume_cannot_bypass_env():
+    provider = SuccessProvider()
+    packet, _ = find_world_packet(eligible=True)
+    gm = AIDirectorGameMaster(
+        provider=provider,
